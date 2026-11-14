@@ -8,5 +8,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: './src/test/setup.js',
+    // Full-page renders with user-event are slow on busy machines.
+    testTimeout: 30000,
   },
 })

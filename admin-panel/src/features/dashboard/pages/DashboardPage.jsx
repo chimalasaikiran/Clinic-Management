@@ -1,4 +1,4 @@
-import DashboardLayout from '../components/DashboardLayout'
+import WorkspaceLayout from '../../../components/workspace/WorkspaceLayout'
 import DashboardFooter from '../components/sections/DashboardFooter'
 import FinancialSnapshot from '../components/sections/FinancialSnapshot'
 import KeyMetrics from '../components/sections/KeyMetrics'
@@ -26,8 +26,8 @@ import {
 
 export default function DashboardPage() {
   return (
-    <DashboardLayout>
-      <div className="mx-auto flex max-w-[960px] flex-col gap-6">
+    <WorkspaceLayout>
+      <div className="flex flex-col gap-6">
         <PageHeader meta={PAGE_META} />
         <KeyMetrics metrics={KEY_METRICS} />
         <NeedsAttention items={ATTENTION_ITEMS} />
@@ -52,6 +52,6 @@ export default function DashboardPage() {
 
         <DashboardFooter footer={FOOTER} />
       </div>
-    </DashboardLayout>
+    </WorkspaceLayout>
   )
 }

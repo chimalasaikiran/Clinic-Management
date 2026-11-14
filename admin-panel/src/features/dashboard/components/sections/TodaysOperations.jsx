@@ -1,6 +1,6 @@
 import { dashboardIcons as icons } from '../../../../assets/icons/dashboard'
 import { cn } from '../../../../lib/cn'
-import { CardHeader, SectionCard } from '../SectionCard'
+import { CardHeader, SectionCard } from '../../../../components/workspace/SectionCard'
 
 const CHIP_TONES = {
   slate: 'border-slate-200 bg-slate-100 text-slate-700',

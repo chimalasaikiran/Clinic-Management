@@ -1,0 +1,111 @@
+// Sample Growth OS records standing in for the CRM, campaign, content and messaging APIs.
+const at = (date, time) => ({ date, time })
+
+export const SEED_LEADS = [
+  {
+    id: 'LD1048', name: 'Ananya Rao', phone: '90000 00001', email: '', interest: 'Preventive health screening', source: 'Website inquiry', campaignId: 'CMP2041', campaign: 'Google Search campaign', channel: 'Paid search · illustrative',
+    stage: 'Qualified', owner: 'Meera Shah', branch: 'Jubilee Hills Clinic', created: at('2026-10-18', '10:30'), lastActivity: at('2026-10-21', '16:20'), nextAction: 'Call to discuss available slots', due: at('2026-10-21', '16:00'), summary: 'Health check inquiry',
+    activities: [
+      { id: 'a3', at: at('2026-10-21', '16:20'), title: 'Lead qualified', text: 'Qualification event · Meera Shah. Current stage: Qualified. Open follow-up remains overdue.' },
+      { id: 'a2', at: at('2026-10-21', '15:45'), title: 'Call attempted', text: 'Call attempt · Meera Shah. Outcome not captured; no completed follow-up or booking is implied.' },
+      { id: 'a1', at: at('2026-10-18', '10:30'), title: 'Website inquiry received', text: 'Website inquiry for preventive health screening. Google Search campaign recorded; attribution unverified.' },
+    ],
+  },
+  { id: 'LD1049', name: 'Rohan Mehta', phone: '90000 00002', email: '', interest: 'Dental consultation', source: 'Phone inquiry', campaignId: null, campaign: 'Organic', channel: 'Phone', stage: 'New', owner: 'Priya Nair', branch: 'Jubilee Hills Clinic', created: at('2026-10-21', '11:15'), lastActivity: at('2026-10-21', '11:15'), nextAction: 'Confirm preferred appointment time', due: at('2026-10-22', '11:30'), summary: 'Dental consultation', activities: [{ id: 'a1', at: at('2026-10-21', '11:15'), title: 'Phone inquiry received', text: 'Phone inquiry about a dental consultation.' }] },
+  { id: 'LD1050', name: 'Kavya Iyer', phone: '90000 00003', email: '', interest: 'Preventive health screening', source: 'Front desk referral', campaignId: null, campaign: 'Preventive Care campaign', channel: 'Front desk', stage: 'Contacted', owner: 'Meera Shah', branch: 'Jubilee Hills Clinic', created: at('2026-10-21', '15:40'), lastActivity: at('2026-10-21', '15:40'), nextAction: 'Share screening information', due: at('2026-10-22', '14:00'), summary: 'Preventive screening', activities: [{ id: 'a1', at: at('2026-10-21', '15:40'), title: 'Front desk referral', text: 'Referred at the front desk for preventive screening information.' }] },
+]
+
+export const SEED_CAMPAIGNS = [
+  { id: 'CMP2041', name: 'Google Search campaign', objective: 'Preventive health screening inquiries', channel: 'Paid search / Google Search', status: 'Draft', branch: 'Jubilee Hills Clinic', owner: 'Meera Shah', budget: 45000, start: '2026-11-01', end: '2026-11-30', segmentId: 'SEG301', cta: 'Enquire about screening', landing: 'https://example.com/jubilee-hills/screening', headline: 'Plan your preventive health check', updated: '2026-10-21', leadIds: ['LD1048'] },
+  { id: 'CMP2042', name: 'Dental care awareness', objective: 'Adult dental care inquiries', channel: 'WhatsApp', status: 'Scheduled', branch: 'Jubilee Hills Clinic', owner: 'Priya Nair', budget: 24000, start: '2026-11-05', end: '2026-11-20', segmentId: 'SEG302', cta: 'Book a dental consultation', landing: 'https://example.com/jubilee-hills/dental', headline: 'Care for your smile', updated: '2026-10-20', leadIds: [] },
+  { id: 'CMP2043', name: 'Phone follow-up review', objective: 'Review adult inquiry follow-ups', channel: 'Phone', status: 'Active', branch: 'Jubilee Hills Clinic', owner: 'Meera Shah', budget: 8000, start: '2026-10-15', end: '2026-10-31', segmentId: 'SEG303', cta: 'Call the clinic', landing: 'https://example.com/jubilee-hills/contact', headline: 'We are here to help', updated: '2026-10-19', leadIds: [] },
+  { id: 'CMP2044', name: 'Family wellness outreach', objective: 'Adult family wellness inquiries', channel: 'Email', status: 'Paused', branch: 'Jubilee Hills Clinic', owner: 'Arjun Desai', budget: 30000, start: '2026-10-10', end: '2026-10-31', segmentId: 'SEG304', cta: 'Plan a family check', landing: 'https://example.com/jubilee-hills/family', headline: 'Wellness for the whole family', updated: '2026-10-18', leadIds: [] },
+]
+
+export const SEED_SEGMENTS = [
+  { id: 'SEG301', name: 'Preventive screening enquiries', purpose: 'Review qualified preventive screening inquiries for a proposed campaign audience', status: 'Draft', version: 1, lifecycle: ['New', 'Contacted', 'Qualified'], branch: 'Jubilee Hills Clinic', channel: 'Paid-search audience', interest: 'Recorded preventive screening inquiry interest', criteria: 'Recorded screening inquiry; age 18+ only when known', updated: '2026-10-22', versions: [{ v: 1, note: 'Draft definition. Sample edit; actor and time not supplied.' }] },
+  { id: 'SEG302', name: 'Adult dental enquiries', purpose: 'Adult dental inquiries for the dental awareness campaign', status: 'Review', version: 1, lifecycle: ['New', 'Contacted'], branch: 'Jubilee Hills Clinic', channel: 'WhatsApp / SMS', interest: 'Recorded general dental inquiry interest', criteria: 'Recorded general dental inquiry; known adult eligibility', updated: '2026-10-21', versions: [{ v: 1, note: 'Definition in review.' }] },
+  { id: 'SEG303', name: 'Adult inquiry follow-ups', purpose: 'Adult inquiries with a recorded permitted follow-up preference', status: 'Review', version: 1, lifecycle: ['Contacted', 'Qualified'], branch: 'Jubilee Hills Clinic', channel: 'SMS / Email', interest: 'Recorded follow-up preference', criteria: 'Adult inquiries with a recorded permitted follow-up preference', updated: '2026-10-20', versions: [{ v: 1, note: 'Definition in review.' }] },
+  { id: 'SEG304', name: 'Wellness re-engagement', purpose: 'Adult wellness inquiry; re-contact only if preferences permit', status: 'Draft', version: 1, lifecycle: ['Contacted'], branch: 'Jubilee Hills Clinic', channel: 'Email / WhatsApp', interest: 'Recorded wellness inquiry interest', criteria: 'Adult wellness inquiry; re-contact only if preferences permit', updated: '2026-10-19', versions: [{ v: 1, note: 'Draft definition.' }] },
+]
+
+export const SEED_CONTENT = [
+  { id: 'CNT3101', title: 'Plan your preventive health check', category: 'Prevention', owner: 'Meera Shah', branch: 'Jubilee Hills Clinic', type: 'Organic public post', caption: 'A preventive health check can help you discuss your health needs with a clinician. Contact Jubilee Hills Clinic to ask about available screening options. Suitability and availability are confirmed by the clinic.', channels: 'Instagram + Facebook', cta: 'Enquire with the clinic', url: 'https://example.com/jubilee-hills/screening', alt: 'Aura Health branded typographic graphic reading “Plan your preventive health check”, with “Speak with Jubilee Hills Clinic about screening options”. No people or clinical outcomes are depicted.', date: '2026-10-27', time: '10:00', status: 'Draft', templateId: 'TPL-PREV01', rightsReviewed: false },
+  { id: 'CNT3102', title: 'Ask your clinician', category: 'Health education', owner: 'Priya Nair', branch: 'Jubilee Hills Clinic', type: 'Organic public post', caption: 'Write down your questions before your visit.', channels: 'Facebook', cta: 'Contact the clinic', url: 'https://example.com/jubilee-hills/contact', alt: 'Typographic graphic.', date: '2026-10-06', time: '09:30', status: 'Published', templateId: null, rightsReviewed: true },
+  { id: 'CNT3103', title: 'Clinic hours update', category: 'Clinic announcements', owner: 'Priya Nair', branch: 'Jubilee Hills Clinic', type: 'Organic public post', caption: 'Our opening hours for the festive weekend.', channels: 'Instagram', cta: 'See opening hours', url: 'https://example.com/jubilee-hills/hours', alt: 'Typographic graphic.', date: '2026-10-12', time: '11:00', status: 'Needs review', templateId: null, rightsReviewed: false },
+  { id: 'CNT3104', title: 'Everyday prevention', category: 'Prevention', owner: 'Meera Shah', branch: 'Jubilee Hills Clinic', type: 'Organic public post', caption: 'Small habits that support everyday wellbeing.', channels: 'Facebook', cta: 'Learn more', url: 'https://example.com/jubilee-hills/prevention', alt: 'Typographic graphic.', date: '2026-10-16', time: '10:00', status: 'Failed', templateId: null, rightsReviewed: true },
+  { id: 'CNT3105', title: 'Preparing for a visit', category: 'Health education', owner: 'Priya Nair', branch: 'Jubilee Hills Clinic', type: 'Organic public post', caption: 'What to bring to your appointment.', channels: 'Instagram', cta: 'Contact the clinic', url: 'https://example.com/jubilee-hills/visit', alt: 'Typographic graphic.', date: '2026-10-29', time: '09:00', status: 'Scheduled', templateId: null, rightsReviewed: true },
+]
+
+export const SEED_CONTENT_TEMPLATES = [
+  { id: 'TPL-PREV01', version: 1, title: 'Plan your preventive health check', category: 'Prevention', channels: 'Instagram + Facebook', body: 'A preventive health check can help you discuss your health needs with a clinician. Contact the clinic about screening options.', cta: 'Enquire with the clinic' },
+  { id: 'TPL-EDU01', version: 1, title: 'Bring your questions to your visit', category: 'Health education', channels: 'Instagram + Facebook', body: 'Write down the questions you would like to discuss with your clinician. Advice is personalized during your consultation.', cta: 'Contact the clinic' },
+  { id: 'TPL-ANN01', version: 1, title: 'Opening hours update', category: 'Clinic announcements', channels: 'Instagram', body: 'Our opening hours are changing for a short period. Please check the clinic’s official contact details for the latest information.', cta: 'See opening hours' },
+  { id: 'TPL-OFF01', version: 1, title: 'Seasonal check-up offer', category: 'Offers', channels: 'Facebook', body: 'A seasonal check-up offer is available for a limited time, subject to locally approved terms and valid dates.', cta: 'Ask about the offer' },
+]
+
+export const SEED_REVIEWS = [
+  { id: 'REV-DEMO104', alias: 'Visitor A', rating: 3, date: '2026-10-22', time: '17:40', text: 'The location was easy to find, but I had trouble getting through on the phone. Clearer opening-hour information would help.', response: 'Thank you for sharing your feedback. We are reviewing how we communicate opening hours and handle incoming calls. Please use the contact details on our official profile if you would like to discuss your feedback privately. Please do not share personal or medical information publicly.', responseState: 'Draft · approval required', note: 'Review the published opening hours and phone routing with the branch operations owner.' },
+  { id: 'REV-DEMO103', alias: 'Visitor B', rating: 5, date: '2026-10-20', time: '11:15', text: 'The directions on the website were helpful. A clearer sign at the entrance would make finding the building easier.', response: '', responseState: 'No response recorded', note: '' },
+  { id: 'REV-DEMO102', alias: 'Visitor C', rating: 2, date: '2026-10-17', time: '16:05', text: 'Holiday hours were unclear on the listing, so we were not sure whether the clinic was open.', response: '', responseState: 'No response recorded', note: '' },
+  { id: 'REV-DEMO101', alias: 'Visitor D', rating: 4, date: '2026-10-14', time: '10:30', text: 'Friendly staff and a short wait at the front desk.', response: '', responseState: 'No response recorded', note: '' },
+]
+
+export const SEED_ESCALATIONS = [
+  { id: 'ESC-DEMO102', reviewId: 'REV-DEMO102', topic: 'Holiday hours unclear', summary: 'Awaiting operations review', severity: 'Medium', owner: 'Meera Shah', due: '2026-10-23', dueTime: '17:00', status: 'Open', note: '' },
+]
+
+export const SEED_CONVERSATIONS = [
+  { id: 'CV-DEMO201', subject: 'Visitor inquiry', preview: 'Thank you. Is there a separate holiday schedule?', channel: 'ClinicOS test inbox', status: 'Open', unread: true, owner: 'Meera Shah', linked: false, last: at('2026-10-24', '09:20'), summary: 'Saturday opening hours and holiday schedule. Nonclinical enquiry; no external or provider identity supplied.' },
+  { id: 'CV-DEMO202', subject: 'Directions to the clinic', preview: 'Is there parking near the entrance?', channel: 'ClinicOS test inbox', status: 'Open', unread: true, owner: 'Priya Nair', linked: false, last: at('2026-10-23', '15:05'), summary: 'Directions and parking. Nonclinical enquiry.' },
+  { id: 'CV-DEMO203', subject: 'Appointment change request', preview: 'Thanks, that works for me.', channel: 'ClinicOS test inbox', status: 'Resolved', unread: false, owner: 'Meera Shah', linked: false, last: at('2026-10-22', '12:40'), summary: 'Rescheduling enquiry handled by the front desk.' },
+]
+
+export const SEED_MESSAGES = [
+  { id: 'm1', threadId: 'CV-DEMO201', from: 'visitor', who: 'Visitor · sample enquiry', at: at('2026-10-24', '09:15'), text: 'Hello, could you confirm your Saturday opening hours?', note: 'Received in sample dataset' },
+  { id: 'm2', threadId: 'CV-DEMO201', from: 'team', who: 'Team reply · test transcript', at: at('2026-10-24', '09:18'), text: 'Our local information lists Saturday opening hours as 09:00–18:00. Please check the clinic’s official contact details for current exceptions.', note: 'Stored in test transcript — no external delivery receipt' },
+  { id: 'm3', threadId: 'CV-DEMO201', from: 'visitor', who: 'Visitor · sample enquiry', at: at('2026-10-24', '09:20'), text: 'Thank you. Is there a separate holiday schedule?', note: 'Received in sample dataset' },
+  { id: 'm4', threadId: 'CV-DEMO202', from: 'visitor', who: 'Visitor · sample enquiry', at: at('2026-10-23', '15:05'), text: 'Is there parking near the entrance?', note: 'Received in sample dataset' },
+  { id: 'm5', threadId: 'CV-DEMO203', from: 'visitor', who: 'Visitor · sample enquiry', at: at('2026-10-22', '12:40'), text: 'Thanks, that works for me.', note: 'Received in sample dataset' },
+]
+
+export const SEED_MESSAGE_TEMPLATES = [
+  { id: 'MT-REM01', version: 1, name: 'Appointment reminder', category: 'Reminder', channel: 'WhatsApp', locale: 'English · en-IN', status: 'Local draft', body: 'Hello {{preferred_name}}, this is a reminder from Aura Health about your appointment on {{appointment_date}} at {{appointment_time}}. Please contact the clinic through its verified contact details if your plans change. Do not share medical information in this message.' },
+  { id: 'MT-FUP02', version: 1, name: 'Follow-up check-in', category: 'Follow-up', channel: 'SMS', locale: 'English · en-IN', status: 'Local draft', body: 'Hello {{preferred_name}}, we would like to check whether you still need information about {{service_name}}. Reply or contact the clinic when convenient.' },
+  { id: 'MT-REV01', version: 1, name: 'Honest feedback request', category: 'Review request', channel: 'WhatsApp', locale: 'English · en-IN', status: 'Local draft', body: 'Hello, we welcome honest feedback about your experience with Aura Health. Sharing feedback is optional and will not affect your care. You may leave a review using our verified public review link or contact the clinic privately. Please do not include personal or medical information.' },
+  { id: 'MT-PRE03', version: 1, name: 'Preventive screening follow-up', category: 'Prevention', channel: 'Email', locale: 'English · en-IN', status: 'Local draft', body: 'Hello {{preferred_name}}, you recently asked about screening options. If you would still like information, contact the clinic through its verified contact details.' },
+]
+
+const blankChecks = [false, false, false, false]
+
+export const SEED_WORKFLOWS = [
+  { id: 'WF-REM201', version: 1, name: 'Appointment reminder — Jubilee Hills', category: 'Reminder', trigger: 'Confirmed appointment start approaching 24 hours', templateId: 'MT-REM01', channel: 'WhatsApp', branch: 'Jubilee Hills Clinic', owner: 'Meera Shah', status: 'Draft · inactive', readiness: 'Channel setup and template approval unverified; consent query required.', cap: '', checks: blankChecks },
+  { id: 'WF-FUP202', version: 1, name: 'Follow-up check-in', category: 'Follow-up', trigger: 'Care-team authorized due task', templateId: 'MT-FUP02', channel: 'SMS', branch: 'Jubilee Hills Clinic', owner: 'Meera Shah', status: 'Draft · inactive', readiness: 'Task and purpose authorization, channel and consent rules required.', cap: '', checks: blankChecks },
+  { id: 'WF-REV203', version: 1, name: 'Revisit planning', category: 'Revisit', trigger: 'Clinician-approved revisit due event', templateId: '', channel: '', branch: 'Jubilee Hills Clinic', owner: 'Meera Shah', status: 'Draft · inactive', readiness: 'Clinician event definition, template and permitted channel needed.', cap: '', checks: blankChecks },
+  { id: 'WF-PRE204', version: 1, name: 'Preventive screening enquiry follow-up', category: 'Prevention', trigger: 'Recorded screening inquiry with no booking after 7 days', templateId: 'MT-PRE03', channel: 'Email', branch: 'Jubilee Hills Clinic', owner: 'Priya Nair', status: 'Draft · inactive', readiness: 'Consent and contact preference evidence required.', cap: '', checks: blankChecks },
+  { id: 'WF-NSR205', version: 1, name: 'No-show recovery', category: 'Recovery', trigger: 'Appointment recorded as no-show', templateId: '', channel: 'SMS', branch: 'Jubilee Hills Clinic', owner: 'Arjun Desai', status: 'Draft · inactive', readiness: 'Template and permitted channel needed.', cap: '', checks: blankChecks },
+]
+
+export const SEED_EXECUTIONS = [
+  { id: 'SIM-REM201-004', workflowId: 'WF-REM201', at: at('2026-10-25', '09:45'), step: 'Dispatch / reconciliation', outcome: 'Unknown', reason: 'Synthetic transport timeout; provider acceptance / delivery not confirmed.' },
+  { id: 'SIM-REM201-003', workflowId: 'WF-REM201', at: at('2026-10-25', '09:30'), step: 'Validation', outcome: 'Failed', reason: 'Required appointment_time missing — structural rejection, not delivery failure.' },
+  { id: 'SIM-REM201-002', workflowId: 'WF-REM201', at: at('2026-10-25', '09:15'), step: 'Eligibility request', outcome: 'Pending', reason: 'Awaiting query response; recipient count not recorded.' },
+  { id: 'SIM-REM201-001', workflowId: 'WF-REM201', at: at('2026-10-25', '09:00'), step: 'Channel authorization', outcome: 'Blocked', reason: 'No verified connection — dispatch not attempted.' },
+]
+
+export const SEED_SCENARIOS = [
+  { id: 'SIM-REJECT', messageId: 'MSG-SIM01', target: 'synthetic target A', error: 'Illustrated invalid-template rejection', evidence: 'Explicit rejection scenario · No real provider evidence', retry: 'After content fix, approval and full gate recheck', canRetry: false },
+  { id: 'SIM-AUTH', messageId: 'MSG-SIM02', target: 'synthetic target B', error: 'Illustrated expired authorization', evidence: 'Auth expiry scenario · No real grant supplied', retry: 'Re-authorize first; not a blind retry', canRetry: false },
+  { id: 'SIM-UNKNOWN', messageId: 'MSG-SIM03', target: 'synthetic target C', error: 'Illustrated transport timeout', evidence: 'Unknown outcome · Neither failed nor accepted', retry: 'Blocked — reconcile first', canRetry: false },
+  { id: 'SIM-REFRESH', messageId: 'MSG-SIM04', target: 'synthetic target D', error: 'Illustrated receipt refresh failure', evidence: 'Read failure only · Send state not established', retry: 'Retry status read only; never resend', canRetry: false },
+]
+
+export const SEED_CHANNELS = [
+  { id: 'whatsapp', name: 'WhatsApp Business', note: 'Proposed for WF-REM201. Template and provider account verification required.' },
+  { id: 'sms', name: 'SMS', note: 'Setup option only. Not a selected channel or automatic fallback.' },
+  { id: 'email', name: 'Email', note: 'Setup option only. Not a selected channel or automatic fallback.' },
+]
+
+export const SEED_PROFILE = { business: 'Aura Health — Jubilee Hills Clinic', street: 'Plot 42, Road 36, Jubilee Hills', city: 'Hyderabad', state: 'Telangana', postal: '500033', country: 'India', description: 'A neighbourhood clinic offering consultations and preventive health screening enquiries. Services and availability are confirmed by the clinic.', primary: 'Medical clinic', secondary: 'Preventive healthcare clinic', specialDate: '2026-10-26', specialFrom: '10:00', specialTo: '14:00', specialSaved: false }
+
+export const SEED_REVIEW_REQUEST = { id: 'RR-JH01', status: 'Disabled', trigger: 'Operational encounter completion event, excluding cancelled records', delay: '2', timezone: 'Asia/Kolkata (UTC+05:30)', channel: 'WhatsApp', fallback: 'OFF', template: 'MT-REV01', owner: 'Meera Shah', version: 1 }

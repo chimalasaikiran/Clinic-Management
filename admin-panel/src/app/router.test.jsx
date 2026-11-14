@@ -6,6 +6,7 @@ import { renderRoute } from '../test/renderRoute'
 
 const pages = [
   [ROUTES.setup, 'Set up your clinic'],
+  [ROUTES.signin, 'Sign in to ClinicOS'],
   [ROUTES.signup, 'Create your account'],
   [ROUTES.verify, 'Verify your account'],
   [ROUTES.clinic, 'Create your clinic'],

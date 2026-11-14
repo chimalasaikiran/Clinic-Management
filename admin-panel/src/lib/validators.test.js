@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isBlank, isEmail, isIndianMobile } from './validators'
+import { isBlank, isEmail, isIndianMobile, isStrongPassword } from './validators'
 
 describe('isBlank', () => {
   it('treats empty and whitespace-only values as blank', () => {
@@ -35,5 +35,18 @@ describe('isIndianMobile', () => {
     expect(isIndianMobile('5876543210')).toBe(false)
     expect(isIndianMobile('98765432101')).toBe(false)
     expect(isIndianMobile('98765abcde')).toBe(false)
+  })
+})
+
+describe('isStrongPassword', () => {
+  it('requires eight characters with a letter and a number', () => {
+    expect(isStrongPassword('clinic2026')).toBe(true)
+    expect(isStrongPassword('Clinic1!')).toBe(true)
+  })
+
+  it('rejects short, letter-only and number-only passwords', () => {
+    expect(isStrongPassword('abc123')).toBe(false)
+    expect(isStrongPassword('clinicclinic')).toBe(false)
+    expect(isStrongPassword('1234567890')).toBe(false)
   })
 })

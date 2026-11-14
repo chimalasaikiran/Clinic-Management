@@ -104,7 +104,7 @@ export default function SetupIntroPage() {
               </Button>
               <p className="text-xs leading-4 font-medium text-slate-500">
                 Already have an account?{' '}
-                <TextLink tone="teal" underline className="font-semibold decoration-teal-300">
+                <TextLink to={ROUTES.signin} tone="teal" underline className="font-semibold decoration-teal-300">
                   Sign in
                 </TextLink>
               </p>

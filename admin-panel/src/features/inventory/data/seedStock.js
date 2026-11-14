@@ -1,0 +1,51 @@
+// Sample stock on hand, one row per item batch at a location. available = posted - reserved - quarantine.
+let sequence = 0
+const batch = (itemId, loc, batchNo, expiry, posted, extras = {}) => ({
+  id: `BAT-${String(++sequence).padStart(3, '0')}`,
+  itemId,
+  loc,
+  batchNo,
+  expiry,
+  posted,
+  reserved: 0,
+  quarantine: 0,
+  bin: loc === 'central' ? 'A-03' : 'Bay A-04',
+  ...extras,
+})
+
+export const SEED_BATCHES = [
+  batch('MED-00124', 'central', 'P26A', '2027-01-15', 600, { reserved: 200, bin: 'Rack A-03' }),
+  batch('MED-00124', 'central', 'P26B', '2028-07-31', 1000, { reserved: 200, bin: 'Rack A-04' }),
+  batch('MED-00218', 'central', 'CT26C', '2028-06-30', 80, { bin: 'Rack B-01' }),
+  batch('MED-00306', 'central', 'AM26D', '2028-08-31', 240, { bin: 'Rack B-01' }),
+  batch('MED-00172', 'central', 'MF26B', '2028-07-31', 640, { bin: 'Rack B-02' }),
+  batch('CON-00042', 'central', 'GL26F', '2029-09-30', 350, { bin: 'Rack C-01' }),
+  batch('MED-00451', 'central', 'NS26H', '2028-10-31', 180, { bin: 'Rack C-02' }),
+  batch('MED-EM-ATR-006', 'central', 'AT26A', '2028-02-29', 140, { bin: 'Rack D-01' }),
+  batch('MED-CV-TEL-040', 'central', 'TL26A', '2028-09-30', 1200, { bin: 'Rack B-03' }),
+  batch('MED-AB-CTX-1G', 'central', 'CF26B', '2028-04-30', 400, { bin: 'Rack D-02' }),
+  batch('MED-EM-ADR-001', 'central', 'AD26A', '2028-05-31', 100, { bin: 'Rack D-01' }),
+  batch('MED-AB-AZI-500', 'central', 'AZ26A', '2028-06-30', 600, { bin: 'Rack B-04' }),
+  batch('MED-AB-AMX-500', 'central', 'AX26A', '2028-06-30', 500, { bin: 'Rack B-04' }),
+  batch('MED-GI-PAN-040', 'central', 'PN26A', '2028-07-31', 450, { bin: 'Rack B-05' }),
+  batch('MED-GI-OND-004', 'central', 'OD26A', '2028-03-31', 120, { bin: 'Rack D-03' }),
+  batch('MED-IV-DEX-025', 'central', 'DX26A', '2028-02-29', 90, { bin: 'Rack C-02' }),
+
+  batch('MED-CV-RAM-005', 'main', 'BT-RAM-2026-08', '2027-10-31', 210, { reserved: 30, bin: 'Bay A-04, Shelf 2' }),
+  batch('MED-CV-RAM-005', 'main', 'BT-RAM-2026-11', '2028-02-29', 150, { reserved: 30, bin: 'Bay A-04, Shelf 3' }),
+  batch('MED-CV-RAM-005', 'main', 'BT-RAM-2025-04', '2025-12-31', 30, { quarantine: 30, bin: 'Quarantine Vault #02' }),
+  batch('MED-CV-ATV-040', 'main', 'BT-ATV-8621', '2028-03-31', 400, { bin: 'Bay B-12 (Box)' }),
+  batch('MED-CV-ECO-075', 'main', 'BT-ECO-2026-11', '2028-01-31', 300, { bin: 'Bay B-09' }),
+  batch('MED-GI-OMP-020', 'main', 'BT-OMP-2026-02', '2028-04-30', 400, { bin: 'Bay C-02' }),
+  batch('MED-GI-SUC-010', 'main', 'BT-SUC-2026-03', '2028-01-31', 40, { bin: 'Bay C-04' }),
+  batch('MED-RS-LVX-500', 'main', 'BT-LVX-2026-05', '2028-05-31', 100, { bin: 'Bay D-01' }),
+  batch('MED-RS-AMB-030', 'main', 'BT-AMB-2026-04', '2028-02-29', 40, { bin: 'Bay D-03' }),
+  batch('MED-DM-MSR-500', 'main', 'BT-MSR-2026-06', '2028-06-30', 300, { bin: 'Bay E-01' }),
+  batch('MED-DM-GLM-001', 'main', 'BT-GLM-2026-02', '2028-03-31', 200, { bin: 'Bay E-02' }),
+  batch('MED-CV-TEL-040', 'main', 'BT-TEL-2026-04', '2028-09-30', 14, { bin: 'Bay A-06' }),
+  batch('MED-EN-ACT-012', 'main', 'HA-901', '2026-12-12', 6, { bin: 'Cold Chamber A' }),
+  batch('MED-00124', 'main', 'PM-2026-10', '2028-05-31', 180, { bin: 'Bay F-01' }),
+
+  batch('MED-00124', 'opd', 'PM-2026-07', '2028-03-31', 200, { bin: 'Bay A-01' }),
+  batch('MED-00172', 'opd', 'MF-2026-02', '2028-02-29', 260, { bin: 'Bay A-02' }),
+]

@@ -31,8 +31,10 @@ import navGrowth from './nav-growth.svg'
 import navInventory from './nav-inventory.svg'
 import navOverview from './nav-overview.svg'
 import navPatients from './nav-patients.svg'
+import navPayroll from './nav-payroll.svg'
 import navPharmacy from './nav-pharmacy.svg'
 import navReports from './nav-reports.svg'
+import navRoles from './nav-roles.svg'
 import navStaff from './nav-staff.svg'
 import opsClock from './ops-clock.svg'
 import plusNew from './plus-new.svg'
@@ -88,8 +90,10 @@ export const dashboardIcons = {
   navInventory,
   navOverview,
   navPatients,
+  navPayroll,
   navPharmacy,
   navReports,
+  navRoles,
   navStaff,
   opsClock,
   plusNew,

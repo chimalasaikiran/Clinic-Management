@@ -1,4 +1,4 @@
-import { SectionCard } from '../SectionCard'
+import { SectionCard } from '../../../../components/workspace/SectionCard'
 
 export default function QuickActions({ actions }) {
   return (

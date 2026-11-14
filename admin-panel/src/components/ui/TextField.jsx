@@ -11,6 +11,7 @@ export default function TextField({
   error,
   startIcon,
   endIcon,
+  endAction,
   muted = false,
   className,
   ...props
@@ -37,6 +38,7 @@ export default function TextField({
             'h-12 px-4',
             startIcon && 'pl-10',
             endIcon && 'pr-10',
+            endAction && 'pr-16',
             muted && 'bg-slate-50/40',
             error && invalidControlClass,
             className,
@@ -46,6 +48,7 @@ export default function TextField({
         {endIcon && (
           <img src={endIcon} alt="" className="pointer-events-none absolute top-1/2 right-0 -translate-y-1/2" />
         )}
+        {endAction && <div className="absolute top-1/2 right-3 -translate-y-1/2">{endAction}</div>}
       </div>
     </Field>
   )

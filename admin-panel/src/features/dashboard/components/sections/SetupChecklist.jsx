@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { dashboardIcons as icons } from '../../../../assets/icons/dashboard'
-import { SectionCard } from '../SectionCard'
+import { SectionCard } from '../../../../components/workspace/SectionCard'
 
 export default function SetupChecklist({ checklist }) {
   const [hidden, setHidden] = useState(false)

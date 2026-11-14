@@ -1,5 +1,5 @@
 import { cn } from '../../../../lib/cn'
-import { SectionCard } from '../SectionCard'
+import { SectionCard } from '../../../../components/workspace/SectionCard'
 
 function MetricValue({ value, unit }) {
   return (

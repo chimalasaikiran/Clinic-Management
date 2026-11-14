@@ -1,5 +1,5 @@
 import { cn } from '../../../../lib/cn'
-import { CardLink, SectionCard } from '../SectionCard'
+import { CardLink, SectionCard } from '../../../../components/workspace/SectionCard'
 
 function Body({ parts }) {
   return parts.map((part, index) => {

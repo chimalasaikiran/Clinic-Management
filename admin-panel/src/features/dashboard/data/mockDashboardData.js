@@ -1,35 +1,15 @@
 import { dashboardIcons as icons } from '../../../assets/icons/dashboard'
-
-export const OWNER = {
-  name: 'Dr. Siddharth Verma',
-  role: 'Owner · Medical Director',
-}
+import { LOCATION_FILTER, OWNER } from '../../../config/workspace'
 
 export const PAGE_META = {
   eyebrow: 'Owner workspace · Operational overview',
   telemetry: 'Live telemetry active',
   greeting: `Good morning, ${OWNER.name}`,
   summary: "Here's how your clinic is doing today across clinical sessions, collections, and team flow.",
-  locationFilter: 'All locations (3)',
+  locationFilter: LOCATION_FILTER,
   dateFilter: 'Today, Oct 24',
   lastSynced: 'Last synced 2m ago',
 }
-
-export const SIDEBAR_BRANCH = { name: 'Aura Health', scope: 'Single Location', uptime: '99.98%' }
-
-export const NAV_ITEMS = [
-  { id: 'overview', label: 'Overview', icon: icons.navOverview, active: true },
-  { id: 'patients', label: 'Patients', icon: icons.navPatients },
-  { id: 'appointments', label: 'Appointments', icon: icons.navAppointments },
-  { id: 'clinical', label: 'Clinical', icon: icons.navClinical },
-  { id: 'billing', label: 'Billing & Finance', icon: icons.navBilling },
-  { id: 'pharmacy', label: 'Pharmacy', icon: icons.navPharmacy },
-  { id: 'inventory', label: 'Inventory', icon: icons.navInventory },
-  { id: 'staff', label: 'Staff', icon: icons.navStaff },
-  { id: 'growth', label: 'Growth', icon: icons.navGrowth },
-  { id: 'reports', label: 'Reports', icon: icons.navReports },
-  { id: 'configuration', label: 'Configuration', icon: icons.navConfiguration },
-]
 
 export const KEY_METRICS = [
   {

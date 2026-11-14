@@ -1,6 +1,6 @@
 import { dashboardIcons as icons } from '../../../../assets/icons/dashboard'
 import { cn } from '../../../../lib/cn'
-import { CardHeader, CardLink, SectionCard } from '../SectionCard'
+import { CardHeader, CardLink, SectionCard } from '../../../../components/workspace/SectionCard'
 
 export default function TeamStatus({ team }) {
   return (

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { validateAccount, validateOtp } from './validation'
+import { validateAccount, validateOtp, validateSignIn } from './validation'
 
-const validAccount = { fullName: 'Siddharth Verma', email: 'sid@clinic.com', mobile: '9876543210' }
+const validAccount = { fullName: 'Siddharth Verma', email: 'sid@clinic.com', password: 'clinic2026' }
 
 describe('validateAccount', () => {
   it('returns no errors for valid input', () => {
@@ -9,17 +9,28 @@ describe('validateAccount', () => {
   })
 
   it('requires every field', () => {
-    expect(Object.keys(validateAccount({ fullName: '', email: '', mobile: '' }))).toEqual([
+    expect(Object.keys(validateAccount({ fullName: '', email: '', password: '' }))).toEqual([
       'fullName',
       'email',
-      'mobile',
+      'password',
     ])
   })
 
-  it('flags an invalid email and mobile number separately from missing ones', () => {
-    const errors = validateAccount({ ...validAccount, email: 'sid@', mobile: '12345' })
+  it('flags an invalid email and a weak password separately from missing ones', () => {
+    const errors = validateAccount({ ...validAccount, email: 'sid@', password: 'short1' })
     expect(errors.email).toMatch(/valid email/i)
-    expect(errors.mobile).toMatch(/10-digit/)
+    expect(errors.password).toMatch(/at least 8 characters/)
+  })
+})
+
+describe('validateSignIn', () => {
+  it('accepts an email and any non-empty password', () => {
+    expect(validateSignIn({ email: 'sid@clinic.com', password: 'x' })).toEqual({})
+  })
+
+  it('requires both fields and a valid email', () => {
+    expect(Object.keys(validateSignIn({ email: '', password: '' }))).toEqual(['email', 'password'])
+    expect(validateSignIn({ email: 'sid', password: 'x' }).email).toMatch(/valid email/i)
   })
 })
 

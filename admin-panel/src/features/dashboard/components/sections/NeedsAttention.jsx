@@ -1,6 +1,6 @@
 import { dashboardIcons as icons } from '../../../../assets/icons/dashboard'
 import { cn } from '../../../../lib/cn'
-import { CardLink, SectionCard } from '../SectionCard'
+import { CardLink, SectionCard } from '../../../../components/workspace/SectionCard'
 
 const TONES = {
   amber: { box: 'border-amber-200 bg-amber-50', badge: 'border-amber-200 bg-amber-50 text-amber-800' },
