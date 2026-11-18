@@ -86,6 +86,17 @@ model User {
   requestedRefunds      Refund[]               @relation("RefundRequestedBy")
   statementImports      StatementImport[]      @relation("StatementImportedBy")
   ownedReconExceptions  ReconException[]       @relation("ReconExceptionOwner")
+  stockMovements        StockMovement[]        @relation("StockMovementActor")
+  inventoryEvents       InventoryEvent[]       @relation("InventoryEventActor")
+  stockRequests         StockRequest[]         @relation("StockRequestedBy")
+  createdTransfers      StockTransfer[]        @relation("TransferCreatedBy")
+  createdPurchaseOrders PurchaseOrder[]        @relation("PurchaseOrderCreatedBy")
+  goodsReceipts         GoodsReceipt[]         @relation("GoodsReceivedBy")
+  recordedAdjustments   StockAdjustment[]      @relation("AdjustmentRecordedBy")
+  decidedAdjustments    StockAdjustment[]      @relation("AdjustmentDecidedBy")
+  dispenses             Dispense[]             @relation("DispensedBy")
+  assignedCases         PharmacyCase[]         @relation("CaseAssignee")
+  reportedCases         PharmacyCase[]         @relation("CaseReportedBy")
 
   @@map("users")
 }
@@ -190,6 +201,20 @@ model Organisation {
   statementLines   StatementLine[]
   reconExceptions  ReconException[]
 
+  stockItems       StockItem[]
+  stockLocations   StockLocation[]
+  suppliers        Supplier[]
+  stockBatches     StockBatch[]
+  stockMovements   StockMovement[]
+  inventoryEvents  InventoryEvent[]
+  stockRequests    StockRequest[]
+  stockTransfers   StockTransfer[]
+  purchaseOrders   PurchaseOrder[]
+  goodsReceipts    GoodsReceipt[]
+  stockAdjustments StockAdjustment[]
+  dispenses        Dispense[]
+  pharmacyCases    PharmacyCase[]
+
   @@map("organisations")
 }
 
@@ -214,22 +239,23 @@ model Branch {
   createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organisation  Organisation               @relation(fields: [orgId], references: [id])
-  roleBranches  RoleBranch[]
-  patients      Patient[]
-  availability  PractitionerAvailability[]
-  appointments  Appointment[]
-  staff         StaffBranch[]
-  attendance    AttendanceRecord[]
-  leaves        StaffLeave[]
-  encounters    Encounter[]
-  prescriptions Prescription[]
-  orders        DiagnosticOrder[]
-  incidents     Incident[]
-  servicePrices BillingServicePrice[]
-  charges       Charge[]
-  invoices      Invoice[]
-  payments      Payment[]
+  organisation   Organisation               @relation(fields: [orgId], references: [id])
+  roleBranches   RoleBranch[]
+  patients       Patient[]
+  availability   PractitionerAvailability[]
+  appointments   Appointment[]
+  staff          StaffBranch[]
+  attendance     AttendanceRecord[]
+  leaves         StaffLeave[]
+  encounters     Encounter[]
+  prescriptions  Prescription[]
+  orders         DiagnosticOrder[]
+  incidents      Incident[]
+  servicePrices  BillingServicePrice[]
+  charges        Charge[]
+  invoices       Invoice[]
+  payments       Payment[]
+  stockLocations StockLocation[]
 
   @@unique([orgId, code])
   @@map("branches")
@@ -1102,6 +1128,7 @@ model Prescription {
   createdBy    User                @relation("PrescriptionCreatedBy", fields: [createdById], references: [id])
   items        PrescriptionItem[]
   events       PrescriptionEvent[]
+  dispenses    Dispense[]
 
   @@unique([orgId, reference])
   @@index([orgId, patientId, createdAt])
@@ -1854,4 +1881,560 @@ model ReconException {
   @@unique([orgId, reference])
   @@index([orgId, status])
   @@map("reconciliation_exceptions")
+}
+
+// ─── Inventory & pharmacy ────────────────────────────────────────────────────
+
+enum StockLocationKind {
+  store
+  pharmacy
+
+  @@map("stock_location_kind")
+}
+
+enum StockRequestStatus {
+  draft
+  submitted
+  approved
+  partially_approved
+  dispatched
+  partially_fulfilled
+  fulfilled
+  rejected
+  cancelled
+
+  @@map("stock_request_status")
+}
+
+enum TransferStatus {
+  draft
+  ready
+  in_transit
+  received
+  cancelled
+
+  @@map("transfer_status")
+}
+
+enum GoodsReceiptStatus {
+  draft
+  reconciliation_required
+  ready_to_post
+  posted
+
+  @@map("goods_receipt_status")
+}
+
+enum AdjustmentStatus {
+  draft
+  posted
+  rejected
+
+  @@map("adjustment_status")
+}
+
+enum PharmacyCaseStatus {
+  draft
+  awaiting_review
+  resolved
+  rejected
+
+  @@map("pharmacy_case_status")
+}
+
+// The item master: everything the organisation stocks, with its replenishment levels.
+model StockItem {
+  id                  String   @id @default(uuid(7)) @db.Uuid
+  orgId               String   @map("org_id") @db.Uuid
+  code                String   @db.VarChar(40)
+  name                String   @db.VarChar(160)
+  category            String   @db.VarChar(60)
+  unit                String   @db.VarChar(30)
+  unitPlural          String   @map("unit_plural") @db.VarChar(30)
+  dosageForm          String?  @map("dosage_form") @db.VarChar(80)
+  brand               String?  @db.VarChar(160)
+  pack                String?  @db.VarChar(80)
+  storage             String?  @db.VarChar(120)
+  // Drug schedule (H, H1, X) when the item is a scheduled medicine.
+  schedule            String?  @db.VarChar(4)
+  // Links the item to the prescribing catalogue, so a prescription line can be dispensed from it.
+  medicineCode        String?  @map("medicine_code") @db.VarChar(60)
+  strength            String?  @db.VarChar(40)
+  unitPrice           Decimal  @default(0) @map("unit_price") @db.Decimal(12, 2)
+  safetyLevel         Int      @default(0) @map("safety_level")
+  reorderLevel        Int      @default(0) @map("reorder_level")
+  targetLevel         Int      @default(0) @map("target_level")
+  preferredSupplierId String?  @map("preferred_supplier_id") @db.Uuid
+  active              Boolean  @default(true)
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version             Int      @default(1)
+
+  organisation      Organisation        @relation(fields: [orgId], references: [id])
+  preferredSupplier Supplier?           @relation("PreferredSupplier", fields: [preferredSupplierId], references: [id])
+  suppliers         StockItemSupplier[]
+  batches           StockBatch[]
+  movements         StockMovement[]
+  requestLines      StockRequestLine[]
+  transferLines     StockTransferLine[]
+  orderLines        PurchaseOrderLine[]
+  receiptLines      GoodsReceiptLine[]
+  adjustments       StockAdjustment[]
+  dispenseLines     DispenseLine[]
+  cases             PharmacyCase[]
+
+  @@unique([orgId, code])
+  @@index([orgId, medicineCode])
+  @@map("stock_items")
+}
+
+// A store or pharmacy at a branch, where stock is held.
+model StockLocation {
+  id        String            @id @default(uuid(7)) @db.Uuid
+  orgId     String            @map("org_id") @db.Uuid
+  branchId  String            @map("branch_id") @db.Uuid
+  code      String            @db.VarChar(20)
+  name      String            @db.VarChar(120)
+  detail    String            @default("") @db.VarChar(160)
+  kind      StockLocationKind
+  active    Boolean           @default(true)
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation  Organisation    @relation(fields: [orgId], references: [id])
+  branch        Branch          @relation(fields: [branchId], references: [id])
+  batches       StockBatch[]
+  movements     StockMovement[]
+  requests      StockRequest[]
+  transfersFrom StockTransfer[] @relation("TransferFrom")
+  transfersTo   StockTransfer[] @relation("TransferTo")
+  orders        PurchaseOrder[]
+  receipts      GoodsReceipt[]
+  dispenses     Dispense[]
+
+  @@unique([orgId, code])
+  @@map("stock_locations")
+}
+
+model Supplier {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  code         String?  @db.VarChar(20)
+  name         String   @db.VarChar(160)
+  contact      String   @default("") @db.VarChar(120)
+  phone        String   @default("") @db.VarChar(30)
+  email        String   @default("") @db.VarChar(254)
+  categories   String[] @db.VarChar(40)
+  address      String   @default("") @db.VarChar(240)
+  city         String   @default("") @db.VarChar(80)
+  state        String   @default("") @db.VarChar(80)
+  postal       String   @default("") @db.VarChar(12)
+  country      String   @default("") @db.VarChar(80)
+  gstin        String   @default("") @db.VarChar(15)
+  registration String   @default("") @db.VarChar(80)
+  terms        String   @default("") @db.VarChar(40)
+  notes        String   @default("") @db.VarChar(1000)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  version      Int      @default(1)
+
+  organisation Organisation        @relation(fields: [orgId], references: [id])
+  items        StockItemSupplier[]
+  preferredFor StockItem[]         @relation("PreferredSupplier")
+  orders       PurchaseOrder[]
+  receipts     GoodsReceipt[]
+
+  @@unique([orgId, name])
+  @@map("suppliers")
+}
+
+model StockItemSupplier {
+  itemId     String @map("item_id") @db.Uuid
+  supplierId String @map("supplier_id") @db.Uuid
+
+  item     StockItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  supplier Supplier  @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@id([itemId, supplierId])
+  @@map("stock_item_suppliers")
+}
+
+// One batch of an item at a location. Available = posted − reserved − quarantine; expired stock is never available.
+model StockBatch {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  itemId     String   @map("item_id") @db.Uuid
+  locationId String   @map("location_id") @db.Uuid
+  batchNo    String   @map("batch_no") @db.VarChar(40)
+  expiry     DateTime @db.Date
+  posted     Int      @default(0)
+  reserved   Int      @default(0)
+  quarantine Int      @default(0)
+  bin        String   @default("") @db.VarChar(40)
+
+  organisation Organisation       @relation(fields: [orgId], references: [id])
+  item         StockItem          @relation(fields: [itemId], references: [id])
+  location     StockLocation      @relation(fields: [locationId], references: [id])
+  reservations StockReservation[]
+  movements    StockMovement[]
+
+  @@unique([itemId, locationId, batchNo])
+  @@index([orgId, locationId])
+  @@map("stock_batches")
+}
+
+// The stock ledger: every change to posted or reserved stock, with what was available afterwards.
+model StockMovement {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  orgId          String   @map("org_id") @db.Uuid
+  itemId         String   @map("item_id") @db.Uuid
+  locationId     String   @map("location_id") @db.Uuid
+  batchId        String?  @map("batch_id") @db.Uuid
+  kind           String   @db.VarChar(40)
+  reference      String   @db.VarChar(30)
+  batchLabel     String   @map("batch_label") @db.VarChar(200)
+  delta          Int
+  availableAfter Int      @map("available_after")
+  reason         String   @db.VarChar(500)
+  actorId        String?  @map("actor_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation  @relation(fields: [orgId], references: [id])
+  item         StockItem     @relation(fields: [itemId], references: [id])
+  location     StockLocation @relation(fields: [locationId], references: [id])
+  batch        StockBatch?   @relation(fields: [batchId], references: [id])
+  actor        User?         @relation("StockMovementActor", fields: [actorId], references: [id])
+
+  @@index([orgId, createdAt])
+  @@index([itemId, locationId])
+  @@map("stock_movements")
+}
+
+// History of requests, transfers, orders, receipts, adjustments, suppliers, items and cases.
+model InventoryEvent {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  entityType String   @map("entity_type") @db.VarChar(30)
+  entityId   String   @map("entity_id") @db.Uuid
+  action     String   @db.VarChar(80)
+  note       String   @default("") @db.VarChar(1000)
+  actorId    String?  @map("actor_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+  actor        User?        @relation("InventoryEventActor", fields: [actorId], references: [id])
+
+  @@index([orgId, entityType, entityId, createdAt])
+  @@map("inventory_events")
+}
+
+// A pharmacy's request for stock from the central store.
+model StockRequest {
+  id            String             @id @default(uuid(7)) @db.Uuid
+  orgId         String             @map("org_id") @db.Uuid
+  reference     String             @db.VarChar(20)
+  locationId    String             @map("location_id") @db.Uuid
+  priority      String             @db.VarChar(20)
+  requiredBy    DateTime?          @map("required_by") @db.Date
+  reason        String             @db.VarChar(120)
+  notes         String             @default("") @db.VarChar(1000)
+  status        StockRequestStatus @default(draft)
+  decision      String?            @db.VarChar(40)
+  decisionNote  String?            @map("decision_note") @db.VarChar(1000)
+  requestedById String             @map("requested_by") @db.Uuid
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  version       Int                @default(1)
+
+  organisation Organisation       @relation(fields: [orgId], references: [id])
+  location     StockLocation      @relation(fields: [locationId], references: [id])
+  requestedBy  User               @relation("StockRequestedBy", fields: [requestedById], references: [id])
+  lines        StockRequestLine[]
+  transfers    StockTransfer[]
+
+  @@unique([orgId, reference])
+  @@map("stock_requests")
+}
+
+model StockRequestLine {
+  id        String @id @default(uuid(7)) @db.Uuid
+  requestId String @map("request_id") @db.Uuid
+  itemId    String @map("item_id") @db.Uuid
+  requested Int
+  approved  Int    @default(0)
+  issued    Int    @default(0)
+  received  Int    @default(0)
+
+  request      StockRequest       @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  item         StockItem          @relation(fields: [itemId], references: [id])
+  reservations StockReservation[]
+
+  @@unique([requestId, itemId])
+  @@map("stock_request_lines")
+}
+
+// Stock held at the central store for an approved request line until it is dispatched.
+model StockReservation {
+  id            String  @id @default(uuid(7)) @db.Uuid
+  requestLineId String  @map("request_line_id") @db.Uuid
+  batchId       String  @map("batch_id") @db.Uuid
+  qty           Int
+  // Set once the reservation has been moved onto a transfer.
+  transferId    String? @map("transfer_id") @db.Uuid
+
+  requestLine StockRequestLine @relation(fields: [requestLineId], references: [id], onDelete: Cascade)
+  batch       StockBatch       @relation(fields: [batchId], references: [id])
+  transfer    StockTransfer?   @relation(fields: [transferId], references: [id])
+
+  @@map("stock_reservations")
+}
+
+model StockTransfer {
+  id             String         @id @default(uuid(7)) @db.Uuid
+  orgId          String         @map("org_id") @db.Uuid
+  reference      String         @db.VarChar(20)
+  requestId      String?        @map("request_id") @db.Uuid
+  fromLocationId String         @map("from_location_id") @db.Uuid
+  toLocationId   String         @map("to_location_id") @db.Uuid
+  status         TransferStatus @default(draft)
+  reason         String         @db.VarChar(120)
+  notes          String         @default("") @db.VarChar(1000)
+  plannedOn      DateTime?      @map("planned_on") @db.Date
+  createdById    String         @map("created_by") @db.Uuid
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  dispatchedAt   DateTime?      @map("dispatched_at") @db.Timestamptz(6)
+  receivedAt     DateTime?      @map("received_at") @db.Timestamptz(6)
+  version        Int            @default(1)
+
+  organisation Organisation        @relation(fields: [orgId], references: [id])
+  request      StockRequest?       @relation(fields: [requestId], references: [id])
+  from         StockLocation       @relation("TransferFrom", fields: [fromLocationId], references: [id])
+  to           StockLocation       @relation("TransferTo", fields: [toLocationId], references: [id])
+  createdBy    User                @relation("TransferCreatedBy", fields: [createdById], references: [id])
+  lines        StockTransferLine[]
+  reservations StockReservation[]
+
+  @@unique([orgId, reference])
+  @@map("stock_transfers")
+}
+
+model StockTransferLine {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  transferId String   @map("transfer_id") @db.Uuid
+  itemId     String   @map("item_id") @db.Uuid
+  batchId    String   @map("batch_id") @db.Uuid
+  batchNo    String   @map("batch_no") @db.VarChar(40)
+  expiry     DateTime @db.Date
+  qty        Int
+  received   Int      @default(0)
+
+  transfer StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  item     StockItem     @relation(fields: [itemId], references: [id])
+
+  @@map("stock_transfer_lines")
+}
+
+model PurchaseOrder {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  orgId       String    @map("org_id") @db.Uuid
+  reference   String    @db.VarChar(20)
+  supplierId  String    @map("supplier_id") @db.Uuid
+  storeId     String    @map("store_id") @db.Uuid
+  orderedOn   DateTime  @map("ordered_on") @db.Date
+  expectedOn  DateTime? @map("expected_on") @db.Date
+  supplierRef String    @default("") @map("supplier_ref") @db.VarChar(80)
+  terms       String    @default("") @db.VarChar(40)
+  notes       String    @default("") @db.VarChar(1000)
+  draft       Boolean   @default(false)
+  closed      Boolean   @default(false)
+  createdById String    @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation        @relation(fields: [orgId], references: [id])
+  supplier     Supplier            @relation(fields: [supplierId], references: [id])
+  store        StockLocation       @relation(fields: [storeId], references: [id])
+  createdBy    User                @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id])
+  lines        PurchaseOrderLine[]
+  receipts     GoodsReceipt[]
+
+  @@unique([orgId, reference])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderLine {
+  id      String  @id @default(uuid(7)) @db.Uuid
+  orderId String  @map("order_id") @db.Uuid
+  itemId  String  @map("item_id") @db.Uuid
+  ordered Int
+  rate    Decimal @db.Decimal(12, 2)
+
+  order PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  item  StockItem     @relation(fields: [itemId], references: [id])
+
+  @@unique([orderId, itemId])
+  @@map("purchase_order_lines")
+}
+
+// A delivery counted at a store (GRN). Accepted batches are added to stock when it is posted.
+model GoodsReceipt {
+  id           String             @id @default(uuid(7)) @db.Uuid
+  orgId        String             @map("org_id") @db.Uuid
+  reference    String             @db.VarChar(20)
+  orderId      String?            @map("order_id") @db.Uuid
+  supplierId   String             @map("supplier_id") @db.Uuid
+  storeId      String             @map("store_id") @db.Uuid
+  challan      String             @default("") @db.VarChar(80)
+  invoice      String             @default("") @db.VarChar(80)
+  bay          String             @default("") @db.VarChar(40)
+  verified     Boolean            @default(false)
+  attachments  Int                @default(0)
+  status       GoodsReceiptStatus @default(draft)
+  receivedById String             @map("received_by") @db.Uuid
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  postedAt     DateTime?          @map("posted_at") @db.Timestamptz(6)
+  version      Int                @default(1)
+
+  organisation  Organisation         @relation(fields: [orgId], references: [id])
+  order         PurchaseOrder?       @relation(fields: [orderId], references: [id])
+  supplier      Supplier             @relation(fields: [supplierId], references: [id])
+  store         StockLocation        @relation(fields: [storeId], references: [id])
+  receivedBy    User                 @relation("GoodsReceivedBy", fields: [receivedById], references: [id])
+  lines         GoodsReceiptLine[]
+  discrepancies ReceiptDiscrepancy[]
+
+  @@unique([orgId, reference])
+  @@map("goods_receipts")
+}
+
+model GoodsReceiptLine {
+  id        String @id @default(uuid(7)) @db.Uuid
+  receiptId String @map("receipt_id") @db.Uuid
+  itemId    String @map("item_id") @db.Uuid
+  ordered   Int    @default(0)
+  received  Int
+  rejected  Int    @default(0)
+  // Accepted units by batch: [{ batchNo, expiry, qty, bin }].
+  batches   Json
+
+  receipt GoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  item    StockItem    @relation(fields: [itemId], references: [id])
+
+  @@map("goods_receipt_lines")
+}
+
+model ReceiptDiscrepancy {
+  id         String  @id @default(uuid(7)) @db.Uuid
+  receiptId  String  @map("receipt_id") @db.Uuid
+  reference  String  @db.VarChar(20)
+  kind       String  @db.VarChar(60)
+  qty        Int
+  // Unresolved, Documented or Resolved.
+  state      String  @db.VarChar(20)
+  note       String  @default("") @db.VarChar(1000)
+  resolution String? @db.VarChar(120)
+
+  receipt GoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+
+  @@map("receipt_discrepancies")
+}
+
+model StockAdjustment {
+  id           String           @id @default(uuid(7)) @db.Uuid
+  orgId        String           @map("org_id") @db.Uuid
+  reference    String           @db.VarChar(20)
+  itemId       String           @map("item_id") @db.Uuid
+  batchId      String           @map("batch_id") @db.Uuid
+  proposed     Int
+  reason       String           @db.VarChar(200)
+  evidence     String           @db.VarChar(300)
+  status       AdjustmentStatus @default(draft)
+  recordedById String           @map("recorded_by") @db.Uuid
+  decidedById  String?          @map("decided_by") @db.Uuid
+  decidedAt    DateTime?        @map("decided_at") @db.Timestamptz(6)
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  version      Int              @default(1)
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+  item         StockItem    @relation(fields: [itemId], references: [id])
+  recordedBy   User         @relation("AdjustmentRecordedBy", fields: [recordedById], references: [id])
+  decidedBy    User?        @relation("AdjustmentDecidedBy", fields: [decidedById], references: [id])
+
+  @@unique([orgId, reference])
+  @@map("stock_adjustments")
+}
+
+// Medicine handed over against a prescription, batch by batch.
+model Dispense {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  orgId             String   @map("org_id") @db.Uuid
+  reference         String   @db.VarChar(20)
+  prescriptionId    String   @map("prescription_id") @db.Uuid
+  locationId        String   @map("location_id") @db.Uuid
+  registerConfirmed Boolean  @default(false) @map("register_confirmed")
+  consentConfirmed  Boolean  @default(false) @map("consent_confirmed")
+  dispensedById     String   @map("dispensed_by") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation   @relation(fields: [orgId], references: [id])
+  prescription Prescription   @relation(fields: [prescriptionId], references: [id])
+  location     StockLocation  @relation(fields: [locationId], references: [id])
+  dispensedBy  User           @relation("DispensedBy", fields: [dispensedById], references: [id])
+  lines        DispenseLine[]
+
+  @@unique([orgId, reference])
+  @@index([prescriptionId])
+  @@map("dispenses")
+}
+
+model DispenseLine {
+  id                 String   @id @default(uuid(7)) @db.Uuid
+  dispenseId         String   @map("dispense_id") @db.Uuid
+  prescriptionItemId String   @map("prescription_item_id") @db.Uuid
+  itemId             String   @map("item_id") @db.Uuid
+  batchId            String   @map("batch_id") @db.Uuid
+  batchNo            String   @map("batch_no") @db.VarChar(40)
+  expiry             DateTime @db.Date
+  bin                String   @default("") @db.VarChar(40)
+  qty                Int
+  unitPrice          Decimal  @map("unit_price") @db.Decimal(12, 2)
+
+  dispense Dispense  @relation(fields: [dispenseId], references: [id], onDelete: Cascade)
+  item     StockItem @relation(fields: [itemId], references: [id])
+
+  @@index([prescriptionItemId])
+  @@map("dispense_lines")
+}
+
+// A medicine return or a stock discrepancy reported by the pharmacy, reviewed to a decision.
+model PharmacyCase {
+  id           String             @id @default(uuid(7)) @db.Uuid
+  orgId        String             @map("org_id") @db.Uuid
+  reference    String             @db.VarChar(20)
+  // Return or Discrepancy.
+  type         String             @db.VarChar(20)
+  subtype      String             @db.VarChar(60)
+  itemId       String             @map("item_id") @db.Uuid
+  batchId      String?            @map("batch_id") @db.Uuid
+  qty          Int
+  origin       String             @db.VarChar(120)
+  originNote   String             @default("") @map("origin_note") @db.VarChar(160)
+  reason       String             @db.VarChar(120)
+  reasonNote   String             @default("") @map("reason_note") @db.VarChar(160)
+  location     String             @db.VarChar(120)
+  expected     Int?
+  observed     Int?
+  notes        String             @default("") @db.VarChar(2000)
+  evidence     Int                @default(0)
+  status       PharmacyCaseStatus @default(awaiting_review)
+  statusNote   String             @default("") @map("status_note") @db.VarChar(200)
+  assigneeId   String?            @map("assignee_id") @db.Uuid
+  reportedById String             @map("reported_by") @db.Uuid
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  version      Int                @default(1)
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+  item         StockItem    @relation(fields: [itemId], references: [id])
+  assignee     User?        @relation("CaseAssignee", fields: [assigneeId], references: [id])
+  reportedBy   User         @relation("CaseReportedBy", fields: [reportedById], references: [id])
+
+  @@unique([orgId, reference])
+  @@map("pharmacy_cases")
 }

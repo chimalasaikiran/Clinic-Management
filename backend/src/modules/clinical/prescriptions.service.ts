@@ -24,8 +24,10 @@ export class PrescriptionsService {
     private readonly audit: AuditService,
   ) {}
 
-  view = (row: PrescriptionRow) => ({
+  view = ({ dispenses, ...row }: PrescriptionRow) => ({
     ...row,
+    // Units handed out so far for each line, from every dispensing at a pharmacy.
+    items: row.items.map((item) => ({ ...item, dispensed: dispenses.flatMap((dispense) => dispense.lines).filter((line) => line.prescriptionItemId === item.id).reduce((sum, line) => sum + line.qty, 0) })),
     encounter: undefined,
     encounterReference: row.encounter?.reference ?? null,
     created: this.clinical.stamp(row.createdAt),

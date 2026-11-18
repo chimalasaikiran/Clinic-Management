@@ -74,7 +74,10 @@ export async function stopApp(ctx: TestContext) {
 
 export async function resetState(ctx: TestContext) {
   await ctx.prisma.$executeRaw`
-    truncate table reconciliation_exceptions, statement_lines, statement_imports, payment_allocations, refunds, payments,
+    truncate table dispense_lines, dispenses, pharmacy_cases, stock_adjustments, receipt_discrepancies, goods_receipt_lines, goods_receipts,
+      purchase_order_lines, purchase_orders, stock_reservations, stock_transfer_lines, stock_transfers, stock_request_lines, stock_requests,
+      inventory_events, stock_movements, stock_batches, stock_item_suppliers, stock_items, suppliers, stock_locations,
+      reconciliation_exceptions, statement_lines, statement_imports, payment_allocations, refunds, payments,
       invoice_lines, charges, invoices, billing_service_prices, billing_services, billing_settings, finance_events,
       incidents, care_plan_reviews, care_plan_interventions, care_plan_goals, care_plans, referral_events, referrals,
       order_events, diagnostic_order_items, diagnostic_orders, prescription_events, prescription_items, prescriptions,

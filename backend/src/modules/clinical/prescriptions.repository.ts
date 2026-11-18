@@ -22,6 +22,7 @@ export const prescriptionSelect = {
   branch: { select: { id: true, name: true } },
   items: { orderBy: { position: 'asc' }, omit: { prescriptionId: true } },
   events: { orderBy: { createdAt: 'desc' }, select: { id: true, action: true, note: true, createdAt: true, actor: person } },
+  dispenses: { select: { lines: { select: { prescriptionItemId: true, qty: true } } } },
 } satisfies Prisma.PrescriptionSelect
 
 export type PrescriptionRow = Prisma.PrescriptionGetPayload<{ select: typeof prescriptionSelect }>

@@ -226,6 +226,28 @@ CHECK constraints keep amounts positive, totals consistent (`total = gross − d
 after the invoice date, a charge linked to an invoice exactly when invoiced, and a refund's decision, completion
 and bank / gateway reference in step with its status.
 
+`prisma/migrations/20261118120000_inventory_pharmacy` adds:
+
+| Table | Holds |
+| --- | --- |
+| `stock_items`, `stock_item_suppliers` | the item master: code, category, units, safety / reorder / maximum levels, unit price, schedule, the medicine code and strength used to match prescriptions, and approved suppliers |
+| `stock_locations` | stores and pharmacies, each in one branch |
+| `suppliers` | supplier master data, with an active flag |
+| `stock_batches` | stock per item, location and batch: posted, reserved and quarantined units, expiry, bin |
+| `stock_movements` | the append-only stock ledger: every receipt, transfer, dispense, adjustment and restock, with the available quantity after it |
+| `stock_requests`, `stock_request_lines`, `stock_reservations` | replenishment requests from a pharmacy, the approved quantities, and the store batches reserved for them |
+| `stock_transfers`, `stock_transfer_lines` | stock moving between locations: ready → in transit → received (or cancelled) |
+| `purchase_orders`, `purchase_order_lines` | orders to suppliers |
+| `goods_receipts`, `goods_receipt_lines`, `receipt_discrepancies` | goods received against an order, the batches accepted, and short / damaged deliveries worked to a resolution |
+| `stock_adjustments` | count corrections: draft → posted (or rejected) |
+| `dispenses`, `dispense_lines` | each dispensing against a prescription, with the batch and unit price of every line |
+| `pharmacy_cases` | returns and discrepancies reported at a pharmacy, and their decision |
+| `inventory_events` | the activity history of suppliers, requests, transfers, orders, receipts, adjustments and cases |
+
+CHECK constraints keep stock quantities, levels and prices non-negative, reserved plus quarantined units within the
+posted units, a transfer between two different locations, received quantities within those sent or ordered, and an
+adjustment's decision time in step with its status.
+
 The database itself refuses double booking. Two exclusion constraints (using the `btree_gist` extension) reject an
 open appointment (`pending`, `confirmed`, `arrived`, `in_progress`) that overlaps another open appointment with the
 same therapist, or with the same patient. Another rejects overlapping weekly windows for one therapist. CHECK
@@ -518,6 +540,42 @@ and 1 MB. Lines already imported from the same source are skipped. Each new line
 transaction reference (in the reference or the narration) and amount → matched; same reference, different amount →
 "Amount mismatch" exception; already matched elsewhere → "Duplicate source line"; no reference but exactly one
 unmatched non-cash payment of that amount on that day → a suggestion to confirm; otherwise "Missing ClinicOS record".
+
+### Inventory & pharmacy (`/v1/inventory`, `/v1/pharmacy`)
+
+`inventory.view` or `pharmacy.view` reads; `inventory.manage` runs the stores; `pharmacy.dispense` dispenses and
+works the pharmacy. A branch-scoped role only acts on locations in its branches. Every change that can race takes a
+`version` and returns `409` if the record changed in the meantime.
+
+| Method & path | Access | Body / rules |
+| --- | --- | --- |
+| `GET /inventory/state` | `inventory.view` or `pharmacy.view` | branches, locations, items, suppliers, batches, the newest 1,000 movements, requests (with reserved batches), transfers, orders, receipts, adjustments, cases, members, and (with a pharmacy permission) the dispensing queue |
+| `POST /inventory/items`, `PATCH /inventory/items/:id` | `inventory.manage` | code (unique), name, category, units, levels, unit price, schedule, `medicineCode` + `strength`, suppliers |
+| `POST /inventory/locations`, `PUT /inventory/locations/:id/active` | `inventory.manage` | code, name, kind (`store`, `pharmacy`), branch |
+| `POST /inventory/suppliers`, `PATCH /inventory/suppliers/:id`, `PUT /inventory/suppliers/:id/active` | `inventory.manage` | supplier details; deactivating needs a reason |
+| `POST /inventory/requests`, `PATCH /inventory/requests/:id`, `POST /inventory/requests/:id/cancel` | `inventory.manage` or `pharmacy.dispense` | location, priority, required-by date, reason, `lines[]` |
+| `POST /inventory/requests/:id/review` | `inventory.manage` | approve (in full or part) or reject; approving reserves store batches, earliest expiry first |
+| `POST /inventory/requests/:id/transfer` | `inventory.manage` | moves the reserved batches onto a transfer |
+| `POST /inventory/transfers`, `PATCH /inventory/transfers/:id`, `/dispatch`, `/cancel` | `inventory.manage` | from / to location (different), `lines[]` by batch; dispatching takes the stock out of the source |
+| `POST /inventory/transfers/:id/receive` | `inventory.manage` or `pharmacy.dispense` | `received[]` per line; stock is posted at the destination |
+| `POST /inventory/orders` | `inventory.manage` | supplier, store, expected date, `lines[]` (one per item) |
+| `POST /inventory/receipts`, `PUT /inventory/receipts/:id` | `inventory.manage` | `mode` (`draft`, `record`, `post`); outside a draft, batch quantities must add up to the accepted units |
+| `POST /inventory/receipts/:id/resolve`, `/post` | `inventory.manage` | a receipt with unresolved discrepancies cannot be posted; the order closes when fully received or closed as short |
+| `POST /inventory/adjustments`, `PUT /inventory/adjustments/:id` | `inventory.manage` | `mode` (`draft`, `post`, `reject`), batch, non-zero change, reason, evidence; a change cannot take a batch below its reserved and quarantined units |
+| `POST /pharmacy/prescriptions/:id/dispense` | `pharmacy.dispense` | pharmacy location, `quantities` by prescription item, `registerConfirmed`, `consentConfirmed` |
+| `POST /pharmacy/cases`, `POST /pharmacy/cases/:id/decide` | `pharmacy.dispense` (decide also `inventory.manage`) | report a return or discrepancy; decide `restock`, `reject` or `resolve` (optionally with an adjustment) |
+
+Dispensing rules:
+
+- **Matching.** A prescription line is matched to the active stock item with the same `medicineCode` and `strength`.
+  A line with no match cannot be dispensed until the item master has one.
+- **Safety.** The prescription is locked first, so two pharmacists cannot dispense it twice. A medicine whose drug
+  class is in the patient's recorded allergies is refused. A Schedule H1 medicine needs `registerConfirmed` and
+  `consentConfirmed`.
+- **Stock.** Units come from the pharmacy's batches, earliest expiry first; expired, reserved and quarantined units
+  are never used. The prescription is completed when nothing remains to dispense.
+- **Numbering.** SR-, TR-, PO-, GRN-, DSC-, ADJ-, DSP- and RET- / DIS- numbers come from per-organisation,
+  gap-free counters.
 
 ### Health (no version prefix)
 
