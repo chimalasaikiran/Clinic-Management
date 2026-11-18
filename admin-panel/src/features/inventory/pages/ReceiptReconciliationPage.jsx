@@ -49,16 +49,17 @@ export default function ReceiptReconciliationPage() {
   const reconciled = sum('received') === sum('accepted') + sum('rejected')
   const rejectedDocumented = receipt.discrepancies.filter((entry) => entry.kind === 'Damaged packs').every((entry) => entry.state !== 'Unresolved')
 
-  const record = () => {
+  const record = async () => {
     setSubmitted(true)
     if (Object.keys(validateResolution(values)).length) return
-    run('receipt/resolve', { id: receipt.id, discrepancyId: first.id, disposition: values.disposition, note: values.note.trim() })
+    const outcome = await run('receipt/resolve', { id: receipt.id, discrepancyId: first.id, disposition: values.disposition, note: values.note.trim() })
+    if (outcome.error) return
     setSubmitted(false)
     setValues({ disposition: DISCREPANCY_RESOLUTIONS[0], note: '' })
   }
 
-  const post = () => {
-    const outcome = run('receipt/post', { id: receipt.id })
+  const post = async () => {
+    const outcome = await run('receipt/post', { id: receipt.id })
     setPostError(outcome.error ?? '')
   }
 

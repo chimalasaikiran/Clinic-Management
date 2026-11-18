@@ -4,12 +4,6 @@ export const RETURN_SOURCES = ['Patient return', 'Unused ward stock']
 export const RETURN_REASONS = ['Therapy changed', 'Dose changed', 'Adverse reaction', 'Wrong item dispensed', 'Unused ward stock']
 export const PACKAGING_CONDITIONS = ['Unopened strips', 'Opened packaging', 'Seal compromised', 'Sealed · verified']
 export const DISCREPANCY_CATEGORIES = ['Shortage', 'Damaged stock', 'Batch mismatch', 'Excess stock']
-export const RECEIVING_LOCATIONS = ['OP Pharmacy', 'Main Pharmacy', 'ER Pharmacy', 'Central Stores']
-export const REVIEWERS = [
-  { value: 'R. Pillai', label: 'R. Pillai · Pharmacist', role: 'Pharmacist' },
-  { value: 'A. Nair', label: 'A. Nair · Store lead', role: 'Store lead' },
-  { value: 'S. Das', label: 'S. Das · Pharmacist', role: 'Pharmacist' },
-]
 
 // What a patient-return prescription reference proves: the quantity of that medicine already dispensed on it.
 export function dispensedOn(rxQueue, rxId, itemId) {

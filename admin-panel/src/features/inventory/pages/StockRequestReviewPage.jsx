@@ -9,7 +9,7 @@ import { TextArea } from '../../patients/components/parts'
 import DetailFrame, { MissingRecord } from '../components/DetailFrame'
 import { FactGrid, Pill, Section } from '../components/shared'
 import { REF_CLASS } from '../components/tones'
-import { locationName, REQUEST_STATUS_TONE } from '../constants'
+import { centralId, locationName, REQUEST_STATUS_TONE } from '../constants'
 import { useStock } from '../context/useStock'
 import { itemById } from '../data/items'
 import { formatDate, qty, shortDateTime } from '../format'
@@ -50,7 +50,7 @@ export default function StockRequestReviewPage() {
   const [submitted, setSubmitted] = useState(false)
   if (!request || request.status === 'Draft') return <MissingRecord what="stock request" backTo={ROUTES.inventoryRequests} backLabel="Back to stock requests" />
 
-  const availability = Object.fromEntries(request.lines.map((line) => [line.itemId, summarise(state.batches, line.itemId, 'central').available]))
+  const availability = Object.fromEntries(request.lines.map((line) => [line.itemId, summarise(state.batches, line.itemId, centralId()).available]))
   const open = request.lines.map((line) => ({ ...line, open: line.requested - line.approved }))
   const reviewing = request.status === 'Submitted' || (request.status === 'Partially approved' && open.some((line) => line.open > 0))
   const fullyAvailable = open.every((line) => line.open <= availability[line.itemId])
@@ -63,24 +63,26 @@ export default function StockRequestReviewPage() {
   const errors = submitted ? validateReview(values, open.map((line) => ({ ...line, requested: line.requested, approved: line.approved })), availability) : {}
   if (chosen === 'Approve in full' && !fullyAvailable && submitted) errors.decision = 'Not enough stock to approve in full.'
 
-  const plan = open.map((line) => ({ line, plan: fefoPlan(state.batches, line.itemId, 'central', Number(amounts[line.itemId]) || 0) }))
+  const plan = open.map((line) => ({ line, plan: fefoPlan(state.batches, line.itemId, centralId(), Number(amounts[line.itemId]) || 0) }))
   const pending = unissuedPicks(request, state.transfers)
   const stage = chainStage(request, state.transfers)
   const proposed = open.reduce((sum, line) => sum + (Number(amounts[line.itemId]) || 0), 0)
   const unit = itemById(request.lines[0].itemId).unitPlural
 
-  const confirm = () => {
+  const confirm = async () => {
     setSubmitted(true)
     if (chosen === 'Approve in full' && !fullyAvailable) return
     if (Object.keys(validateReview(values, open, availability)).length) return
-    run('request/review', { id: request.id, decision: chosen, approveNow: amounts, reason: reason.trim() })
+    const outcome = await run('request/review', { id: request.id, decision: chosen, approveNow: amounts, reason: reason.trim() })
+    if (outcome.error) return
     setSubmitted(false)
     setDecision('')
     setReason('')
   }
 
-  const issue = () => {
-    const created = run('transfer/save', { from: 'central', to: request.pharmacy, mode: 'create', requestId: request.id, alreadyReserved: true, reason: 'Routine replenishment', notes: `Issue for ${request.id}`, lines: pending })
+  const issue = async () => {
+    const created = await run('transfer/save', { from: centralId(), to: request.pharmacy, mode: 'create', requestId: request.id, alreadyReserved: true, reason: 'Routine replenishment', notes: `Issue for ${request.id}`, lines: pending })
+    if (created.error) return
     navigate(`${ROUTES.stockTransfers}?transfer=${created.id}`)
   }
 

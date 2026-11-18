@@ -35,18 +35,20 @@ export default function SupplierFormPage() {
   const detail = editing ? pathFor(ROUTES.supplier, { supplierId: editing.id }) : ROUTES.suppliers
   const hasTransactions = editing && (state.orders.some((order) => order.supplierId === editing.id) || state.receipts.some((receipt) => receipt.supplierId === editing.id))
 
-  const save = () => {
+  const save = async () => {
     setSubmitted(true)
     if (Object.keys(validateSupplier(values, state.suppliers, editing?.id)).length) return
     const trimmed = Object.fromEntries(Object.entries(values).map(([key, value]) => [key, typeof value === 'string' ? value.trim() : value]))
-    const outcome = run('supplier/save', { ...trimmed, gstin: trimmed.gstin.toUpperCase(), id: editing?.id })
+    const outcome = await run('supplier/save', { ...trimmed, gstin: trimmed.gstin.toUpperCase(), id: editing?.id })
+    if (outcome.error) return
     navigate(pathFor(ROUTES.supplier, { supplierId: outcome.id }))
   }
 
-  const deactivate = () => {
+  const deactivate = async () => {
     setReasonSubmitted(true)
     if (Object.keys(validateDeactivation({ reason })).length) return
-    run('supplier/active', { id: editing.id, active: false, reason: reason.trim() })
+    const outcome = await run('supplier/active', { id: editing.id, active: false, reason: reason.trim() })
+    if (outcome.error) return
     navigate(detail)
   }
 

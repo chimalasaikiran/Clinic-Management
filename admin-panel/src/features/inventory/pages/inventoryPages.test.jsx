@@ -1,8 +1,8 @@
-import { act, screen, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { pathFor, ROUTES } from '../../../config/routes'
-import { renderRoute } from '../../../test/renderRoute'
+import { renderStockRoute } from '../../../test/renderRoute'
 
 const setup = () => userEvent.setup({ delay: null })
 
@@ -13,21 +13,21 @@ async function fill(user, field, text) {
 }
 
 describe('inventory workspace', () => {
-  it('lists stock on hand with statuses derived from the batches', () => {
-    renderRoute(ROUTES.inventory)
+  it('lists stock on hand with statuses derived from the batches', async () => {
+    await renderStockRoute(ROUTES.inventory)
 
     expect(screen.getByRole('heading', { name: 'Inventory' })).toBeInTheDocument()
     const table = screen.getAllByRole('table')[0]
     expect(within(table).getByText('Paracetamol 500mg')).toBeInTheDocument()
     const row = within(table).getByText('Paracetamol 500mg').closest('tr')
-    expect(within(row).getByText('1,200')).toBeInTheDocument()
+    expect(within(row).getByText('1,400')).toBeInTheDocument()
     expect(within(row).getByText('Near expiry')).toBeInTheDocument()
     expect(within(screen.getByText('Cetirizine 10mg').closest('tr')).getByText('Low stock')).toBeInTheDocument()
   })
 
   it('opens the stock list already filtered from a Needs attention link', async () => {
     const user = setup()
-    renderRoute(ROUTES.inventory)
+    await renderStockRoute(ROUTES.inventory)
 
     await user.click(screen.getAllByRole('link', { name: 'Low stock' })[0])
     const table = screen.getAllByRole('table')[0]
@@ -37,19 +37,19 @@ describe('inventory workspace', () => {
 
   it('switches between the six inventory sections', async () => {
     const user = setup()
-    renderRoute(ROUTES.inventory)
+    await renderStockRoute(ROUTES.inventory)
 
     await user.click(screen.getByRole('link', { name: 'Purchase Orders' }))
-    expect(screen.getByRole('link', { name: 'PO-261018-04' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'PO-000001' })).toBeInTheDocument()
     await user.click(screen.getByRole('link', { name: 'Adjustments' }))
-    expect(screen.getByText('ADJ-261019-02')).toBeInTheDocument()
+    expect(screen.getByText('ADJ-000001')).toBeInTheDocument()
   })
 })
 
 describe('stock request review', () => {
   it('requires a reason for a partial approval, reserves stock and then issues it through a transfer', async () => {
     const user = setup()
-    const router = renderRoute(pathFor(ROUTES.inventoryRequest, { requestId: 'SR-261020-07' }))
+    const router = await renderStockRoute(pathFor(ROUTES.inventoryRequest, { requestId: 'SR-000001' }))
 
     expect(screen.getByRole('radio', { name: /approve in full/i })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Confirm partial approval' }))
@@ -59,20 +59,20 @@ describe('stock request review', () => {
     await user.click(screen.getByRole('button', { name: 'Confirm partial approval' }))
     expect(screen.getByText('Partly approved · open balance')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Create transfer from allocation' }))
+    await user.click(await screen.findByRole('button', { name: 'Create transfer from allocation' }))
+    const tracking = await screen.findByRole('heading', { name: /tracking transfer/i })
     expect(router.state.location.pathname).toBe(ROUTES.stockTransfers)
-    const tracking = screen.getByRole('heading', { name: /tracking transfer/i })
     expect(tracking).toHaveTextContent('Ready for dispatch')
 
     await user.click(screen.getAllByRole('button', { name: 'Dispatch stock' })[0])
-    expect(screen.getByText(/Dispatched, not received/)).toBeInTheDocument()
+    expect(await screen.findByText(/Dispatched, not received/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Record receipt' }))
-    expect(screen.getByRole('heading', { name: /tracking transfer/i })).toHaveTextContent('Received')
+    await waitFor(() => expect(screen.getByRole('heading', { name: /tracking transfer/i })).toHaveTextContent('Received'))
   })
 
   it('rejects a request only with a reason', async () => {
     const user = setup()
-    renderRoute(pathFor(ROUTES.inventoryRequest, { requestId: 'SR-261020-08' }))
+    await renderStockRoute(pathFor(ROUTES.inventoryRequest, { requestId: 'SR-000003' }))
 
     await user.click(screen.getByRole('radio', { name: /reject request/i }))
     await user.click(screen.getByRole('button', { name: 'Confirm rejection' }))
@@ -86,13 +86,13 @@ describe('stock request review', () => {
 describe('receiving', () => {
   it('keeps posting blocked until the short delivery is resolved, then posts the stock', async () => {
     const user = setup()
-    renderRoute(pathFor(ROUTES.inventoryReceipt, { receiptId: 'GRN-261020-03' }))
+    await renderStockRoute(pathFor(ROUTES.inventoryReceipt, { receiptId: 'GRN-000001' }))
 
     expect(screen.getByRole('button', { name: /post accepted stock/i })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Record supplier response' }))
     expect(screen.getByText('Record the supplier response and why this disposition is appropriate.')).toBeInTheDocument()
 
-    await fill(user, screen.getByLabelText(/resolution note/i), 'Supplier will send the 20 tablets on the next delivery.')
+    await fill(user, screen.getByLabelText(/resolution note/i), 'Supplier will send the 40 tablets on the next delivery.')
     await user.click(screen.getByRole('button', { name: 'Record supplier response' }))
     const post = screen.getByRole('button', { name: /post accepted stock/i })
     expect(post).toBeEnabled()
@@ -102,47 +102,47 @@ describe('receiving', () => {
 
   it('validates a new receipt and posts a clean one against an open purchase order', async () => {
     const user = setup()
-    const router = renderRoute(ROUTES.inventoryReceiveNew)
+    const router = await renderStockRoute(ROUTES.inventoryReceiveNew)
 
     await user.click(screen.getByRole('button', { name: 'Post receipt' }))
     expect(screen.getByText('Choose the supplier.')).toBeInTheDocument()
     expect(screen.getByText('Enter the delivery note / challan number.')).toBeInTheDocument()
 
-    await user.selectOptions(screen.getByLabelText(/^supplier/i), 'SUP-0006')
-    await user.selectOptions(screen.getByLabelText(/^purchase order/i), 'PO-261019-05')
+    await user.selectOptions(screen.getByLabelText(/^supplier/i), 'sup-apex')
+    await user.selectOptions(screen.getByLabelText(/^purchase order/i), 'PO-000002')
     await fill(user, screen.getByLabelText(/delivery note/i), 'AP-4410')
-    await fill(user, screen.getByLabelText('Received now'), '1000')
+    await fill(user, screen.getByLabelText('Received now'), '500')
     await fill(user, screen.getByLabelText('Batch number 1 for Cetirizine 10mg'), 'CT26D')
     await fill(user, screen.getByLabelText('Expiry date 1 for Cetirizine 10mg'), '2028-12-31')
-    await fill(user, screen.getByLabelText('Accepted quantity 1 for Cetirizine 10mg'), '1000')
+    await fill(user, screen.getByLabelText('Accepted quantity 1 for Cetirizine 10mg'), '500')
     await user.click(screen.getByRole('checkbox', { name: /i have verified/i }))
     await user.click(screen.getByRole('button', { name: 'Post receipt' }))
 
+    expect(await screen.findByRole('button', { name: 'Posted to stock' })).toBeDisabled()
     expect(router.state.location.pathname).toMatch(/\/inventory\/receiving\/GRN-/)
-    expect(screen.getByRole('button', { name: 'Posted to stock' })).toBeDisabled()
   })
 })
 
 describe('purchase orders', () => {
   it('needs a supplier, a delivery date and an item before it can be created', async () => {
     const user = setup()
-    const router = renderRoute(ROUTES.inventoryOrderNew)
+    const router = await renderStockRoute(ROUTES.inventoryOrderNew)
 
     await user.click(screen.getByRole('button', { name: 'Create purchase order' }))
     expect(screen.getByText('Select a supplier.')).toBeInTheDocument()
     expect(screen.getByText('Choose the expected delivery date.')).toBeInTheDocument()
     expect(screen.getByText('Add at least one item to the order.')).toBeInTheDocument()
 
-    await user.selectOptions(screen.getAllByLabelText(/^supplier/i)[0], 'SUP-0018')
-    await fill(user, screen.getByLabelText(/expected delivery date/i), '2026-10-28')
+    await user.selectOptions(screen.getAllByLabelText(/^supplier/i)[0], 'sup-medline')
+    await fill(user, screen.getByLabelText(/expected delivery date/i), '2099-01-31')
     await fill(user, screen.getByLabelText('Search by item name or code'), 'Metformin 500mg')
     await user.click(screen.getByRole('button', { name: 'Add item' }))
     await fill(user, screen.getByLabelText('Quantity for Metformin 500mg'), '500')
     expect(screen.getAllByText('₹900.00').length).toBeGreaterThan(1)
     await user.click(screen.getByRole('button', { name: 'Create purchase order' }))
 
-    expect(router.state.location.pathname).toBe('/inventory/purchase-orders/PO-261020-01')
-    expect(screen.getByRole('heading', { name: /PO-261020-01/ })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /PO-000011/ })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/inventory/purchase-orders/PO-000011')
     expect(screen.getAllByText('Awaiting delivery').length).toBeGreaterThan(0)
   })
 })
@@ -150,21 +150,21 @@ describe('purchase orders', () => {
 describe('transfers', () => {
   it('creates a transfer that reserves stock at the source', async () => {
     const user = setup()
-    renderRoute(`${ROUTES.stockTransferNew}?item=MED-00172`)
+    await renderStockRoute(`${ROUTES.stockTransferNew}?item=MED-00172`)
 
     await user.click(screen.getByRole('button', { name: 'Create transfer →' }))
     expect(screen.getByText(/Every line needs a whole-number quantity/)).toBeInTheDocument()
     await fill(user, screen.getByLabelText('Quantity for Metformin 500mg'), '100')
     await user.click(screen.getByRole('button', { name: 'Create transfer →' }))
 
-    expect(screen.getByRole('heading', { name: /tracking transfer/i })).toHaveTextContent('Ready for dispatch')
+    expect(await screen.findByRole('heading', { name: /tracking transfer/i })).toHaveTextContent('Ready for dispatch')
   })
 
   it('refuses a destination equal to the source', async () => {
     const user = setup()
-    renderRoute(ROUTES.stockTransferNew)
+    await renderStockRoute(ROUTES.stockTransferNew)
 
-    await user.selectOptions(screen.getByLabelText(/destination location/i), 'central')
+    await user.selectOptions(screen.getByLabelText(/destination location/i), 'CENTRAL')
     await user.click(screen.getByRole('button', { name: 'Create transfer →' }))
     expect(screen.getByText('The destination must differ from the source.')).toBeInTheDocument()
   })
@@ -173,11 +173,11 @@ describe('transfers', () => {
 describe('adjustments', () => {
   it('will not post more than the free units of a batch', async () => {
     const user = setup()
-    renderRoute(pathFor(ROUTES.inventoryItem, { itemId: 'MED-00124' }))
+    await renderStockRoute(pathFor(ROUTES.inventoryItem, { itemId: 'MED-00124' }))
 
     await user.click(screen.getByRole('button', { name: 'Record adjustment' }))
     const dialog = screen.getByRole('dialog')
-    await user.selectOptions(within(dialog).getByLabelText(/^batch/i), 'BAT-001')
+    await user.selectOptions(within(dialog).getByLabelText(/^batch/i), 'bat-p26a')
     await fill(user, within(dialog).getByLabelText(/quantity change/i), '-500')
     await user.selectOptions(within(dialog).getByLabelText(/^reason/i), 'Count variance')
     await fill(user, within(dialog).getByLabelText(/evidence reference/i), 'CS-120')
@@ -187,14 +187,14 @@ describe('adjustments', () => {
     await fill(user, within(dialog).getByLabelText(/quantity change/i), '-100')
     await user.click(within(dialog).getByRole('button', { name: 'Post adjustment' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(screen.getByText('ADJ-261020-04', { exact: false })).toBeInTheDocument()
+    expect(await screen.findByText('ADJ-000011', { exact: false })).toBeInTheDocument()
   })
 })
 
 describe('suppliers', () => {
   it('keeps the directory filters in the address and clears them again', async () => {
     const user = setup()
-    const router = renderRoute(ROUTES.suppliers)
+    const router = await renderStockRoute(ROUTES.suppliers)
 
     await user.selectOptions(screen.getByLabelText('Status'), 'Inactive')
     expect(router.state.location.search).toBe('?status=Inactive')
@@ -207,7 +207,7 @@ describe('suppliers', () => {
 
   it('rejects a duplicate name and a malformed GSTIN, then saves a new supplier', async () => {
     const user = setup()
-    const router = renderRoute(ROUTES.supplierNew)
+    const router = await renderStockRoute(ROUTES.supplierNew)
 
     await user.click(screen.getByRole('button', { name: 'Save Supplier' }))
     expect(screen.getByText('Enter the supplier name.')).toBeInTheDocument()
@@ -221,20 +221,20 @@ describe('suppliers', () => {
     await fill(user, screen.getByLabelText(/supplier name/i), 'Northern Surgicals')
     await fill(user, screen.getByLabelText(/tax identifier/i), '29AABCT1332L1ZV')
     await user.click(screen.getByRole('button', { name: 'Save Supplier' }))
-    expect(router.state.location.pathname).toBe('/inventory/suppliers/SUP-0037')
-    expect(screen.getByRole('heading', { name: /Northern Surgicals/ })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /Northern Surgicals/ })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/inventory/suppliers/sup-4')
   })
 
   it('deactivates a supplier only with a reason and then blocks new orders', async () => {
     const user = setup()
-    renderRoute(pathFor(ROUTES.supplierEdit, { supplierId: 'SUP-0006' }))
+    await renderStockRoute(pathFor(ROUTES.supplierEdit, { supplierId: 'sup-apex' }))
 
     await user.click(screen.getByRole('button', { name: 'Deactivate Supplier' }))
     await user.click(screen.getByRole('button', { name: 'Confirm deactivation' }))
     expect(screen.getByText('Give a reason for deactivating this supplier.')).toBeInTheDocument()
     await fill(user, screen.getByLabelText(/reason for deactivating/i), 'Contract ended.')
     await user.click(screen.getByRole('button', { name: 'Confirm deactivation' }))
-    expect(screen.getAllByText('Inactive').length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('Inactive')).length).toBeGreaterThan(0)
     await act(async () => {})
     expect(screen.getByRole('button', { name: 'Create Purchase Order' })).toBeDisabled()
   })

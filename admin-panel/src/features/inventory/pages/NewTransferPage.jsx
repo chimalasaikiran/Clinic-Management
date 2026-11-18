@@ -7,7 +7,7 @@ import { ROUTES } from '../../../config/routes'
 import { OptionSelect, TextArea } from '../../patients/components/parts'
 import DetailFrame from '../components/DetailFrame'
 import { Section } from '../components/shared'
-import { LOCATIONS, locationName, NOW, TRANSFER_REASONS } from '../constants'
+import { centralId, dispensaryId, locationName, LOCATIONS, NOW, TRANSFER_REASONS } from '../constants'
 import { useStock } from '../context/useStock'
 import { ITEMS, itemById } from '../data/items'
 import { formatDate, qty } from '../format'
@@ -16,7 +16,7 @@ import { validateTransfer } from '../validation'
 
 // Arriving from an item page starts the transfer with that item's earliest-expiry batch already on it.
 function presetLine(batches, itemId) {
-  const first = itemId ? fefoPlan(batches, itemId, 'central', 1).picks[0] : null
+  const first = itemId ? fefoPlan(batches, itemId, centralId(), 1).picks[0] : null
   return first ? [{ batchId: first.batchId, qty: '' }] : []
 }
 
@@ -26,7 +26,7 @@ export default function NewTransferPage() {
   const [params] = useSearchParams()
   const draft = state.transfers.find((transfer) => transfer.id === params.get('draft') && transfer.status === 'Draft')
   const [values, setValues] = useState({
-    from: draft?.from ?? 'central', to: draft?.to ?? 'main', planned: NOW.date, reason: draft?.reason ?? TRANSFER_REASONS[0], notes: draft?.notes ?? '',
+    from: draft?.from ?? centralId() ?? '', to: draft?.to ?? dispensaryId() ?? '', planned: NOW.date, reason: draft?.reason ?? TRANSFER_REASONS[0], notes: draft?.notes ?? '',
     lines: draft ? draft.lines.map((line) => ({ batchId: line.batchId, qty: String(line.qty) })) : presetLine(state.batches, params.get('item')),
   })
   const [search, setSearch] = useState('')
@@ -50,11 +50,12 @@ export default function NewTransferPage() {
     setValues((current) => ({ ...current, lines: [...current.lines, { batchId: first.batchId, qty: '' }] }))
   }
 
-  const submit = (mode) => {
+  const submit = async (mode) => {
     setSubmitted(true)
     if (mode === 'create' && Object.keys(validateTransfer(values, state.batches)).length) return
     if (mode === 'draft' && (!values.lines.length || values.to === values.from)) return
-    const created = run('transfer/save', { id: draft?.id, from: values.from, to: values.to, lines: values.lines.map((line) => ({ batchId: line.batchId, qty: Number(line.qty) || 0 })), reason: values.reason, notes: values.notes, planned: values.planned, mode })
+    const created = await run('transfer/save', { id: draft?.id, from: values.from, to: values.to, lines: values.lines.map((line) => ({ batchId: line.batchId, qty: Number(line.qty) || 0 })), reason: values.reason, notes: values.notes, planned: values.planned, mode })
+    if (created.error) return
     navigate(`${ROUTES.stockTransfers}?transfer=${created.id}`)
   }
 

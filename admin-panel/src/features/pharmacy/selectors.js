@@ -1,16 +1,12 @@
 import { daysBetween } from '../patients/format'
-import { NOW } from '../inventory/constants'
-import { itemById } from '../inventory/data/items'
+import { dispensaryId, NOW, PHARMACIES } from '../inventory/constants'
+import { ITEMS, itemById } from '../inventory/data/items'
 import { nearExpiry, stockStatus, summarise } from '../inventory/stockLogic'
 import { remainingOf } from './dispensing'
 
-const DISPENSARY = 'main'
 
-// Medicines the dispensary carries; stock exceptions are only raised for these.
-export const FORMULARY = [
-  'MED-EM-ATR-006', 'MED-CV-TEL-040', 'MED-CV-RAM-005', 'MED-CV-ATV-040', 'MED-CV-ECO-075', 'MED-GI-OMP-020', 'MED-GI-SUC-010',
-  'MED-RS-LVX-500', 'MED-RS-AMB-030', 'MED-DM-MSR-500', 'MED-DM-GLM-001', 'MED-EN-ACT-012', 'MED-00124',
-]
+// Items the dispensary is expected to carry: every active item with a pharmacy safety level.
+const formulary = () => ITEMS.filter((item) => item.active !== false && item.safety > 0).map((item) => item.id)
 
 export const minutesOf = (time) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5))
 
@@ -49,9 +45,9 @@ export function queueCounts(rxQueue) {
 
 // Stock and expiry exceptions at the dispensary: stockouts, items below the safety buffer and FEFO rotation candidates.
 export function stockExceptions(batches, today = NOW.date) {
-  return FORMULARY.flatMap((itemId) => {
+  return formulary().flatMap((itemId) => {
     const item = itemById(itemId)
-    const stock = summarise(batches, itemId, DISPENSARY, today)
+    const stock = summarise(batches, itemId, dispensaryId(), today)
     const status = stockStatus(stock, item.safety, today)
     if (status === 'Available') return []
     const soonest = stock.rows.find((batch) => nearExpiry(batch, today))
@@ -60,7 +56,7 @@ export function stockExceptions(batches, today = NOW.date) {
 }
 
 export function nearExpiryValue(batches, today = NOW.date) {
-  const rows = batches.filter((batch) => ['main', 'opd', 'er'].includes(batch.loc) && nearExpiry(batch, today))
+  const rows = batches.filter((batch) => PHARMACIES.some((location) => location.id === batch.loc) && nearExpiry(batch, today))
   return { count: rows.length, value: rows.reduce((sum, batch) => sum + batch.posted * (itemById(batch.itemId)?.price ?? 0), 0) }
 }
 
@@ -70,7 +66,7 @@ export function activityLedger(state) {
     const complete = rx?.status === 'Dispensed'
     return { key: record.id, date: record.date, time: record.time, title: complete ? `Rx #${record.rxId} dispensed & verified` : 'Partial dispensing logged', detail: `${rx?.patient.name} (${rx?.patient.uhid}) · handled by ${record.by}`, seal: `Dispense ${record.id}` }
   })
-  const receipts = state.transfers.filter((transfer) => transfer.status === 'Received' && transfer.to === DISPENSARY).map((transfer) => ({ key: transfer.id, date: transfer.received, time: transfer.receivedTime ?? '00:00', title: `Transfer ${transfer.id} received`, detail: transfer.lines.map((line) => `${itemById(line.itemId).name} · ${line.received} accepted`).join(', '), seal: 'Branch receipt posted' }))
+  const receipts = state.transfers.filter((transfer) => transfer.status === 'Received' && transfer.to === dispensaryId()).map((transfer) => ({ key: transfer.id, date: transfer.received, time: transfer.receivedTime ?? '00:00', title: `Transfer ${transfer.id} received`, detail: transfer.lines.map((line) => `${itemById(line.itemId).name} · ${line.received} accepted`).join(', '), seal: 'Branch receipt posted' }))
   const cases = state.cases.filter((entry) => entry.date === NOW.date).map((entry) => ({ key: entry.id, date: entry.date, time: entry.time, title: `${entry.type === 'Return' ? 'Return' : 'Discrepancy'} ${entry.id} reported`, detail: `${entry.medicine} · ${entry.qty} ${entry.unit} · ${entry.reason}`, seal: entry.statusNote }))
   return [...dispenses, ...receipts, ...cases].sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`))
 }

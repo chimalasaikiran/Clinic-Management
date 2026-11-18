@@ -1,3 +1,4 @@
+import { centralId } from './constants'
 import { itemById, unitLabel } from './data/items'
 import { shortDateTime } from './format'
 import { summarise, stockStatus } from './stockLogic'
@@ -48,7 +49,7 @@ export function receiptState(receipt) {
 // Everything that appears under "Needs attention" for one location.
 export function attentionCounts(state, loc, today) {
   const items = [...new Set(state.batches.filter((batch) => batch.loc === loc).map((batch) => batch.itemId))].map(itemById)
-  const statuses = items.map((item) => stockStatus(summarise(state.batches, item.id, loc, today), loc === 'central' ? item.reorder : item.safety, today))
+  const statuses = items.map((item) => stockStatus(summarise(state.batches, item.id, loc, today), loc === centralId() ? item.reorder : item.safety, today))
   const openOrders = state.orders.filter((order) => isOpenOrder(orderStatus(order, state.receipts)))
   const unposted = state.receipts.filter((receipt) => !receipt.posted && receipt.status !== 'Draft')
   const inTransit = state.transfers.filter((transfer) => transfer.status === 'In transit')

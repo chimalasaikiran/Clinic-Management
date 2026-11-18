@@ -7,7 +7,7 @@ import { pathFor, ROUTES } from '../../../config/routes'
 import { exportCsv } from '../../../lib/exportCsv'
 import { ListCard, ListFooter, NextLink, Pill, Toolbar } from '../components/shared'
 import { REF_CLASS } from '../components/tones'
-import { ADJUSTMENT_REASONS } from '../constants'
+import { ADJUSTMENT_REASONS, centralId } from '../constants'
 import { useStock } from '../context/useStock'
 import RecordAdjustmentDrawer from '../drawers/RecordAdjustmentDrawer'
 import { itemById } from '../data/items'
@@ -88,7 +88,7 @@ export default function AdjustmentsTab() {
           </p>
         </InfoNote>
       )}
-      <RecordAdjustmentDrawer key={drawer?.id ?? (drawer ? 'new' : 'closed')} open={Boolean(drawer)} onClose={() => setDrawer(null)} batches={state.batches.filter((batch) => batch.loc === 'central')} initial={drawer} onSave={(payload) => run('adjustment/save', payload)} />
+      <RecordAdjustmentDrawer key={drawer?.id ?? (drawer ? 'new' : 'closed')} open={Boolean(drawer)} onClose={() => setDrawer(null)} batches={state.batches.filter((batch) => batch.loc === centralId())} initial={drawer} onSave={(payload) => run('adjustment/save', payload)} />
     </>
   )
 }

@@ -10,7 +10,7 @@ import { daysBetween } from '../../patients/format'
 import DetailFrame, { MissingRecord } from '../components/DetailFrame'
 import { FactGrid, NextLink, Pill, Section } from '../components/shared'
 import { REF_CLASS, STOCK_TONE } from '../components/tones'
-import { locationName, NOW } from '../constants'
+import { centralId, locationName, NOW } from '../constants'
 import { useStock } from '../context/useStock'
 import { itemById } from '../data/items'
 import RecordAdjustmentDrawer from '../drawers/RecordAdjustmentDrawer'
@@ -34,7 +34,7 @@ export default function ItemDetailPage() {
   const item = itemById(itemId)
   if (!item) return <MissingRecord what="item" backTo={ROUTES.inventory} backLabel="Back to inventory" />
 
-  const loc = 'central'
+  const loc = centralId()
   const stock = summarise(state.batches, item.id, loc)
   const status = stockStatus(stock, item.reorder)
   const incoming = state.receipts.filter((receipt) => !receipt.posted && receipt.status !== 'Draft' && receipt.lines.some((line) => line.itemId === item.id))
@@ -55,6 +55,7 @@ export default function ItemDetailPage() {
         <>
           <ActionButton icon={ArrowLeftRight} to={`${ROUTES.stockTransferNew}?item=${item.id}`}>Stock Transfer</ActionButton>
           <ActionButton icon={SlidersHorizontal} onClick={() => setAdjusting(true)}>Record adjustment</ActionButton>
+          <ActionButton to={pathFor(ROUTES.inventoryItemEdit, { itemId: item.id })}>Edit item</ActionButton>
         </>
       }
     >

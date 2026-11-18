@@ -126,3 +126,40 @@ export function validateResolution(values) {
 export function validateDeactivation(values) {
   return values.reason.trim() ? {} : { reason: 'Give a reason for deactivating this supplier.' }
 }
+
+const isCount = (value) => /^\d+$/.test(String(value).trim())
+const isPrice = (value) => /^\d+(\.\d{1,2})?$/.test(String(value).trim())
+
+// The item master form; the API checks the same rules and that the code is unique.
+export function validateItem(values, items, editingId) {
+  const errors = {}
+  const code = values.code.trim().toUpperCase()
+  if (!code) errors.code = 'Enter the item code.'
+  else if (items.some((item) => item.id === code && item.id !== editingId)) errors.code = 'This item code is already used.'
+  if (!values.name.trim()) errors.name = 'Enter the item name.'
+  if (!values.category) errors.category = 'Choose the category.'
+  if (!values.unit.trim()) errors.unit = 'Enter the unit, e.g. tablet.'
+  if (!values.unitPlural.trim()) errors.unitPlural = 'Enter the plural unit, e.g. tablets.'
+  if (values.medicineCode && !values.strength) errors.strength = 'Choose the strength of the linked medicine.'
+  if (!isPrice(values.unitPrice)) errors.unitPrice = 'Enter the unit price, e.g. 1.20.'
+  for (const field of ['safetyLevel', 'reorderLevel', 'targetLevel']) if (!isCount(values[field])) errors[field] = 'Enter a whole number.'
+  if (!errors.targetLevel && Number(values.targetLevel) > 0 && Number(values.targetLevel) < Number(values.reorderLevel)) errors.targetLevel = 'The target level cannot be below the reorder level.'
+  return errors
+}
+
+export const itemRequest = (values) => ({
+  code: values.code.trim().toUpperCase(), name: values.name.trim(), category: values.category, unit: values.unit.trim(), unitPlural: values.unitPlural.trim(), dosageForm: values.dosageForm.trim() || null,
+  brand: values.brand.trim() || null, pack: values.pack.trim() || null, storage: values.storage.trim() || null, schedule: values.schedule || null, medicineCode: values.medicineCode || null, strength: values.strength || null,
+  unitPrice: Number(values.unitPrice), safetyLevel: Number(values.safetyLevel), reorderLevel: Number(values.reorderLevel), targetLevel: Number(values.targetLevel), supplierIds: values.supplierIds,
+  preferredSupplierId: values.preferredSupplierId || null, active: values.active,
+})
+
+export function validateLocation(values, locations) {
+  const errors = {}
+  if (!values.branchId) errors.branchId = 'Choose the branch.'
+  if (!values.code.trim()) errors.code = 'Enter a short code, e.g. MAIN-RX.'
+  else if (locations.some((location) => location.id === values.code.trim().toUpperCase())) errors.code = 'This location code is already used.'
+  if (!values.name.trim()) errors.name = 'Enter the location name.'
+  if (!values.kind) errors.kind = 'Choose store or pharmacy.'
+  return errors
+}

@@ -8,14 +8,14 @@ import { ROUTES } from '../../../config/routes'
 import { OptionSelect, TextArea } from '../../patients/components/parts'
 import { Pill } from '../../inventory/components/shared'
 import DetailFrame from '../../inventory/components/DetailFrame'
-import { locationName, NOW, PHARMACIES, REQUEST_PRIORITIES, REQUEST_REASONS } from '../../inventory/constants'
+import { centralId, dispensaryId, locationName, NOW, PHARMACIES, REQUEST_PRIORITIES, REQUEST_REASONS } from '../../inventory/constants'
 import { useStock } from '../../inventory/context/useStock'
 import { ITEMS, itemById } from '../../inventory/data/items'
 import { formatDate, qty } from '../../inventory/format'
 import { summarise } from '../../inventory/stockLogic'
 import { validateRequest } from '../../inventory/validation'
+import { useAuth } from '../../auth/context/useAuth'
 
-const REQUESTER = { name: 'Ramesh Pillai', role: 'B.Pharm' }
 
 // Lines prefilled from a stock exception ("Emergency Transfer", "Review Reorder") or a saved draft.
 function initialLines(request, params) {
@@ -25,13 +25,14 @@ function initialLines(request, params) {
 }
 
 export default function NewStockRequestPage() {
+  const { user } = useAuth()
   const { state, run } = useStock()
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const draft = state.requests.find((request) => request.id === params.get('draft') && request.status === 'Draft')
   const urgent = params.get('priority') === 'Urgent'
   const [values, setValues] = useState({
-    pharmacy: draft?.pharmacy ?? 'main', priority: draft?.priority ?? (urgent ? 'Urgent' : 'Normal'), required: draft?.required ?? NOW.date, reason: draft?.reason ?? (urgent ? REQUEST_REASONS[1] : REQUEST_REASONS[0]), notes: draft?.notes ?? '',
+    pharmacy: draft?.pharmacy ?? dispensaryId() ?? '', priority: draft?.priority ?? (urgent ? 'Urgent' : 'Normal'), required: draft?.required ?? NOW.date, reason: draft?.reason ?? (urgent ? REQUEST_REASONS[1] : REQUEST_REASONS[0]), notes: draft?.notes ?? '',
     lines: initialLines(draft, params),
   })
   const [search, setSearch] = useState('')
@@ -51,17 +52,18 @@ export default function NewStockRequestPage() {
     setValues((current) => ({ ...current, lines: [...current.lines, { itemId: match.id, requested: '' }] }))
   }
 
-  const submit = (send) => {
+  const submit = async (send) => {
     setSubmitted(true)
     if (send ? Object.keys(validateRequest(values)).length : !values.lines.length) return
-    const outcome = run('request/save', { id: draft?.id, submit: send, pharmacy: values.pharmacy, requestedBy: REQUESTER.name, role: REQUESTER.role, priority: values.priority, required: values.required, reason: values.reason, notes: values.notes.trim(), lines: values.lines })
+    const outcome = await run('request/save', { id: draft?.id, submit: send, pharmacy: values.pharmacy, priority: values.priority, required: values.required, reason: values.reason, notes: values.notes.trim(), lines: values.lines })
+    if (outcome.error) return
     navigate(`${ROUTES.pharmacyRequests}`, { state: { saved: outcome.id, submitted: send } })
   }
 
   const rows = values.lines.map((line) => {
     const item = itemById(line.itemId)
     const own = summarise(state.batches, item.id, values.pharmacy)
-    const central = summarise(state.batches, item.id, 'central').available
+    const central = summarise(state.batches, item.id, centralId()).available
     const wanted = Number(line.requested) || 0
     return { line, item, own, central, wanted, short: wanted > central }
   })
@@ -80,7 +82,7 @@ export default function NewStockRequestPage() {
         <header className="mb-4 flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold">Request details</h2><span className="text-[11px] text-outline">{draft ? `Draft ${draft.id}` : 'New request'} · Reference assigned on submission</span></header>
         <div className="grid gap-4 md:grid-cols-4">
           <OptionSelect label="Requesting pharmacy" required value={values.pharmacy} onChange={(event) => set('pharmacy', event.target.value)} error={errors.pharmacy} options={PHARMACIES.map((entry) => ({ value: entry.id, label: `${entry.name} · Dispensary ${entry.detail.split('· ')[1]}` }))} />
-          <OptionSelect label="Source inventory" required value="central" onChange={() => {}} options={[{ value: 'central', label: 'Central Stores' }]} />
+          <OptionSelect label="Source inventory" required value={centralId() ?? ''} onChange={() => {}} options={centralId() ? [{ value: centralId(), label: locationName(centralId()) }] : []} />
           <OptionSelect label="Priority" required value={values.priority} onChange={(event) => set('priority', event.target.value)} options={REQUEST_PRIORITIES.map((entry) => ({ value: entry, label: entry }))} />
           <TextInput label="Required by" required type="date" min={NOW.date} value={values.required} onChange={(event) => set('required', event.target.value)} error={errors.required} />
         </div>
@@ -133,7 +135,7 @@ export default function NewStockRequestPage() {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
-        <p className="text-xs"><span className="font-semibold">Requested by {REQUESTER.name}, {REQUESTER.role}</span><br /><span className="text-outline">You can edit this request until it is submitted.</span></p>
+        <p className="text-xs"><span className="font-semibold">Requested by {user?.fullName ?? 'you'}</span><br /><span className="text-outline">You can edit this request until it is submitted.</span></p>
         <div className="flex items-center gap-2"><ActionButton to={ROUTES.pharmacyRequests} className="border-transparent">Cancel</ActionButton><ActionButton onClick={() => submit(false)}>Save Draft</ActionButton><ActionButton variant="primary" onClick={() => submit(true)}>Submit Request</ActionButton></div>
       </div>
     </DetailFrame>

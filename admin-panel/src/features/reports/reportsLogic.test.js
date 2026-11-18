@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { allRefunds } from '../billing/financeLogic'
 import { billingViews } from '../../test/fixtures/billingViews'
-import { OPERATIONS, PHARMACY, REPORT_PERIOD } from './data/sampleReports'
-import { financialFigures, operationsFigures, pharmacyFigures, windowTotal } from './reportsLogic'
+import { OPERATIONS, REPORT_PERIOD } from './data/sampleReports'
+import { financialFigures, operationsFigures, pharmacyReport, windowTotal } from './reportsLogic'
 
 describe('operations report', () => {
   const figures = operationsFigures(OPERATIONS)
@@ -51,23 +51,36 @@ describe('financial report', () => {
 })
 
 describe('pharmacy and inventory report', () => {
-  const figures = pharmacyFigures(PHARMACY)
+  const TODAY = '2026-11-18'
+  const item = (id, name, category, reorder, price) => ({ id, name, category, unitPlural: 'tablets', reorder, price, active: true })
+  const batch = (id, itemId, loc, expiry, posted, reserved = 0) => ({ id, itemId, loc, batchNo: id.toUpperCase(), expiry, posted, reserved, quarantine: 0 })
+  const stock = {
+    locations: [{ id: 'CENTRAL', kind: 'store' }, { id: 'MAIN-RX', kind: 'pharmacy' }],
+    items: [item('A', 'Paracetamol', 'Analgesic', 100, 1.5), item('B', 'Cetirizine', 'Antihistamine', 50, 2), item('C', 'Naproxen', 'Analgesic', 10, 4), item('D', 'Insulin', 'Endocrine', 5, 100)],
+    state: {
+      batches: [batch('a1', 'A', 'CENTRAL', '2027-06-30', 500, 100), batch('b1', 'B', 'MAIN-RX', '2027-06-30', 20), batch('c1', 'C', 'MAIN-RX', '2026-12-01', 30), batch('d1', 'D', 'MAIN-RX', '2026-11-01', 8)],
+      dispenses: [{ date: '2026-11-10', lines: [{ itemId: 'A', qty: 10 }, { itemId: 'C', qty: 4 }] }, { date: '2026-09-01', lines: [{ itemId: 'A', qty: 99 }] }],
+      movements: [{ kind: 'Receipt', delta: 200, loc: 'CENTRAL', itemId: 'A', date: '2026-11-05' }, { kind: 'Receipt', delta: 20, loc: 'MAIN-RX', itemId: 'B', date: '2026-11-06' }],
+    },
+  }
+  const report = pharmacyReport(stock, TODAY)
 
-  it('totals dispensing and purchases from the trend buckets', () => {
-    expect(figures.dispensed).toBe(1250)
-    expect(figures.purchases).toBe(20250)
-    expect(figures.categoryPurchases).toBe(20250)
+  it('classifies each item once: out of stock, low stock, near expiry, in stock', () => {
+    expect(Object.fromEntries(report.items.map((row) => [row.name, row.status]))).toEqual({ Paracetamol: 'In stock', Cetirizine: 'Low stock', Naproxen: 'Near expiry', Insulin: 'Out of stock' })
+    expect(report.status).toEqual({ 'In stock': 1, 'Low stock': 1, 'Near expiry': 1, 'Out of stock': 1 })
+    expect(report.items.find((row) => row.name === 'Paracetamol').stock).toBe(400)
   })
 
-  it('counts each stock category once and values near-expiry stock at purchase cost', () => {
-    expect(figures.status).toEqual({ 'In stock': 3, 'Low stock': 2, 'Near expiry': 2, 'Out of stock': 1 })
-    expect(figures.nearExpiryValue).toBe(1680)
-    expect(figures.nearExpirySkus).toBe(2)
-    expect(figures.stockouts).toBe(2)
-    expect(figures.openStockouts).toBe(1)
+  it('counts dispensing in the last 30 days and values it at unit price', () => {
+    expect(report.dispensed).toBe(14)
+    expect(report.dispensedValue).toBe(10 * 1.5 + 4 * 4)
+    expect(report.categories).toEqual([{ name: 'Analgesic', units: 14, value: 31 }])
   })
 
-  it('computes gross margin from explicit sales and cost inputs', () => {
-    expect(figures).toMatchObject({ sales: 11935, cogs: 7855, grossProfit: 4080, margin: 34.2 })
+  it('values store receipts and near-expiry stock, and lists every item needing action', () => {
+    expect(report.receivedValue).toBe(300)
+    expect(report.nearExpiryValue).toBe(120)
+    expect(report.stockouts).toBe(1)
+    expect(report.exceptions.map((row) => row.name)).toEqual(['Cetirizine', 'Naproxen', 'Insulin'])
   })
 })

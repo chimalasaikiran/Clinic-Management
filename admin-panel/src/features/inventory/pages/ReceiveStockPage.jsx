@@ -8,14 +8,14 @@ import { Check, OptionSelect, TextArea } from '../../patients/components/parts'
 import DetailFrame from '../components/DetailFrame'
 import { Pill, Section } from '../components/shared'
 import { REF_CLASS } from '../components/tones'
-import { BINS, DISCREPANCY_REASONS, DISCREPANCY_RESOLUTIONS, LOCATIONS, NOW } from '../constants'
+import { BINS, centralId, DISCREPANCY_REASONS, DISCREPANCY_RESOLUTIONS, LOCATIONS, NOW } from '../constants'
 import { useStock } from '../context/useStock'
 import { itemById } from '../data/items'
 import { formatDate, formatTime, money, qty } from '../format'
 import { isOpenOrder, orderProgress, orderStatus } from '../selectors'
 import { validateReceipt } from '../validation'
+import { useAuth } from '../../auth/context/useAuth'
 
-const RECEIVERS = ['N. Desai', 'K. Rao']
 const blankBatch = () => ({ batchNo: '', expiry: '', qty: '', bin: BINS[0] })
 
 // One receiving line per purchase-order item: what is still outstanding after earlier receipts.
@@ -26,12 +26,13 @@ function linesFor(order, receipts) {
 const num = (value) => Number(value) || 0
 
 export default function ReceiveStockPage() {
+  const { user } = useAuth()
   const { state, run } = useStock()
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const preset = state.orders.find((order) => order.id === params.get('order'))
   const [values, setValues] = useState({
-    supplierId: preset?.supplierId ?? '', orderId: preset?.id ?? '', store: 'central', challan: '', receivedBy: RECEIVERS[0], reason: '', resolution: '', note: '', verified: false, evidence: '',
+    supplierId: preset?.supplierId ?? '', orderId: preset?.id ?? '', store: centralId() ?? '', challan: '', receivedBy: user?.fullName ?? '', reason: '', resolution: '', note: '', verified: false, evidence: '',
     lines: preset ? linesFor(preset, state.receipts) : [],
   })
   const [submitted, setSubmitted] = useState(false)
@@ -54,7 +55,7 @@ export default function ReceiveStockPage() {
   const short = values.lines.some((line) => num(line.received) < line.outstanding && values.lines.some((entry) => num(entry.received) > 0))
   const differs = short || totals.rejected > 0
 
-  const submit = (mode) => {
+  const submit = async (mode) => {
     setSubmitted(true)
     if (mode === 'post' && Object.keys(validateReceipt(values)).length) return
     if (mode === 'draft' && !values.supplierId) return
@@ -63,7 +64,8 @@ export default function ReceiveStockPage() {
       line.short > 0 && { kind: 'Short delivery', qty: line.short, state: 'Documented', note: values.note || values.reason, resolution: values.resolution },
       line.rejected > 0 && { kind: 'Damaged packs', qty: line.rejected, state: 'Documented', note: values.note || values.reason, resolution: values.resolution },
     ].filter(Boolean)) : []
-    const created = run('receipt/save', { mode, supplierId: values.supplierId, orderId: values.orderId, store: values.store, challan: values.challan.trim(), invoice: '', bay: 'C-01', date: NOW.date, time: NOW.time, receivedBy: values.receivedBy, verified: values.verified, lines, discrepancies, attachments: values.evidence ? 1 : 0 })
+    const created = await run('receipt/save', { mode, supplierId: values.supplierId, orderId: values.orderId, store: values.store, challan: values.challan.trim(), invoice: '', bay: 'C-01', date: NOW.date, time: NOW.time, receivedBy: values.receivedBy, verified: values.verified, lines, discrepancies, attachments: values.evidence ? 1 : 0 })
+    if (created.error) return
     navigate(pathFor(ROUTES.inventoryReceipt, { receiptId: created.id }))
   }
 
@@ -84,7 +86,7 @@ export default function ReceiveStockPage() {
           <OptionSelect label="Receiving store" required value={values.store} onChange={(event) => set('store', event.target.value)} options={LOCATIONS.filter((entry) => entry.kind === 'store').map((entry) => ({ value: entry.id, label: entry.name }))} />
           <TextInput label="Delivery note / challan" required value={values.challan} onChange={(event) => set('challan', event.target.value)} error={errors.challan} />
           <TextInput label="Received on" readOnly value={`${formatDate(NOW.date)}, ${formatTime(NOW.time)}`} />
-          <OptionSelect label="Received by" required value={values.receivedBy} onChange={(event) => set('receivedBy', event.target.value)} error={errors.receivedBy} options={RECEIVERS.map((name) => ({ value: name, label: name }))} />
+          <TextInput label="Received by" required readOnly value={values.receivedBy} hint="The receipt is recorded under your name." />
         </div>
         {order && (
           <p className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-md bg-surface-lowest px-3 py-2 text-xs text-on-surface-variant">

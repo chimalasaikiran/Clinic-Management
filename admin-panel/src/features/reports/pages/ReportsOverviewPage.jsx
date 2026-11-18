@@ -8,8 +8,9 @@ import { useBilling } from '../../billing/context/useBilling'
 import { allRefunds } from '../../billing/financeLogic'
 import ReportsFrame from '../components/ReportsFrame'
 import { DATE_RANGES } from '../../billing/constants'
-import { OPERATIONS, PHARMACY, REPORT_PERIOD } from '../data/sampleReports'
-import { financialFigures, operationsFigures, pharmacyFigures } from '../reportsLogic'
+import { OPERATIONS, REPORT_PERIOD } from '../data/sampleReports'
+import { usePharmacyReport } from '../usePharmacyReport'
+import { financialFigures, operationsFigures } from '../reportsLogic'
 
 export default function ReportsOverviewPage() {
   const { records, refundRequests } = useBilling()
@@ -17,15 +18,15 @@ export default function ReportsOverviewPage() {
   const [query, setQuery] = useState('')
   const operations = operationsFigures(OPERATIONS)
   const financial = financialFigures(records, allRefunds(records, refundRequests), month)
-  const pharmacy = pharmacyFigures(PHARMACY)
+  const { report: pharmacy, restricted: noStock } = usePharmacyReport()
   const show = (text) => !query.trim() || text.toLowerCase().includes(query.trim().toLowerCase())
   const cards = [
     { id: 'operations', title: 'Operations', tag: 'Closed sample cohort', text: 'Main Surgical Pavilion only. A separate reporting sample, not organization totals.', to: ROUTES.reportsOperations, link: 'View Operations → RPT-02',
       stats: [[String(operations.scheduled), 'scheduled records'], [String(operations.completed), 'completed'], [`${operations.meanWait} min`, `mean wait · ${OPERATIONS.waitPairs} valid timestamp pairs`]], note: `${REPORT_PERIOD.label.replace(' 2026', '')} appointment starts. No reconciliation with the conflicting 14 Oct Appointments snapshot.` },
     { id: 'financial', title: 'Financial', tag: `Live ledger · ${month.label}`, text: `${financial.billed.invoices.length} invoice${financial.billed.invoices.length === 1 ? '' : 's'} issued and ${financial.collected.payments.length} payment${financial.collected.payments.length === 1 ? '' : 's'} received this month.`, to: ROUTES.reportsFinancial, link: 'View Financial → RPT-03',
       stats: [[formatINR(financial.billed.amount), 'billed invoice value · not recognized revenue'], [formatINR(financial.collected.amount), `collected · ${financial.collected.payments.length} payment`], [formatINR(financial.outstanding.amount), 'outstanding on those invoices']], note: 'Independent record sets. Do not add or subtract these amounts into a net value.' },
-    { id: 'pharmacy', title: 'Pharmacy & Inventory', tag: 'Enabled — sample data', text: `Main Pharmacy at Main Surgical Pavilion: ${pharmacy.dispensed.toLocaleString('en-IN')} mixed base units dispensed, ${pharmacy.stockouts} stockout incidents, and ${formatINR(pharmacy.nearExpiryValue)} near-expiry stock value at cost.`, to: ROUTES.reportsPharmacy, link: 'View Pharmacy & Inventory → RPT-04',
-      stats: [], note: `Purchases ${formatINR(pharmacy.purchases)} · Net sales ${formatINR(pharmacy.sales)} · COGS ${formatINR(pharmacy.cogs)} · Gross profit ${formatINR(pharmacy.grossProfit)} · Margin ${pharmacy.margin}%.` },
+    { id: 'pharmacy', title: 'Pharmacy & Inventory', tag: noStock ? 'Not available to your role' : 'Live stock ledger · last 30 days', text: pharmacy ? `${pharmacy.dispensed.toLocaleString('en-IN')} base units dispensed, ${pharmacy.stockouts} item${pharmacy.stockouts === 1 ? '' : 's'} out of stock, and ${formatINR(pharmacy.nearExpiryValue)} of stock expiring within 30 days at unit price.` : noStock ? 'Your role has no inventory or pharmacy permission.' : 'Loading stock records…', to: ROUTES.reportsPharmacy, link: 'View Pharmacy & Inventory → RPT-04',
+      stats: [], note: pharmacy ? `Stock received ${formatINR(pharmacy.receivedValue)} · dispensed value ${formatINR(pharmacy.dispensedValue)} at unit price. No margin is calculated: no separate selling price is recorded.` : '' },
   ].filter((card) => show(`${card.title} ${card.text} ${card.tag}`))
 
   return (

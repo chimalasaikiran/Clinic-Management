@@ -337,13 +337,17 @@ describe('reports', () => {
     expect(screen.getAllByText('₹3,500').length).toBeGreaterThan(0)
   })
 
-  it('filters the inventory table by expiry status', async () => {
+  it('filters the live inventory table by stock status', async () => {
     const user = setup()
     await renderBillingRoute(ROUTES.reportsPharmacy)
 
-    await user.selectOptions(screen.getByLabelText(/Stock expiry/), 'Near expiry')
+    await user.selectOptions(await screen.findByLabelText(/Stock expiry/), 'Low stock')
 
-    expect(screen.getByText('2 of 8 SKUs · Main Pharmacy at Main Surgical Pavilion · snapshot 25 Oct 2026 18:00 IST')).toBeInTheDocument()
+    expect(screen.getByText('2 of 6 SKUs · all locations')).toBeInTheDocument()
+    const table = screen.getByText('Inventory table').closest('section')
+    expect(within(table).getByText('Cetirizine 10mg')).toBeInTheDocument()
+    expect(within(table).getByText('Amoxicillin 500mg')).toBeInTheDocument()
+    expect(within(table).queryByText('Paracetamol 500mg')).not.toBeInTheDocument()
   })
 
   it('links the overview to each report', async () => {

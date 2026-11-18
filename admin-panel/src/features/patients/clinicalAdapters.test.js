@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toCarePlanView, toOrderRequest, toOrderView, toPrescriptionRequest, toReferralView } from './clinicalAdapters'
+import { toCarePlanView, toOrderRequest, toOrderView, toPrescriptionRequest, toPrescriptionView, toReferralView } from './clinicalAdapters'
 
 const at = (date, time = '09:00') => ({ date, time, at: `${date}T${time}:00.000Z` })
 
@@ -29,6 +29,37 @@ describe('order view', () => {
   it('names the reviewer from the review', () => {
     const view = toOrderView(order({ status: 'reviewed', result: { summary: 'Normal', flag: 'normal' }, review: { outcome: 'normal', note: 'No action.', by: 'Dr. Ananya Rao', at: at('2026-11-18', '11:00') } }))
     expect(view).toMatchObject({ status: 'Completed & Reviewed', stage: 4, reviewedBy: 'Dr. Ananya Rao', reviewOutcome: 'normal', reviewNote: 'No action.' })
+  })
+})
+
+describe('prescription view', () => {
+  const line = (id, quantity, dispensed) => ({ id, name: 'Naproxen', strength: '250 mg', form: 'Tablet', route: 'Oral', drugClass: 'nsaid', dose: '1 tablet', frequency: 'BD', food: 'After food', durationDays: 5, quantity, refills: 0, instructions: '', indication: '', dispensed })
+  const rx = (overrides = {}) => ({
+    id: 'rx-1', reference: 'RX-000001', patientId: 'p-1', encounterId: null, encounterReference: null, indication: 'Pain', prescriberName: 'Dr. Rahul Mehta', department: null, registration: null,
+    status: 'active', contentHash: 'abc', created: at('2026-11-18'), branch: { id: 'b-1', name: 'Main' }, items: [line('l-1', 10, 0), line('l-2', 6, 0)], events: [],
+    ...overrides,
+  })
+
+  it('shows each line as awaiting until the pharmacy dispenses it', () => {
+    const view = toPrescriptionView(rx())
+    expect(view.dispensing).toBe('Awaiting dispensing at the pharmacy')
+    expect(view.items.map((item) => item.dispensing.state)).toEqual(['Awaiting', 'Awaiting'])
+  })
+
+  it('tracks partial and full dispensing from the units handed out', () => {
+    const partial = toPrescriptionView(rx({ items: [line('l-1', 10, 10), line('l-2', 6, 2)], events: [{ id: 'e-1', action: 'partially_dispensed', note: 'DSP-000001 · Main Pharmacy', actor: 'Ramesh Pillai', at: at('2026-11-18', '10:00') }] }))
+    expect(partial.dispensing).toBe('Partially dispensed')
+    expect(partial.items.map((item) => item.dispensing)).toEqual([{ state: 'Dispensed', note: '10 of 10 dispensed' }, { state: 'Partially dispensed', note: '2 of 6 dispensed · 4 still to dispense' }])
+    expect(partial.events[0].title).toBe('Partially dispensed')
+
+    const full = toPrescriptionView(rx({ status: 'completed', items: [line('l-1', 10, 10), line('l-2', 6, 6)] }))
+    expect(full.dispensing).toBe('Dispensed in full')
+  })
+
+  it('marks lines of a closed prescription that were never dispensed', () => {
+    const view = toPrescriptionView(rx({ status: 'discontinued', items: [line('l-1', 10, 0)] }))
+    expect(view.dispensing).toBe('—')
+    expect(view.items[0].dispensing.state).toBe('Not dispensed')
   })
 })
 

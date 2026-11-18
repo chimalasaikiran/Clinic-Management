@@ -8,11 +8,11 @@ import { cn } from '../../../lib/cn'
 import { OptionSelect, TextArea } from '../../patients/components/parts'
 import { Pill } from '../../inventory/components/shared'
 import DetailFrame from '../../inventory/components/DetailFrame'
-import { locationName } from '../../inventory/constants'
+import { LOCATIONS, locationName } from '../../inventory/constants'
 import { useStock } from '../../inventory/context/useStock'
 import { ITEMS, itemById } from '../../inventory/data/items'
 import { formatDate } from '../../inventory/format'
-import { DISCREPANCY_CATEGORIES, dispensedOn, PACKAGING_CONDITIONS, RECEIVING_LOCATIONS, RETURN_REASONS, RETURN_SOURCES, REVIEWERS, validateCase } from '../validation'
+import { DISCREPANCY_CATEGORIES, dispensedOn, PACKAGING_CONDITIONS, RETURN_REASONS, RETURN_SOURCES, validateCase } from '../validation'
 
 const DISCREPANCY_REASONS = ['Count variance', 'Cracked vials', 'Water-damaged strip', 'Batch differs', 'Expired in storage']
 const CASE_TYPES = [
@@ -20,11 +20,14 @@ const CASE_TYPES = [
   { id: 'Discrepancy', icon: AlertTriangle, hint: 'Shortage, damage or batch / count mismatch.' },
 ]
 
-const BLANK = { itemId: '', batchId: '', source: RETURN_SOURCES[0], receiving: RECEIVING_LOCATIONS[0], reference: '', qty: '', reason: '', condition: '', notes: '', location: '', storage: '', category: '', expected: '', observed: '', explanation: '', assignee: '' }
+const BLANK = { itemId: '', batchId: '', source: RETURN_SOURCES[0], receiving: '', reference: '', qty: '', reason: '', condition: '', notes: '', location: '', storage: '', category: '', expected: '', observed: '', explanation: '', assignee: '' }
 
 export default function NewReturnPage() {
-  const { state, run } = useStock()
+  const { state, run, members } = useStock()
   const navigate = useNavigate()
+  // Reviewers are the organisation's active members; locations are its stock locations.
+  const REVIEWERS = members.map((member) => ({ value: member.userId, label: member.roles.length ? `${member.name} · ${member.roles.join(', ')}` : member.name }))
+  const RECEIVING_LOCATIONS = LOCATIONS.filter((location) => location.active).map((location) => location.name)
   const [params] = useSearchParams()
   const [type, setType] = useState(params.get('type') === 'Discrepancy' ? 'Discrepancy' : 'Return')
   const [values, setValues] = useState(BLANK)
@@ -35,19 +38,20 @@ export default function NewReturnPage() {
   const item = itemById(values.itemId)
   const batches = state.batches.filter((batch) => batch.itemId === values.itemId)
   const batch = state.batches.find((entry) => entry.id === values.batchId)
-  const reviewer = REVIEWERS.find((entry) => entry.value === values.assignee)
   const match = type === 'Return' && values.source === 'Patient return' && item && values.reference ? dispensedOn(state.rxQueue, values.reference, item.id) : null
   const set = (name, value) => setValues((current) => ({ ...current, [name]: value }))
   const update = (event) => set(event.target.name, event.target.value)
 
-  const submit = (draft) => {
+  const submit = async (draft) => {
     setSubmitted(true)
     if (Object.keys(validateCase(full, state.rxQueue, { draft })).length) return
-    const common = { type, medicine: item.name, batchNo: batch?.batchNo ?? '—', unit: item.unitPlural, assignee: values.assignee || 'Unassigned', assigneeRole: reviewer?.role ?? 'Needs owner', expiry: batch?.expiry ?? null, notes: values.notes.trim() || values.explanation.trim(), draft, evidence: evidence.length, reportedBy: 'Ramesh Pillai, B.Pharm' }
+    // The reporter is the signed-in person; the API records them.
+    const common = { type, draft, itemId: item.id, batchId: values.batchId || null, notes: values.notes.trim() || values.explanation.trim(), evidence: evidence.length, assigneeId: values.assignee || null }
     const payload = type === 'Return'
-      ? { ...common, subtype: values.source, qty: Number(values.qty) || 0, origin: values.reference.trim() || 'Not recorded', originNote: values.receiving, reason: values.reason || 'Not recorded', reasonNote: values.condition || 'Not recorded', location: values.receiving, stage: 'Pending return', reference: values.reference.trim(), original: match?.line?.qty ?? null, source: values.source, receiving: values.receiving }
-      : { ...common, subtype: values.category || 'Not recorded', qty: Math.abs((Number(values.expected) || 0) - (Number(values.observed) || 0)), origin: values.storage.trim() || values.location || 'Not recorded', originNote: values.location, reason: values.reason || 'Not recorded', reasonNote: `${values.expected} expected · ${values.observed} found`, location: values.location, stage: 'Pending review', expected: Number(values.expected), observed: Number(values.observed) }
-    const created = run('case/create', payload)
+      ? { ...common, subtype: values.source, qty: Number(values.qty) || 0, origin: values.reference.trim() || 'Not recorded', originNote: values.receiving, reason: values.reason || 'Not recorded', reasonNote: values.condition, location: values.receiving || 'Not recorded' }
+      : { ...common, subtype: values.category || 'Not recorded', qty: Math.abs((Number(values.expected) || 0) - (Number(values.observed) || 0)), origin: values.storage.trim() || values.location || 'Not recorded', originNote: values.location, reason: values.reason || 'Count variance', reasonNote: `${values.expected} expected · ${values.observed} found`, location: values.location || 'Not recorded', expected: values.expected === '' ? null : Number(values.expected), observed: values.observed === '' ? null : Number(values.observed) }
+    const created = await run('case/create', payload)
+    if (created.error) return
     navigate(pathFor(ROUTES.pharmacyReturn, { caseId: created.id }))
   }
 

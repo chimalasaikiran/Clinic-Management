@@ -1,3 +1,4 @@
+import { dispensaryId, PHARMACIES } from '../../inventory/constants'
 import { useState } from 'react'
 import { AlertTriangle, ClipboardList, PackageCheck } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -39,7 +40,7 @@ function Tile({ label, value, tag, hint, dot }) {
 }
 
 export default function PharmacyPage() {
-  const { state, run } = useStock()
+  const { state, run, dispensary, chooseDispensary } = useStock()
   const [view, setView] = useState('all')
   const [rxId, setRxId] = useState(null)
   const [batchItem, setBatchItem] = useState(null)
@@ -51,14 +52,16 @@ export default function PharmacyPage() {
   const rows = state.rxQueue.filter(selected.test)
   const ledger = activityLedger(state).slice(0, 4)
   const awaitingCases = state.cases.filter((entry) => entry.status === 'Awaiting review').length
-  const inbound = state.transfers.filter((transfer) => transfer.status === 'In transit' && transfer.to === 'main')
+  const inbound = state.transfers.filter((transfer) => transfer.status === 'In transit' && transfer.to === dispensaryId())
 
   return (
     <WorkspacePage>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-[28px] leading-9 font-bold tracking-tight">Pharmacy</h1>
-          <span className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-medium text-emerald-800">Dispensary Node #01 · Open &amp; Synchronized</span>
+          {PHARMACIES.length === 0
+            ? <Link to={ROUTES.inventorySetup} className="rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-medium text-amber-800 hover:underline">No pharmacy location yet · set one up</Link>
+            : <label className="flex items-center gap-2 text-[11px] text-outline">Dispensing from<select aria-label="Dispensing pharmacy" value={dispensary ?? ''} onChange={(event) => chooseDispensary(event.target.value)} className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[11px] font-medium text-emerald-800">{PHARMACIES.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}</select></label>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <ActionButton to={ROUTES.pharmacyReturns} icon={ClipboardList}>Returns &amp; Discrepancies{awaitingCases ? <span className="ml-1 rounded bg-surface-low px-1.5 text-[10px]">{awaitingCases}</span> : null}</ActionButton>
@@ -143,7 +146,7 @@ export default function PharmacyPage() {
       <p className="mt-4 text-[11px] text-outline">Dispensing deducts the earliest-expiry batch at the dispensary; stock that Central Stores dispatches appears here once it is received. <Link to={ROUTES.inventory} className="font-semibold text-brand hover:underline">Open Inventory</Link></p>
 
       {rxId && <RxDrawerHost key={rxId} rxId={rxId} onClose={() => setRxId(null)} />}
-      {batchItem && <BatchDrawer item={batchItem} loc="main" batches={state.batches} movements={state.movements} receipts={state.receipts} onClose={() => setBatchItem(null)} />}
+      {batchItem && <BatchDrawer item={batchItem} loc={dispensaryId()} batches={state.batches} movements={state.movements} receipts={state.receipts} onClose={() => setBatchItem(null)} />}
       {receiving && <ReceiveStockDrawer transfers={inbound} onClose={() => setReceiving(false)} onReceive={(id, received) => run('transfer/receive', { id, received })} />}
     </WorkspacePage>
   )

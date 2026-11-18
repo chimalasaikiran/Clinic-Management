@@ -8,7 +8,7 @@ import { pathFor, ROUTES } from '../../../config/routes'
 import { OptionSelect, TextArea } from '../../patients/components/parts'
 import DetailFrame from '../components/DetailFrame'
 import { Section } from '../components/shared'
-import { LOCATIONS, NOW, PAYMENT_TERMS } from '../constants'
+import { centralId, LOCATIONS, NOW, PAYMENT_TERMS } from '../constants'
 import { useStock } from '../context/useStock'
 import { ITEMS, itemById } from '../data/items'
 import { money } from '../format'
@@ -18,7 +18,7 @@ export default function CreatePurchaseOrderPage() {
   const { state, run } = useStock()
   const navigate = useNavigate()
   const [params] = useSearchParams()
-  const [values, setValues] = useState({ supplierId: params.get('supplier') ?? '', date: NOW.date, reference: '', store: 'central', expected: '', terms: '', notes: '', lines: [] })
+  const [values, setValues] = useState({ supplierId: params.get('supplier') ?? '', date: NOW.date, reference: '', store: centralId() ?? '', expected: '', terms: '', notes: '', lines: [] })
   const [search, setSearch] = useState('')
   const [submitted, setSubmitted] = useState(false)
   const [lookupError, setLookupError] = useState('')
@@ -38,11 +38,12 @@ export default function CreatePurchaseOrderPage() {
   }
   const editLine = (itemId, change) => setValues((current) => ({ ...current, lines: current.lines.map((line) => (line.itemId === itemId ? { ...line, ...change } : line)) }))
 
-  const save = (draft) => {
+  const save = async (draft) => {
     setSubmitted(true)
     const found = draft ? (values.supplierId ? {} : { supplierId: 'Select a supplier.' }) : validateOrder(values)
     if (Object.keys(found).length) return
-    const created = run('order/create', { ...values, draft, lines: values.lines.filter((line) => line.itemId) })
+    const created = await run('order/create', { ...values, draft, lines: values.lines.filter((line) => line.itemId) })
+    if (created.error) return
     navigate(pathFor(ROUTES.inventoryOrder, { orderId: created.id }))
   }
 

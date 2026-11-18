@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { CheckCircle2, Lock, ShieldAlert } from 'lucide-react'
 import ActionButton from '../../../components/workspace/ActionButton'
-import { InfoNote, Toggle } from '../../../components/workspace/controls'
+import { InfoNote } from '../../../components/workspace/controls'
 import Drawer from '../../../components/workspace/Drawer'
 import { Check } from '../../patients/components/parts'
 import StatusPill from '../../../components/workspace/StatusPill'
@@ -19,8 +19,8 @@ export default function DispenseDrawer({ rx, batches, onClose, onDispense }) {
   const [quantities, setQuantities] = useState(() => Object.fromEntries(rx.lines.map((line) => [line.id, String(remainingOf(line))])))
   const [splitting, setSplitting] = useState(false)
   const [consent, setConsent] = useState({ register: false, otp: false })
-  const [reminders, setReminders] = useState(true)
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const parsed = Object.fromEntries(Object.entries(quantities).map(([id, value]) => [id, Number(value) || 0]))
   const plans = planLines(rx, batches, parsed)
@@ -30,8 +30,10 @@ export default function DispenseDrawer({ rx, batches, onClose, onDispense }) {
   const ready = checks.every((entry) => entry.ok)
   const lineCount = plans.filter((entry) => entry.wanted > 0).length
 
-  const authorize = () => {
-    const outcome = onDispense({ rxId: rx.id, quantities: parsed, consent, reminders })
+  const authorize = async () => {
+    setSaving(true)
+    const outcome = await onDispense({ rxId: rx.id, quantities: parsed, consent })
+    setSaving(false)
     if (outcome.error) return setError(outcome.error)
     onClose()
   }
@@ -42,12 +44,12 @@ export default function DispenseDrawer({ rx, batches, onClose, onDispense }) {
       onClose={onClose}
       eyebrow={`Pharmacy dispensary · Clinical dispense & verify`}
       title="Dispense & Verify Medication"
-      description="Mandatory two-way verification: prescribed clinical regimen vs physical inventory GTIN."
+      description="Check the prescription against the stock you are about to hand over, batch by batch."
       width="max-w-3xl"
       footer={
         <div className="flex flex-wrap items-center justify-between gap-3">
           <ActionButton onClick={onClose}>Cancel / Discard Draft</ActionButton>
-          <ActionButton variant="primary" icon={ready ? CheckCircle2 : Lock} onClick={authorize}>Authorize &amp; Complete Dispensing</ActionButton>
+          <ActionButton variant="primary" icon={ready ? CheckCircle2 : Lock} disabled={saving} onClick={authorize}>Authorize &amp; Complete Dispensing</ActionButton>
         </div>
       }
     >
@@ -68,7 +70,7 @@ export default function DispenseDrawer({ rx, batches, onClose, onDispense }) {
             <p className="font-semibold">On hold: {rx.hold}</p>
             {h1 && (
               <div className="mt-2 flex flex-col gap-1.5">
-                <Check checked={consent.otp} onChange={(event) => setConsent((current) => ({ ...current, otp: event.target.checked }))} label="Patient OTP consent captured" />
+                <Check checked={consent.otp} onChange={(event) => setConsent((current) => ({ ...current, otp: event.target.checked }))} label="Patient consent recorded" />
                 <Check checked={consent.register} onChange={(event) => setConsent((current) => ({ ...current, register: event.target.checked }))} label="Schedule H1 statutory register entry made" />
               </div>
             )}
@@ -76,9 +78,8 @@ export default function DispenseDrawer({ rx, batches, onClose, onDispense }) {
         )}
 
         <section className="rounded-md border border-slate-200 p-4">
-          <h3 className="mb-3 flex items-center justify-between text-sm font-semibold">Clinical prescription summary <StatusPill tone="success">Source of truth</StatusPill></h3>
-          <p className="text-xs"><span className="text-outline">Confirmed ICD-10: </span>{rx.diagnoses.length ? rx.diagnoses.join(' · ') : 'Not recorded in the prescription source'}</p>
-          <p className="mt-1 text-xs"><span className="text-outline">Patient vitals: </span>{rx.vitals || 'Not recorded'}</p>
+          <h3 className="mb-3 flex items-center justify-between text-sm font-semibold">Clinical prescription summary <StatusPill tone="success">Signed prescription</StatusPill></h3>
+          <p className="text-xs"><span className="text-outline">Indication: </span>{rx.notes || 'Not recorded on the prescription'}</p>
           <p className="mt-1 text-xs"><span className="text-outline">Coverage: </span>{rx.coverage}</p>
         </section>
 
@@ -107,12 +108,12 @@ export default function DispenseDrawer({ rx, batches, onClose, onDispense }) {
                 <li key={line.id} className="rounded-md border border-emerald-200 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-[13px] font-semibold"><span className="mr-2 rounded bg-black px-1.5 py-0.5 text-[10px] text-white">Rx{index + 1}</span>{line.name}</p>
-                    <StatusPill tone={remaining === 0 ? 'neutral' : short ? 'danger' : 'success'}>{remaining === 0 ? 'Already dispensed' : short ? `Short by ${short}` : 'Verified & scanned'}</StatusPill>
+                    <StatusPill tone={remaining === 0 ? 'neutral' : short ? 'danger' : 'success'}>{!line.itemId ? 'Not stocked' : remaining === 0 ? 'Already dispensed' : short ? `Short by ${short}` : 'Stock allocated'}</StatusPill>
                   </div>
                   <p className="mt-1 text-[11px] text-outline">{itemById(line.itemId)?.brand ?? line.timing} · {line.timing}</p>
                   {remaining > 0 && (
                     <div className="mt-3 grid gap-3 rounded-md bg-surface-lowest p-3 text-xs sm:grid-cols-4">
-                      {picks.length === 0 ? <p className="sm:col-span-4 text-danger">No dispensable batch is in stock (available {free}).</p> : picks.map((pick) => (
+                      {!line.itemId ? <p className="sm:col-span-4 text-danger">This medicine and strength is not linked to a stocked item. Add it to the item master with its prescribing code.</p> : picks.length === 0 ? <p className="sm:col-span-4 text-danger">No dispensable batch is in stock (available {free}).</p> : picks.map((pick) => (
                         <div key={pick.batchId} className="sm:col-span-4 grid gap-3 sm:grid-cols-4">
                           <div><p className="text-[10px] tracking-wide text-outline uppercase">Allocated batch</p><p className="font-mono font-semibold">{pick.batchNo}</p></div>
                           <div><p className="text-[10px] tracking-wide text-outline uppercase">Dispensary bay</p><p className="font-semibold">{pick.bin}</p></div>
@@ -146,10 +147,6 @@ export default function DispenseDrawer({ rx, batches, onClose, onDispense }) {
             <div><dt className="text-outline">Dispensing ledger review</dt><dd className="font-semibold">Gross {money(total)}</dd></div>
             <div><dt className="text-outline">Coverage</dt><dd className="font-semibold">{rx.coverage}</dd></div>
           </dl>
-          <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
-            <span>Send automated medication reminders via WhatsApp</span>
-            <Toggle checked={reminders} onChange={setReminders} label="Send automated medication reminders via WhatsApp" />
-          </div>
         </section>
         {error && <p role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800">{error}</p>}
       </div>

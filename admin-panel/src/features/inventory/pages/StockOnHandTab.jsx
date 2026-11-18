@@ -6,7 +6,7 @@ import { exportCsv } from '../../../lib/exportCsv'
 import { daysBetween } from '../../patients/format'
 import { ListCard, ListFooter, Pill, Toolbar } from '../components/shared'
 import { REF_CLASS, STOCK_TONE } from '../components/tones'
-import { locationName, NOW } from '../constants'
+import { centralId, locationName, NOW } from '../constants'
 import { useStock } from '../context/useStock'
 import { ITEMS } from '../data/items'
 import { formatDate, qty } from '../format'
@@ -26,7 +26,7 @@ export default function StockOnHandTab() {
 
   const all = ITEMS.map((item) => {
     const stock = summarise(state.batches, item.id, loc)
-    const level = loc === 'central' ? item.reorder : item.safety
+    const level = loc === centralId() ? item.reorder : item.safety
     return { item, stock, level, status: stockStatus(stock, level) }
   }).filter((row) => row.stock.rows.length > 0)
 
@@ -63,7 +63,7 @@ export default function StockOnHandTab() {
             { label: 'Expiry', value: expiry, onChange: setExpiry, all: 'Expiry: Any date', options: Object.keys(EXPIRY_WINDOWS) },
           ]}
         />
-        <Table headings={['Item / SKU', 'Category', 'Store / branch', 'Available', 'Batch', 'Earliest expiry', loc === 'central' ? 'Reorder' : 'Safety buffer', 'Status']} minWidth={900} empty={rows.length ? null : 'No items match the current filters.'}>
+        <Table headings={['Item / SKU', 'Category', 'Store / branch', 'Available', 'Batch', 'Earliest expiry', loc === centralId() ? 'Reorder' : 'Safety buffer', 'Status']} minWidth={900} empty={rows.length ? null : 'No items match the current filters.'}>
           {rows.map(({ item, stock, level, status: label }) => (
             <Row key={item.id}>
               <Cell>

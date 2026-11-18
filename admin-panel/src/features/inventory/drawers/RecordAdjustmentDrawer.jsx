@@ -27,11 +27,12 @@ export default function RecordAdjustmentDrawer({ open, onClose, batches, initial
     onClose()
   }
 
-  const save = (nextMode) => {
+  const save = async (nextMode) => {
     setMode(nextMode)
     setSubmitted(true)
     if (Object.keys(validateAdjustment(values, batches, nextMode)).length) return
-    onSave({ ...values, mode: nextMode, proposed: Number(values.proposed), id: initial?.id })
+    const outcome = await onSave({ ...values, mode: nextMode, proposed: Number(values.proposed), id: initial?.id })
+    if (outcome?.error) return
     finish()
   }
 

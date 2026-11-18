@@ -1,11 +1,11 @@
-import { ArrowLeftRight, Building2, Package, Plus } from 'lucide-react'
+import { ArrowLeftRight, Building2, Package, Plus, Settings } from 'lucide-react'
 import { Link, NavLink, Outlet, useSearchParams } from 'react-router-dom'
 import ActionButton from '../../../components/workspace/ActionButton'
 import { Cell, Row, Table } from '../../../components/workspace/DataTable'
 import WorkspacePage from '../../../components/workspace/WorkspacePage'
 import { pathFor, ROUTES } from '../../../config/routes'
 import { cn } from '../../../lib/cn'
-import { LOCATIONS, locationName, NOW } from '../constants'
+import { centralId, locationName, LOCATIONS, NOW } from '../constants'
 import { useStock } from '../context/useStock'
 import { itemById } from '../data/items'
 import { formatDate, formatTime } from '../format'
@@ -91,12 +91,12 @@ function Queues({ state }) {
 export default function InventoryLayout() {
   const { state } = useStock()
   const [params, setParams] = useSearchParams()
-  const loc = params.get('store') ?? 'central'
+  const loc = params.get('store') ?? centralId()
   const counts = attentionCounts(state, loc, NOW.date)
 
   const changeStore = (event) => {
     const next = new URLSearchParams(params)
-    if (event.target.value === 'central') next.delete('store')
+    if (event.target.value === centralId()) next.delete('store')
     else next.set('store', event.target.value)
     setParams(next, { replace: true })
   }
@@ -112,6 +112,7 @@ export default function InventoryLayout() {
           <ActionButton variant="brand" icon={Plus} to={ROUTES.inventoryOrderNew}>Create Purchase Order</ActionButton>
           <ActionButton icon={Package} to={ROUTES.inventoryReceiveNew}>Receive Stock</ActionButton>
           <ActionButton icon={ArrowLeftRight} to={ROUTES.stockTransfers}>Stock Transfer</ActionButton>
+          <ActionButton icon={Settings} to={ROUTES.inventorySetup}>Setup</ActionButton>
         </div>
       </div>
 

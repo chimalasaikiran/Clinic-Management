@@ -26,7 +26,8 @@ export function PrescriptionDetailDrawer({ rx, patient, onClose, onOpenActivity,
   const [error, setError] = useState('')
   if (!rx) return null
   const dispensed = rx.items.filter((item) => item.dispensing.state === 'Dispensed').length
-  const reached = 2
+  // Created and authorized once signed; a dispensing at the pharmacy acknowledges it, and the last line dispensed completes it.
+  const reached = dispensed === rx.items.length ? 4 : rx.items.some((item) => item.dispensing.state !== 'Awaiting' && item.dispensing.state !== 'Not dispensed') ? 3 : 2
 
   const discontinue = async () => {
     if (reason.trim().length < 10) return setError('Give the reason for discontinuing (at least 10 characters).')

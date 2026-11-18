@@ -1,32 +1,30 @@
+import { dispensaryId } from '../inventory/constants'
 import { itemById } from '../inventory/data/items'
 import { availableOf, fefoPlan } from '../inventory/stockLogic'
 
-const PHARMACY = 'main'
 
-// Generic names that fall under an allergy class; a prescribed line matching one blocks dispensing.
-const ALLERGY_MEMBERS = {
-  penicillin: ['amoxicillin', 'ampicillin', 'penicillin', 'clavulan', 'piperacillin'],
-  sulfa: ['sulfamethoxazole', 'cotrimoxazole', 'sulfasalazine'],
-}
 
 export const remainingOf = (line) => Math.max(0, line.qty - line.dispensed)
 
+// Lines whose drug class matches one of the patient's recorded allergy classes; the API refuses to dispense them.
 export function allergyConflicts(rx) {
-  return rx.lines.filter((line) => rx.patient.allergies.some((allergy) => (ALLERGY_MEMBERS[allergy] ?? [allergy]).some((member) => line.name.toLowerCase().includes(member))))
+  const classes = rx.patient.allergyClasses ?? []
+  return rx.lines.filter((line) => line.drugClass && classes.includes(line.drugClass))
 }
 
-// The five mandatory interlocks shown before dispensing. Checks that run against our own data are computed;
-// the rest repeat what the prescription source recorded.
+// The checks shown before dispensing. Schedule, allergy and prescriber are worked out from the records and are
+// enforced by the API; interaction and dose checks are not automated, so the pharmacist confirms them.
 export function interlocks(rx, consent = {}) {
   const h1 = rx.schedule === 'H1'
   const conflicts = allergyConflicts(rx)
   const h1Ready = !h1 || (consent.register && consent.otp)
+  const allergies = rx.patient.allergies
   return [
-    { id: 'schedule', title: `CDSCO Rule 65 & Schedule ${rx.schedule ?? 'OTC'} compliance`, ok: Boolean(h1Ready), detail: h1 && !h1Ready ? 'Record the patient OTP consent and the statutory register entry.' : 'Valid e-prescription with a tamper-evident signature.', badge: h1Ready ? 'Passed & logged' : 'Action required' },
-    { id: 'allergy', title: 'Allergy cross-reactivity filter', ok: conflicts.length === 0, detail: conflicts.length ? `${conflicts.map((line) => line.name).join(', ')} conflicts with the recorded ${rx.patient.allergies.join(', ')} allergy.` : rx.patient.allergies.length ? `Recorded ${rx.patient.allergies.join(', ')} allergy; no prescribed medicine belongs to that class.` : 'No allergies recorded for this patient.', badge: conflicts.length ? 'Conflict' : 'Cleared (0% risk)' },
-    { id: 'ddi', title: 'Drug-drug interaction matrix', ok: true, detail: rx.sourceChecks.ddi, badge: 'As recorded in source' },
-    { id: 'renal', title: 'Renal & hepatic dose clearance', ok: true, detail: rx.sourceChecks.renal, badge: 'As recorded in source' },
-    { id: 'prescriber', title: 'Prescriber council standing & schedule privilege', ok: true, detail: rx.sourceChecks.prescriber, badge: 'As recorded in source' },
+    { id: 'schedule', title: `Schedule ${rx.schedule ?? 'OTC'} requirements`, ok: Boolean(h1Ready), detail: h1 && !h1Ready ? 'Record the Schedule H1 register entry and the patient consent.' : h1 ? 'Register entry and patient consent recorded.' : 'No statutory register entry is needed for these medicines.', badge: h1Ready ? 'Ready' : 'Action required' },
+    { id: 'allergy', title: 'Allergy cross-check', ok: conflicts.length === 0, detail: conflicts.length ? `${conflicts.map((line) => line.name).join(', ')} conflicts with the recorded ${allergies.join(', ')} allergy.` : allergies.length ? `Recorded ${allergies.join(', ')} allergy; no prescribed medicine belongs to that class.` : 'No allergies recorded for this patient.', badge: conflicts.length ? 'Conflict' : 'Cleared' },
+    { id: 'ddi', title: 'Drug-drug interactions', ok: true, detail: 'Not checked automatically. Review the patient’s other medicines before dispensing.', badge: 'Pharmacist to confirm' },
+    { id: 'renal', title: 'Renal & hepatic dosing', ok: true, detail: 'Not checked automatically. Confirm the dose suits the patient’s renal and hepatic function.', badge: 'Pharmacist to confirm' },
+    { id: 'prescriber', title: 'Prescriber registration', ok: true, detail: rx.registration ? `${rx.prescriber} · registration ${rx.registration} on the signed prescription.` : `${rx.prescriber} · no council registration is on file for the prescriber.`, badge: rx.registration ? 'On file' : 'Not on file' },
   ]
 }
 
@@ -34,8 +32,8 @@ export function interlocks(rx, consent = {}) {
 export function planLines(rx, batches, quantities = {}) {
   return rx.lines.map((line) => {
     const wanted = Number(quantities[line.id] ?? remainingOf(line))
-    const plan = fefoPlan(batches, line.itemId, PHARMACY, wanted)
-    const free = batches.filter((batch) => batch.itemId === line.itemId && batch.loc === PHARMACY).reduce((sum, batch) => sum + availableOf(batch), 0)
+    const plan = fefoPlan(batches, line.itemId, dispensaryId(), wanted)
+    const free = batches.filter((batch) => batch.itemId === line.itemId && batch.loc === dispensaryId()).reduce((sum, batch) => sum + availableOf(batch), 0)
     return { line, wanted, picks: plan.picks, short: plan.short, free }
   })
 }

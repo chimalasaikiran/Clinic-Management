@@ -54,20 +54,50 @@ export function financialFigures({ invoices, payments }, refunds, range) {
 
 // ---- Pharmacy & inventory -------------------------------------------------------------------------------
 
-export function pharmacyFigures(pharmacy) {
-  const statusCount = (status) => pharmacy.items.filter((item) => item.status === status).length
-  const nearExpiry = pharmacy.items.filter((item) => item.status === 'Near expiry')
-  const sales = sum(pharmacy.categories, (category) => category.sales)
-  const cogs = sum(pharmacy.categories, (category) => category.cogs)
-  return {
-    dispensed: sum(pharmacy.dispensing, (point) => point.value),
-    purchases: sum(pharmacy.purchases, (point) => point.value),
-    nearExpiryValue: sum(nearExpiry, (item) => item.stock * item.buy),
-    nearExpirySkus: nearExpiry.length,
-    stockouts: pharmacy.exceptions.filter((entry) => entry.urgency === 'Urgent' || entry.urgency === 'Resolved').length,
-    openStockouts: pharmacy.exceptions.filter((entry) => entry.urgency === 'Urgent').length,
-    status: { 'In stock': statusCount('In stock'), 'Low stock': statusCount('Low stock'), 'Near expiry': statusCount('Near expiry'), 'Out of stock': statusCount('Out of stock') },
-    sales, cogs, grossProfit: sales - cogs, margin: sales ? round(((sales - cogs) / sales) * 100) : null,
-    categoryPurchases: sum(pharmacy.categories, (category) => category.purchases),
+// Pharmacy & inventory figures from the live stock state (inventory adapters' shapes) over the last `days` days.
+// Values are at the item's unit price; ClinicOS records no separate selling price, so no margin is worked out.
+export function pharmacyReport({ items, state, locations }, today, days = 30) {
+  const since = addIsoDays(today, -days + 1)
+  const inWindow = (date) => date >= since && date <= today
+  const price = new Map(items.map((item) => [item.id, item.price]))
+  const pharmacies = locations.filter((location) => location.kind === 'pharmacy').map((location) => location.id)
+  const nearLimit = addIsoDays(today, 30)
+  const free = (batch) => (batch.expiry < today ? 0 : Math.max(0, batch.posted - batch.reserved - batch.quarantine))
+  const rows = items.filter((item) => item.active !== false).map((item) => {
+    const batches = state.batches.filter((batch) => batch.itemId === item.id && batch.posted > 0)
+    const stock = batches.reduce((sum, batch) => sum + free(batch), 0)
+    const soonest = batches.filter((batch) => batch.expiry >= today).sort((a, b) => a.expiry.localeCompare(b.expiry))[0] ?? null
+    const near = soonest && soonest.expiry <= nearLimit
+    const status = stock <= 0 ? 'Out of stock' : stock < item.reorder ? 'Low stock' : near ? 'Near expiry' : 'In stock'
+    return { name: item.name, category: item.category, stock, unit: item.unitPlural, level: item.reorder, batch: soonest?.batchNo ?? '—', expiry: soonest?.expiry ?? null, buy: item.price, status, nearValue: near ? soonest.posted * item.price : 0, itemId: item.id }
+  })
+  const dispensedLines = state.dispenses.filter((dispense) => inWindow(dispense.date)).flatMap((dispense) => dispense.lines)
+  const received = state.movements.filter((movement) => movement.kind === 'Receipt' && movement.delta > 0 && inWindow(movement.date) && !pharmacies.includes(movement.loc))
+  const byCategory = new Map()
+  for (const line of dispensedLines) {
+    const category = items.find((item) => item.id === line.itemId)?.category ?? 'Other'
+    const entry = byCategory.get(category) ?? { name: category, units: 0, value: 0 }
+    entry.units += line.qty
+    entry.value = round(entry.value + line.qty * (price.get(line.itemId) ?? 0), 2)
+    byCategory.set(category, entry)
   }
+  const statusCount = (status) => rows.filter((row) => row.status === status).length
+  return {
+    since,
+    items: rows,
+    dispensed: sum(dispensedLines, (line) => line.qty),
+    dispensedValue: sum(dispensedLines, (line) => line.qty * (price.get(line.itemId) ?? 0)),
+    receivedValue: sum(received, (movement) => movement.delta * (price.get(movement.itemId) ?? 0)),
+    nearExpiryValue: sum(rows, (row) => row.nearValue),
+    nearExpirySkus: statusCount('Near expiry'),
+    stockouts: statusCount('Out of stock'),
+    status: { 'In stock': statusCount('In stock'), 'Low stock': statusCount('Low stock'), 'Near expiry': statusCount('Near expiry'), 'Out of stock': statusCount('Out of stock') },
+    categories: [...byCategory.values()].sort((a, b) => b.value - a.value),
+    exceptions: rows.filter((row) => row.status !== 'In stock'),
+  }
+}
+
+function addIsoDays(iso, count) {
+  const [year, month, day] = iso.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day + count)).toISOString().slice(0, 10)
 }

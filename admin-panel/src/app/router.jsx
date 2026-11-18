@@ -39,7 +39,9 @@ import PurchaseOrdersTab from '../features/inventory/pages/PurchaseOrdersTab'
 import ReceivingTab from '../features/inventory/pages/ReceivingTab'
 import TransfersTab from '../features/inventory/pages/TransfersTab'
 import AdjustmentsTab from '../features/inventory/pages/AdjustmentsTab'
+import InventorySetupPage from '../features/inventory/pages/InventorySetupPage'
 import ItemDetailPage from '../features/inventory/pages/ItemDetailPage'
+import ItemFormPage from '../features/inventory/pages/ItemFormPage'
 import StockRequestReviewPage from '../features/inventory/pages/StockRequestReviewPage'
 import PurchaseOrderPage from '../features/inventory/pages/PurchaseOrderPage'
 import CreatePurchaseOrderPage from '../features/inventory/pages/CreatePurchaseOrderPage'
@@ -309,7 +311,10 @@ export const routes = [
                   { path: 'adjustments', element: <AdjustmentsTab /> },
                 ],
               },
+              { path: ROUTES.inventorySetup, element: <InventorySetupPage /> },
+              { path: ROUTES.inventoryItemNew, element: <ItemFormPage /> },
               { path: ROUTES.inventoryItem, element: <ItemDetailPage /> },
+              { path: ROUTES.inventoryItemEdit, element: <ItemFormPage /> },
               { path: ROUTES.inventoryRequest, element: <StockRequestReviewPage /> },
               { path: ROUTES.inventoryOrderNew, element: <CreatePurchaseOrderPage /> },
               { path: ROUTES.inventoryOrder, element: <PurchaseOrderPage /> },

@@ -30,3 +30,10 @@ export async function renderBillingRoute(path, state, options) {
   await waitFor(() => expect(screen.queryByText('Loading billing records…')).not.toBeInTheDocument())
   return router
 }
+
+// Renders an inventory or pharmacy route and waits until the (faked) stock state has loaded.
+export async function renderStockRoute(path, state, options) {
+  const router = renderRoute(path, state, options)
+  await waitFor(() => expect(screen.queryByText('Loading stock and pharmacy records…')).not.toBeInTheDocument())
+  return router
+}

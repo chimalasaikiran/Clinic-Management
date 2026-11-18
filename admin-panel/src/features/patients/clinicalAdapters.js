@@ -135,10 +135,24 @@ export function toNoteView(note) {
 }
 
 const RX_STATUS = { active: 'Active', completed: 'Completed', discontinued: 'Discontinued' }
-const RX_EVENTS = { signed: 'Prescription authorized & signed', discontinued: 'Prescription discontinued' }
+const RX_EVENTS = { signed: 'Prescription authorized & signed', discontinued: 'Prescription discontinued', dispensed: 'Dispensed in full', partially_dispensed: 'Partially dispensed' }
 
-// There is no pharmacy module yet, so every line waits for the pharmacy to acknowledge it.
-const AWAITING_PHARMACY = { state: 'Awaiting', note: 'Pending pharmacy acknowledgement' }
+// A line's dispensing progress, from the units the pharmacy has handed out against it.
+function lineDispensing(item, status) {
+  const given = item.dispensed ?? 0
+  if (given >= item.quantity) return { state: 'Dispensed', note: `${given} of ${item.quantity} dispensed` }
+  if (given > 0) return { state: 'Partially dispensed', note: `${given} of ${item.quantity} dispensed · ${item.quantity - given} still to dispense` }
+  if (status !== 'active') return { state: 'Not dispensed', note: 'Nothing was dispensed against this line' }
+  return { state: 'Awaiting', note: 'Not yet dispensed by the pharmacy' }
+}
+
+function rxDispensing(rx) {
+  if (rx.status === 'discontinued') return '—'
+  const given = rx.items.reduce((sum, item) => sum + (item.dispensed ?? 0), 0)
+  if (rx.items.every((item) => (item.dispensed ?? 0) >= item.quantity)) return 'Dispensed in full'
+  if (given > 0) return 'Partially dispensed'
+  return rx.status === 'active' ? 'Awaiting dispensing at the pharmacy' : '—'
+}
 
 export function toPrescriptionView(rx) {
   const discontinued = rx.events.find((event) => event.action === 'discontinued')
@@ -156,7 +170,7 @@ export function toPrescriptionView(rx) {
     registration: rx.registration ?? 'No council registration on file',
     branch: rx.branch.name,
     status: RX_STATUS[rx.status],
-    dispensing: rx.status === 'active' ? 'Awaiting pharmacy acknowledgement' : '—',
+    dispensing: rxDispensing(rx),
     hash: `sha256:${rx.contentHash}`,
     replacedNote: discontinued ? `Discontinued by ${discontinued.actor}: ${discontinued.note}` : null,
     items: rx.items.map((item) => ({
@@ -174,7 +188,7 @@ export function toPrescriptionView(rx) {
       refills: item.refills,
       instructions: item.instructions,
       indication: item.indication,
-      dispensing: AWAITING_PHARMACY,
+      dispensing: lineDispensing(item, rx.status),
     })),
     events: rx.events.map((event) => ({ time: stampLabel(event.at), title: RX_EVENTS[event.action] ?? event.action, actor: event.actor, note: event.note })),
   }

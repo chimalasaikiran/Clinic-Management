@@ -1,10 +1,13 @@
-import { ArrowLeft, Lock, ShieldCheck } from 'lucide-react'
+import { useState } from 'react'
+import { ArrowLeft, ShieldCheck } from 'lucide-react'
 import { useLocation, useParams } from 'react-router-dom'
 import ActionButton from '../../../components/workspace/ActionButton'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { ROUTES } from '../../../config/routes'
 import DetailFrame, { MissingRecord } from '../../inventory/components/DetailFrame'
 import { useStock } from '../../inventory/context/useStock'
+import { LOCATIONS } from '../../inventory/constants'
+import { Check, OptionSelect, TextArea } from '../../patients/components/parts'
 import { formatDate, formatTime } from '../../inventory/format'
 import { CASE_TONE } from '../caseTones'
 
@@ -30,15 +33,15 @@ function Rows({ rows }) {
 }
 
 const OUTCOME = {
-  'Awaiting review': ['Awaiting Inventory Review', 'Quarantined · off available stock', 'bg-amber-50 text-amber-900', 'Return remains off available stock while Inventory review is pending. No completed stock adjustment or Inventory transaction is documented.'],
+  'Awaiting review': ['Awaiting review', 'Not in available stock', 'bg-amber-50 text-amber-900', 'Returned units are not in available stock while the review is pending. No stock movement has been posted.'],
   Investigating: ['Investigating', 'Recount in progress', 'bg-sky-50 text-sky-900', 'The reported variance is not a posted adjustment. Inventory review remains in progress; no completed stock adjustment or Inventory transaction is documented.'],
   Approved: ['Approved', 'Stock posting pending', 'bg-emerald-50 text-emerald-900', 'Approval is a review outcome only. Do not treat the returned units as an approved quantity or available stock. No completed stock adjustment or Inventory transaction is documented.'],
   Rejected: ['Rejected', 'Not eligible for restock', 'bg-red-50 text-red-800', 'Rejected medicine is not eligible for restock. No disposal, write-off or other stock movement is documented.'],
-  Resolved: ['Resolved', 'Closed', 'bg-emerald-50 text-emerald-900', 'The case is closed. The linked Inventory adjustment holds the stock movement.'],
+  Resolved: ['Resolved', 'Closed', 'bg-emerald-50 text-emerald-900', 'The case is closed. Any restock or stock correction is in the stock ledger under this case number.'],
   Draft: ['Draft', 'Not submitted', 'bg-slate-100 text-slate-700', 'This case is a draft and has not entered the review queue.'],
 }
 
-// Read-only case view: the report as filed, the Inventory outcome, and an audit trail built from what is recorded.
+// The case as filed, its review outcome and history, and the review actions while it is awaiting a decision.
 export default function ReturnDetailPage() {
   const { caseId } = useParams()
   const { state } = useStock()
@@ -48,6 +51,8 @@ export default function ReturnDetailPage() {
   if (!entry) return <MissingRecord what="case" backTo={ROUTES.pharmacyReturns} backLabel="Back to Returns & Discrepancies" />
 
   const isReturn = entry.type === 'Return'
+  const open = entry.status === 'Awaiting review' || entry.status === 'Draft'
+  const decision = open ? null : entry.history[entry.history.length - 1]
   const [outcomeTitle, outcomeNote, outcomeTone, outcomeText] = OUTCOME[entry.status]
   const reported = `${formatDate(entry.date)} · ${formatTime(entry.time)} IST`
   const detailRows = isReturn
@@ -80,9 +85,9 @@ export default function ReturnDetailPage() {
           {isReturn && entry.reference && <p className="mt-3 rounded-md bg-surface-lowest p-3 text-xs"><strong className="block">{entry.reference} · Linked record unavailable</strong><span className="text-on-surface-variant">No matching dispensing record destination is available. Reference shown as recorded; no link is provided.</span></p>}
         </div>
         <div className="border-t border-slate-200 p-5 lg:border-t-0">
-          <header className="mb-3 flex justify-between"><h2 className="text-lg font-semibold">Inventory review &amp; outcome</h2><span className="text-[11px] text-outline">Read-only</span></header>
+          <header className="mb-3 flex justify-between"><h2 className="text-lg font-semibold">Inventory review &amp; outcome</h2><span className="text-[11px] text-outline">{open ? 'Awaiting decision' : 'Decided'}</span></header>
           <div className={`mb-3 rounded-md p-4 ${outcomeTone}`}><p className="text-sm font-semibold">{outcomeTitle}</p><p className="text-xs">{entry.statusNote || outcomeNote}</p></div>
-          <Rows rows={[['Linked review decision', 'No completed decision recorded', true], ['Approved quantity', NOT_RECORDED], ['Rejected quantity', NOT_RECORDED], ['Decision actor / time', NOT_RECORDED], ['Decision reason', NOT_RECORDED], ['Stock adjustment ref.', 'Not linked', true], ['Transaction status', entry.status === 'Approved' ? 'Stock posting pending' : 'Pending review · not linked', true]]} />
+          <Rows rows={[['Decision', entry.status === 'Awaiting review' || entry.status === 'Draft' ? 'Not decided yet' : entry.statusNote, true], ['Decided by / time', decision ? `${decision.text.split(' · ').slice(1).join(' · ') || '—'} · ${formatDate(decision.date)} ${decision.time}` : NOT_RECORDED], ['Decision reason', decision?.by ?? NOT_RECORDED]]} />
           <p className="mt-4 text-xs text-on-surface-variant">{outcomeText}</p>
         </div>
       </section>
@@ -90,12 +95,51 @@ export default function ReturnDetailPage() {
       <section className="mb-5 rounded-lg border border-slate-200 bg-white p-5">
         <header className="mb-3 flex justify-between"><h2 className="text-lg font-semibold">Audit timeline</h2><span className="text-[11px] text-outline">Oldest first · All times IST</span></header>
         <ol className="flex flex-col gap-4 text-sm">
-          <li className="flex justify-between gap-4"><div><p className="font-semibold">Case reported</p><p className="text-xs text-on-surface-variant">{entry.type} / {entry.subtype} · {entry.medicine} · Batch {entry.batchNo}</p></div><div className="text-right text-xs"><p>{reported}</p><p className="text-outline">{entry.reportedBy ? `Actor ${entry.reportedBy}` : 'Actor not recorded'}</p></div></li>
-          <li className="flex justify-between gap-4"><div><p className="font-semibold">{entry.status} · {(entry.statusNote || '').toLowerCase()}</p><p className="text-xs text-on-surface-variant">Current state: {entry.status.toLowerCase()}. {entry.status === 'Awaiting review' ? 'No review decision is recorded.' : 'Review timing and decision details are not recorded.'}</p></div><div className="text-right text-xs"><p className="text-outline">Time not recorded</p><p className="text-outline">Actor not recorded</p></div></li>
+          {entry.history.map((event, index) => <li key={`${event.date}-${event.time}-${index}`} className="flex justify-between gap-4"><div><p className="font-semibold">{event.text}</p><p className="text-xs text-on-surface-variant">{event.by}</p></div><div className="shrink-0 text-right text-xs text-outline">{formatDate(event.date)}<br />{formatTime(event.time)} IST</div></li>)}
         </ol>
-        <p className="mt-4 text-[11px] text-outline">Current review state is shown after the report; review timing and intermediate event order are not recorded.</p>
       </section>
-      <p className="flex items-center gap-2 text-xs text-on-surface-variant"><Lock className="size-3.5" aria-hidden="true" />Read-only case view. Follow-up and withdrawal are unavailable; no supported workflow or permission is recorded.</p>
+      {open && <CaseReview entry={entry} />}
     </DetailFrame>
+  )
+}
+
+// The review decision: restock or reject a return; resolve a discrepancy, optionally correcting the batch by the variance.
+function CaseReview({ entry }) {
+  const { run } = useStock()
+  const isReturn = entry.type === 'Return'
+  const locations = LOCATIONS.filter((location) => location.active)
+  const [values, setValues] = useState({ note: '', locationId: locations.find((location) => location.kind === 'pharmacy')?.id ?? '', adjust: false })
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const set = (name, value) => setValues((current) => ({ ...current, [name]: value }))
+
+  const decide = async (decision) => {
+    if (values.note.trim().length < 3) return setError('Record the outcome of the review.')
+    if (decision === 'restock' && !values.locationId) return setError('Choose where the units go back into stock.')
+    setError('')
+    setSaving(true)
+    await run('case/decide', { id: entry.id, decision, note: values.note.trim(), adjust: values.adjust, locationId: decision === 'restock' ? values.locationId : null })
+    setSaving(false)
+  }
+
+  return (
+    <section aria-label="Review this case" className="rounded-lg border border-slate-200 bg-white p-5">
+      <h2 className="mb-3 text-lg font-semibold">Review this case</h2>
+      <div className="grid gap-4 md:grid-cols-2">
+        <TextArea label="Review outcome" required rows={3} value={values.note} onChange={(event) => set('note', event.target.value)} error={error} hint={isReturn ? 'e.g. Sealed strips checked; fit for restock.' : 'e.g. Recount confirms the variance; packs found damaged.'} />
+        <div className="flex flex-col gap-3">
+          {isReturn
+            ? <OptionSelect label="Restock at" value={values.locationId} onChange={(event) => set('locationId', event.target.value)} placeholder="Choose a location" options={locations.map((location) => ({ value: location.id, label: location.name }))} />
+            : <Check checked={values.adjust} disabled={entry.expected === null || entry.observed === null || !entry.batchId} onChange={(event) => set('adjust', event.target.checked)} label={`Also correct the batch by the variance found (${entry.observed !== null && entry.expected !== null ? variance(entry) : 'counts not recorded'})`} />}
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        {isReturn && <ActionButton disabled={saving} onClick={() => decide('reject')}>Reject return</ActionButton>}
+        {isReturn
+          ? <ActionButton variant="primary" disabled={saving || !entry.batchId} onClick={() => decide('restock')}>Approve & restock {entry.qty} {entry.unit}</ActionButton>
+          : <ActionButton variant="primary" disabled={saving} onClick={() => decide('resolve')}>Resolve discrepancy</ActionButton>}
+      </div>
+      {isReturn && !entry.batchId && <p className="mt-2 text-right text-[11px] text-outline">A return without a batch can only be rejected.</p>}
+    </section>
   )
 }
