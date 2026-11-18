@@ -1,8 +1,13 @@
 import { pathFor, ROUTES } from '../../config/routes'
-import { DOCTORS, SESSIONS } from './data/catalog'
-import { TODAY, daysBetween, formatTime } from './format'
+import { SESSIONS } from './data/catalog'
+import { daysBetween, formatTime, localClock, localToday } from './format'
 
+// 'Scheduled' only appears in the sample records of the in-memory modules; the API uses 'Pending Confirmation'.
 export const UPCOMING_STATUSES = ['Pending Confirmation', 'Scheduled', 'Confirmed', 'Arrived', 'In Progress']
+
+// Before arrival an appointment can still be confirmed, moved, cancelled or marked as a no-show.
+export const CHANGEABLE_STATUSES = ['Pending Confirmation', 'Scheduled', 'Confirmed']
+export const isChangeable = (appointment) => CHANGEABLE_STATUSES.includes(appointment.status)
 
 const stamp = (item) => `${item.date} ${item.time}`
 export const byNewest = (a, b) => stamp(b).localeCompare(stamp(a))
@@ -20,16 +25,16 @@ export function appointmentTone(status) {
 
 export const activeAlerts = (alerts) => alerts.filter((alert) => alert.status === 'Active')
 
-export function daysLabel(isoDate) {
-  const days = daysBetween(TODAY, isoDate)
+export function daysLabel(isoDate, today = localToday()) {
+  const days = daysBetween(today, isoDate)
   if (days === 0) return 'Today'
   if (days === 1) return 'Tomorrow'
   return days > 0 ? `In ${days} days` : `${-days} days ago`
 }
 
 // Where the hub's "Start Encounter" button goes: the next step in today's visit, or a new booking.
-export function startEncounterPath(patientId, appointments) {
-  const today = appointments.filter((appointment) => appointment.date === TODAY && isUpcoming(appointment)).sort(byOldest)
+export function startEncounterPath(patientId, appointments, todayIso = localToday()) {
+  const today = appointments.filter((appointment) => appointment.date === todayIso && isUpcoming(appointment)).sort(byOldest)
   const inProgress = today.find((appointment) => appointment.status === 'In Progress')
   const arrived = today.find((appointment) => appointment.status === 'Arrived')
   const waiting = today[0]
@@ -44,33 +49,8 @@ export function sessionOf(time) {
   return SESSIONS.find((session) => time >= session.start && time < session.end)?.id ?? 'evening'
 }
 
-const toMinutes = (time) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3))
-const toTime = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
-
-// Deterministic 30-minute slot grid for one doctor and day. Slots already taken in the appointment list are booked;
-// one slot per day is held for clinician rounds; a few more are booked by other patients so the grid is not uniform.
-export function slotsFor(date, doctorId, appointments, ignoreAppointmentId) {
-  const dayNumber = Number(date.slice(8))
-  const taken = new Set(
-    appointments
-      .filter((appointment) => appointment.doctorId === doctorId && appointment.date === date && isUpcoming(appointment) && appointment.id !== ignoreAppointmentId)
-      .map((appointment) => appointment.time),
-  )
-  const slots = []
-  SESSIONS.forEach((session) => {
-    for (let minutes = toMinutes(session.start); minutes < toMinutes(session.end); minutes += 30) {
-      const time = toTime(minutes)
-      const rounds = session.id === 'evening' && minutes === toMinutes('17:30')
-      const bookedElsewhere = (minutes / 30 + dayNumber) % 7 === 0
-      const past = date === TODAY && time <= '10:00'
-      const state = rounds ? 'rounds' : taken.has(time) || bookedElsewhere || past ? 'booked' : 'available'
-      slots.push({ time, session: session.id, state })
-    }
-  })
-  return slots
-}
-
-export const doctorById = (id) => DOCTORS.find((doctor) => doctor.id === id)
+// SlotPicker entries from the API's slots for one day ({ time, state: available | booked | past }).
+export const slotsForPicker = (slots = []) => slots.map((slot) => ({ time: slot.time, session: sessionOf(slot.time), state: slot.state }))
 
 export function datesFrom(startIso, count) {
   const [year, month, day] = startIso.split('-').map(Number)
@@ -80,25 +60,19 @@ export function datesFrom(startIso, count) {
   })
 }
 
-// Next queue token for a branch on a day: A-18, A-19 ...
-export function nextToken(appointments, date) {
-  const used = appointments.filter((appointment) => appointment.date === date && appointment.queueToken).map((appointment) => Number(appointment.queueToken.slice(2)))
-  return `A-${String(Math.max(17, ...used) + 1).padStart(2, '0')}`
-}
-
 // Wall-clock "HH:MM" for audit entries and arrival stamps.
-export const clockTime = () => new Date().toTimeString().slice(0, 5)
+export const clockTime = () => localClock()
 
 export const auditEntry = (text, by) => ({ time: formatTime(clockTime()), text, by })
 
 // Newest-first feed of what happened on the chart, built from the patient's own records.
 export function activityFeed({ appointments, encounters, prescriptions, orders, payments }, limit = 5) {
   const events = [
-    ...encounters.map((item) => ({ date: item.date, time: item.time, title: `Encounter ${item.id} — ${item.status}`, detail: `${item.type} · ${item.doctor}, ${item.department}` })),
-    ...prescriptions.map((item) => ({ date: item.date, time: item.time, title: `E-Prescription #${item.id} issued`, detail: `${item.items.length} item${item.items.length === 1 ? '' : 's'} prescribed by ${item.prescriber}` })),
+    ...encounters.map((item) => ({ date: item.date, time: item.time, title: `Encounter ${item.reference ?? item.id} — ${item.status}`, detail: `${item.type} · ${item.doctor}, ${item.department}` })),
+    ...prescriptions.map((item) => ({ date: item.date, time: item.time, title: `E-Prescription #${item.reference ?? item.id} issued`, detail: `${item.items.length} item${item.items.length === 1 ? '' : 's'} prescribed by ${item.prescriber}` })),
     ...orders.map((item) => ({ date: item.date, time: item.time, title: `${item.title} — ${item.status}`, detail: `${item.category} · ordered by ${item.ordering}` })),
     ...payments.map((item) => ({ date: item.date, time: item.time, title: `Payment #${item.id} received`, detail: `${item.instrument} · ₹${item.amount.toLocaleString('en-IN')}` })),
-    ...appointments.filter((item) => ['Cancelled', 'No-show'].includes(item.status)).map((item) => ({ date: item.date, time: item.time, title: `Appointment ${item.id} — ${item.status}`, detail: `${item.service} with ${item.doctorShort}` })),
+    ...appointments.filter((item) => ['Cancelled', 'No-show'].includes(item.status)).map((item) => ({ date: item.date, time: item.time, title: `Appointment ${item.reference ?? item.id} — ${item.status}`, detail: `${item.service} with ${item.doctorShort}` })),
   ]
   return events.sort(byNewest).slice(0, limit)
 }

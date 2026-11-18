@@ -6,29 +6,37 @@ import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
 import FlowFrame, { BackLink, FlowMissing } from '../components/FlowFrame'
 import { ChecklistItem, FlowSection, KeyValueRows, SideCard } from '../components/parts'
+import { useState } from 'react'
+import { TARIFF_NOTE } from '../adapters'
+import { clinicalApi } from '../api'
 import { useAppointment } from '../context/useAppointment'
-import { formatDate, formatINR, formatLongDate, formatTime } from '../format'
-import { auditEntry, byNewest, clockTime } from '../selectors'
+import { formatDate, formatLongDate, formatTime } from '../format'
+import { byNewest, isChangeable } from '../selectors'
 
 export default function StartEncounterPage() {
-  const { patient, patientId, appointment, mine, add, update, newId } = useAppointment()
+  const { patient, patientId, appointment, mine, loading, reload } = useAppointment()
   const navigate = useNavigate()
-  if (!appointment) return <FlowMissing patient={patient} />
+  const [saving, setSaving] = useState(false)
+  const [serverError, setServerError] = useState('')
+  if (!appointment) return <FlowMissing patient={patient} loading={loading} />
 
   const backTo = pathFor(ROUTES.appointment, { patientId, appointmentId: appointment.id })
   const arrived = appointment.status === 'Arrived'
   const allergies = mine('allergies')
   const latestVitals = mine('vitals').sort(byNewest)[0]
 
-  const start = () => {
-    const encounter = add('encounters', {
-      id: newId('ENC-2026-', 'encounters', 4), patientId, appointmentId: appointment.id, date: appointment.date, time: clockTime(), minutes: 0, mode: 'OPD',
-      type: appointment.service, reason: appointment.reason ?? appointment.service, icd: '', doctor: appointment.doctorShort, credentials: appointment.doctor.split(', ').slice(1).join(', '),
-      department: appointment.department, chamber: appointment.room, branch: appointment.branch, campus: appointment.campus, artifacts: [], status: 'In Progress',
-      complaint: appointment.reason ?? '', soap: { subjective: '', objective: '', assessment: '', plan: '' },
-    })
-    update('appointments', appointment.id, (current) => ({ status: 'In Progress', encounterId: encounter.id, audit: [auditEntry(`Encounter ${encounter.id} started`, appointment.doctorShort), ...(current.audit ?? [])] }))
-    navigate(pathFor(ROUTES.encounter, { patientId, encounterId: encounter.id }))
+  const start = async () => {
+    setSaving(true)
+    setServerError('')
+    try {
+      // Starts the appointment and opens its encounter in one transaction on the server.
+      const encounter = await clinicalApi.startEncounter({ appointmentId: appointment.id })
+      await reload()
+      navigate(pathFor(ROUTES.encounter, { patientId, encounterId: encounter.id }))
+    } catch (error) {
+      setSaving(false)
+      setServerError(error.message)
+    }
   }
 
   return (
@@ -55,14 +63,14 @@ export default function StartEncounterPage() {
       {!arrived ? (
         <InfoNote tone="danger" icon={AlertTriangle}>
           <strong>Patient not arrived:</strong> an encounter can only be started for an appointment in the <strong>Arrived</strong> state (currently {appointment.status}).{' '}
-          {['Scheduled', 'Confirmed'].includes(appointment.status) && <Link className="font-semibold underline" to={pathFor(ROUTES.appointmentCheckIn, { patientId, appointmentId: appointment.id })}>Check the patient in first.</Link>}
+          {isChangeable(appointment) && <Link className="font-semibold underline" to={pathFor(ROUTES.appointmentCheckIn, { patientId, appointmentId: appointment.id })}>Check the patient in first.</Link>}
         </InfoNote>
       ) : (
         <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
           <div className="flex flex-col gap-5">
             <FlowSection title="Clinical context & appointment binding" aside="Read-only configuration">
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-md bg-surface-lowest p-3 text-xs"><p className="text-[10px] font-semibold tracking-wide text-outline uppercase">Service specification</p><p className="mt-1 text-sm font-semibold">{appointment.service}</p><p className="text-on-surface-variant">Tariff: {formatINR(appointment.tariff ?? 0)}</p></div>
+                <div className="rounded-md bg-surface-lowest p-3 text-xs"><p className="text-[10px] font-semibold tracking-wide text-outline uppercase">Service specification</p><p className="mt-1 text-sm font-semibold">{appointment.service}</p><p className="text-on-surface-variant">Tariff: {TARIFF_NOTE}</p></div>
                 <div className="rounded-md bg-surface-lowest p-3 text-xs"><p className="text-[10px] font-semibold tracking-wide text-outline uppercase">Encounter type</p><p className="mt-1 text-sm font-semibold">{appointment.type} (Ambulatory OPD)</p><p className="text-on-surface-variant">Inherited from master service configuration.</p></div>
                 <div className="rounded-md bg-surface-lowest p-3 text-xs"><p className="text-[10px] font-semibold tracking-wide text-outline uppercase">Facility location</p><p className="mt-1 text-sm font-semibold">{appointment.branch} — {appointment.room}</p><p className="text-on-surface-variant">{appointment.campus}</p></div>
                 <div className="rounded-md bg-surface-lowest p-3 text-xs"><p className="text-[10px] font-semibold tracking-wide text-outline uppercase">Physical roster verification</p><p className="mt-1 text-sm font-semibold">{appointment.doctor}</p><p className="text-on-surface-variant">Practitioner clocked-in at workstation</p></div>
@@ -102,13 +110,14 @@ export default function StartEncounterPage() {
             <ul className="flex flex-col gap-1.5">
               <ChecklistItem>Clinician verified: {appointment.doctorShort} active in {appointment.room}</ChecklistItem>
               <ChecklistItem>Patient physical arrival confirmed at reception ({formatTime(appointment.arrivedAt ?? appointment.time)})</ChecklistItem>
-              <ChecklistItem>Zero duplicate active encounters detected for {appointment.id}</ChecklistItem>
+              <ChecklistItem>Zero duplicate active encounters detected for {appointment.reference}</ChecklistItem>
               <ChecklistItem>ABDM M3 encounter provenance bundle verified</ChecklistItem>
               <ChecklistItem>Encounter concurrency lock acquired</ChecklistItem>
             </ul>
             <div className="mt-5 flex flex-col gap-2">
-              <ActionButton variant="primary" className="w-full" onClick={start}>Start encounter &amp; open clinical workspace</ActionButton>
-              <ActionButton className="w-full" to={backTo}>Cancel / Return to {appointment.id}</ActionButton>
+              {serverError && <p role="alert" className="text-xs text-rose-600">{serverError}</p>}
+              <ActionButton variant="primary" className="w-full" disabled={saving} onClick={start}>{saving ? 'Starting…' : 'Start encounter & open clinical workspace'}</ActionButton>
+              <ActionButton className="w-full" to={backTo}>Cancel / Return to {appointment.reference}</ActionButton>
             </div>
             <KeyValueRows className="mt-5 border-t border-slate-100 pt-4" rows={[['Active room', appointment.room], ['Data sovereignty', 'Local node HYD-04 · Encrypted']]} />
           </SideCard>

@@ -6,42 +6,56 @@ import { InfoNote } from '../../../components/workspace/controls'
 import { SelectInput, TextInput } from '../../../components/workspace/FormControls'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
+import { useApiResource } from '../../../hooks/useApiResource'
+import { TARIFF_NOTE } from '../adapters'
+import { appointmentsApi } from '../api'
 import FlowFrame, { BackLink, FlowMissing } from '../components/FlowFrame'
 import { Check, ChecklistItem, FlowSection, KeyValueRows, SideCard, TextArea } from '../components/parts'
 import { useAppointment } from '../context/useAppointment'
 import { ARRIVAL_CHANNELS } from '../data/catalog'
-import { formatINR, formatLongDate, formatTime } from '../format'
-import { appointmentTone, auditEntry, clockTime, nextToken } from '../selectors'
+import { formatLongDate, formatTime, localToday } from '../format'
+import { appointmentTone, clockTime, isChangeable } from '../selectors'
 import { validateCheckIn } from '../validation'
 
 export default function CheckInPage() {
-  const { patient, patientId, appointment, records, update } = useAppointment()
+  const { patient, patientId, appointment, loading, reload } = useAppointment()
   const navigate = useNavigate()
   const [values, setValues] = useState({ time: clockTime(), channel: ARRIVAL_CHANNELS[0], note: '', printSlip: true, notify: true })
   const [submitted, setSubmitted] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [serverError, setServerError] = useState('')
+  // Patients already waiting at this branch today, for the queue position.
+  const queue = useApiResource(
+    () => (appointment ? appointmentsApi.list({ date: appointment.date, branchId: appointment.branchId, status: 'arrived', pageSize: 200 }) : Promise.resolve(null)),
+    appointment ? `${appointment.date}:${appointment.branchId}` : 'none',
+  )
 
-  if (!appointment) return <FlowMissing patient={patient} />
+  if (!appointment) return <FlowMissing patient={patient} loading={loading} />
 
   const backTo = pathFor(ROUTES.appointment, { patientId, appointmentId: appointment.id })
-  const ready = ['Scheduled', 'Confirmed'].includes(appointment.status)
+  const ready = isChangeable(appointment)
+  const today = appointment.date === localToday()
   const errors = submitted ? validateCheckIn(values) : {}
-  const token = appointment.queueToken ?? nextToken(records.appointments, appointment.date)
-  const waiting = records.appointments.filter((entry) => entry.date === appointment.date && entry.status === 'Arrived').length
+  const token = appointment.queueToken ?? 'Next'
+  const waiting = queue.data?.meta?.total ?? 0
   const earlyBy = Math.max(0, Number(appointment.time.slice(0, 2)) * 60 + Number(appointment.time.slice(3)) - (Number(values.time.slice(0, 2)) * 60 + Number(values.time.slice(3))))
 
   const set = (name, value) => setValues((current) => ({ ...current, [name]: value }))
   const update_ = (event) => set(event.target.name, event.target.value)
 
-  const confirm = () => {
+  const confirm = async () => {
     setSubmitted(true)
+    setServerError('')
     if (Object.keys(validateCheckIn(values)).length) return
-    update('appointments', appointment.id, (current) => ({
-      status: 'Arrived',
-      queueToken: token,
-      arrivedAt: values.time,
-      audit: [auditEntry(`Patient arrived — token ${token} issued`, values.note.trim() || values.channel), ...(current.audit ?? [])],
-    }))
-    navigate(backTo)
+    setSaving(true)
+    try {
+      await appointmentsApi.checkIn(appointment.id, [values.channel, values.note.trim()].filter(Boolean).join(' — '))
+      await reload()
+      navigate(backTo)
+    } catch (error) {
+      setSaving(false)
+      setServerError(error.message)
+    }
   }
 
   return (
@@ -49,7 +63,7 @@ export default function CheckInPage() {
       title="Check in patient"
       badge={<StatusPill tone="success">Scheduled slot verified</StatusPill>}
       description="Confirm physical arrival at reception, generate the operational waiting queue slip, and notify the consulting suite."
-      actions={<BackLink to={backTo}>Back to {appointment.id}</BackLink>}
+      actions={<BackLink to={backTo}>Back to {appointment.reference}</BackLink>}
     >
       <InfoNote tone="warning" icon={ShieldCheck} className="mb-5">
         <strong>Statutory boundary enforced:</strong> marking arrival issues a queue token only. It will <u>not</u> start an encounter, bill an invoice, or record clinical triage notes.
@@ -59,23 +73,23 @@ export default function CheckInPage() {
         <p><span className="text-[10px] font-semibold tracking-wide text-outline uppercase">Patient</span><br /><strong className="text-sm">{patient.name}</strong><br />{patient.age}y · {patient.gender}<br />{patient.mobile}</p>
         <p><span className="text-[10px] font-semibold tracking-wide text-outline uppercase">Consulting doctor</span><br /><strong className="text-sm">{appointment.doctor}</strong><br />{appointment.department}<br />{appointment.room}</p>
         <p><span className="text-[10px] font-semibold tracking-wide text-outline uppercase">Scheduled appointment</span><br /><strong className="text-sm">{formatLongDate(appointment.date)}</strong><br />{formatTime(appointment.time)} IST</p>
-        <p><span className="text-[10px] font-semibold tracking-wide text-outline uppercase">Service & tariff</span><br /><strong className="text-sm">{appointment.service}</strong><br />{formatINR(appointment.tariff ?? 0)}</p>
+        <p><span className="text-[10px] font-semibold tracking-wide text-outline uppercase">Service & tariff</span><br /><strong className="text-sm">{appointment.service}</strong><br />{TARIFF_NOTE}</p>
         <p><span className="text-[10px] font-semibold tracking-wide text-outline uppercase">Arrival & queue state</span><br /><StatusPill tone={appointmentTone(appointment.status)}>{ready ? 'Pending reception check-in' : appointment.status}</StatusPill><br />Target token: <strong>{token}</strong></p>
       </section>
 
       {!ready ? (
-        <InfoNote tone="warning" icon={AlertTriangle}>This appointment is <strong>{appointment.status}</strong>, so arrival cannot be recorded. Only scheduled or confirmed appointments can be checked in.</InfoNote>
+        <InfoNote tone="warning" icon={AlertTriangle}>This appointment is <strong>{appointment.status}</strong>, so arrival cannot be recorded. Only pending or confirmed appointments can be checked in.</InfoNote>
       ) : (
         <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
           <div className="flex flex-col gap-5">
             <FlowSection number="1" title="Patient arrival verification" aside="Identity confirmed">
               <div className="grid gap-4 sm:grid-cols-2">
-                <TextInput label="Recorded arrival timestamp" name="time" type="time" required value={values.time} onChange={update_} error={errors.time} hint={earlyBy ? `Patient arrived ${earlyBy} min early` : undefined} />
+                <TextInput label="Recorded arrival timestamp" name="time" type="time" required readOnly value={values.time} onChange={update_} error={errors.time} hint={earlyBy ? `Patient arrived ${earlyBy} min early · the server records the exact time` : 'The server records the exact time on confirmation'} />
                 <SelectInput label="Arrival verification channel" name="channel" required value={values.channel} onChange={update_} options={ARRIVAL_CHANNELS} error={errors.channel} />
               </div>
               <div className="mt-4 flex items-center justify-between rounded-md border border-slate-200 bg-surface-lowest p-3 text-xs">
-                <span>ABHA address linked: <strong className="font-mono">{patient.abhaAddress ?? patient.abha}</strong></span>
-                <StatusPill tone="success">VERIFIED</StatusPill>
+                <span>ABHA number: <strong className="font-mono">{patient.abha}</strong></span>
+                <StatusPill tone={patient.abha === 'Not linked' ? 'neutral' : 'success'}>{patient.abha === 'Not linked' ? 'NOT LINKED' : 'ON FILE'}</StatusPill>
               </div>
               <div className="mt-4">
                 <TextArea label="Operational note for reception & nursing station" rows={2} value={values.note} onChange={(event) => set('note', event.target.value)} hint="Visible on the consulting suite nursing console and queue board. Operational context, not clinical documentation." />
@@ -101,17 +115,17 @@ export default function CheckInPage() {
           </div>
 
           <div className="flex flex-col gap-4 xl:sticky xl:top-4">
-            <SideCard title="Pre-flight authorization" tag={<span className="font-mono text-[10px] text-outline">{appointment.id} → ARRIVED</span>}>
+            <SideCard title="Pre-flight authorization" tag={<span className="font-mono text-[10px] text-outline">{appointment.reference} → ARRIVED</span>}>
               <KeyValueRows rows={[['Patient', `${patient.name} (${patient.mrn})`], ['Arrival time', values.time ? formatTime(values.time) : '—'], ['Queue allocation', `${appointment.department}`], ['Projected token', `${token} (#${waiting + 1})`], ['Consulting chamber', `${appointment.room} (${appointment.doctorShort})`]]} />
               <p className="mt-4 mb-2 text-[11px] font-semibold tracking-wide text-outline uppercase">System safety guards (4/4 passed)</p>
               <ul className="flex flex-col gap-1.5">
-                <ChecklistItem>Physician roster: {appointment.doctorShort} is clocked in &amp; active</ChecklistItem>
-                <ChecklistItem>Concurrency guard verified</ChecklistItem>
-                <ChecklistItem>Zero duplicate tokens active for {patient.mrn}</ChecklistItem>
-                <ChecklistItem>ABDM care context consent active</ChecklistItem>
+                <ChecklistItem ok={today}>{today ? 'Appointment is today' : 'Check-in opens on the day of the appointment'}</ChecklistItem>
+                <ChecklistItem>Token issued by the server, unique for the day</ChecklistItem>
+                <ChecklistItem>Concurrent check-ins are serialised</ChecklistItem>
               </ul>
               <div className="mt-5 flex flex-col gap-2">
-                <ActionButton variant="primary" className="w-full" onClick={confirm}>Confirm arrival &amp; issue token {token}</ActionButton>
+                {serverError && <p role="alert" className="text-xs text-rose-600">{serverError}</p>}
+                <ActionButton variant="primary" className="w-full" disabled={saving || !today} onClick={confirm}>{saving ? 'Checking in…' : 'Confirm arrival & issue token'}</ActionButton>
                 <ActionButton className="w-full" to={backTo}>Cancel (keep scheduled)</ActionButton>
               </div>
             </SideCard>

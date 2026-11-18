@@ -9,12 +9,14 @@ import { cn } from '../../../lib/cn'
 import FlowFrame, { BackLink, FlowMissing } from '../components/FlowFrame'
 import { KeyValueRows, SideCard, TextArea } from '../components/parts'
 import Timeline from '../components/Timeline'
+import { clinicalApi } from '../api'
+import { toOrderRequest, toPrescriptionRequest } from '../clinicalAdapters'
 import { usePatient } from '../context/usePatient'
 import CreateOrderDrawer from '../drawers/CreateOrderDrawer'
 import CreatePrescriptionDrawer from '../drawers/CreatePrescriptionDrawer'
 import RecordVitalsDrawer from '../drawers/RecordVitalsDrawer'
 import { formatDate, formatINR, formatTime } from '../format'
-import { auditEntry, byNewest } from '../selectors'
+import { byNewest } from '../selectors'
 import { bmiClass, bmiOf, bpStage } from '../validation'
 
 function Block({ icon: Icon, title, aside, children }) {
@@ -32,16 +34,21 @@ function Block({ icon: Icon, title, aside, children }) {
 const BP_TONE = { Normal: 'text-brand', Elevated: 'text-amber-700' }
 
 export default function EncounterPage() {
-  const { patient, patientId, mine, find, add, update, newId } = usePatient()
+  const context = usePatient()
   const { encounterId } = useParams()
+  const encounter = context.find('encounters', encounterId)
+  if (!context.patient || !encounter || encounter.patientId !== context.patient.id) return <FlowMissing patient={context.patient} loading={context.loading} what="encounter" />
+  return <Workspace key={encounter.id} context={context} encounter={encounter} />
+}
+
+function Workspace({ context, encounter }) {
+  const { patient, patientId, mine, appointments, refresh } = context
   const location = useLocation()
   const navigate = useNavigate()
-  const encounter = find('encounters', encounterId)
   const [overlay, setOverlay] = useState(location.state?.open ?? null)
-  const [draft, setDraft] = useState(() => ({ complaint: encounter?.complaint ?? '', ...(encounter?.soap ?? { subjective: '', objective: '', assessment: '', plan: '' }) }))
+  const [draft, setDraft] = useState(() => ({ complaint: encounter.complaint ?? '', ...(encounter.soap ?? { subjective: '', objective: '', assessment: '', plan: '' }) }))
   const [notice, setNotice] = useState(null)
-
-  if (!patient || !encounter || encounter.patientId !== patient.id) return <FlowMissing patient={patient} what="encounter" />
+  const [saving, setSaving] = useState(false)
 
   const open = encounter.status === 'In Progress'
   const allVitals = mine('vitals').filter((entry) => entry.encounterId === encounter.id).sort(byNewest)
@@ -51,46 +58,76 @@ export default function EncounterPage() {
   const orders = mine('orders').filter((entry) => entry.encounterId === encounter.id)
   const allergies = mine('allergies')
   const activeMeds = mine('prescriptions').filter((entry) => entry.status === 'Active').flatMap((entry) => entry.items)
-  const appointment = encounter.appointmentId ? find('appointments', encounter.appointmentId) : null
+  const appointment = encounter.appointmentId ? appointments.find((entry) => entry.id === encounter.appointmentId) : null
   const bmi = vitals ? bmiOf(vitals.weight, vitals.height) : null
   const stage = vitals ? bpStage(vitals.bp.sys, vitals.bp.dia) : null
   const latestVitals = mine('vitals').sort(byNewest)[0]
 
   const activity = [
-    { key: 'start', at: encounter.time, title: `Encounter ${encounter.id} initiated`, detail: appointment ? `From ${appointment.id}` : 'Walk-in' },
+    { key: 'start', at: encounter.time, title: `Encounter ${encounter.reference ?? encounter.id} initiated`, detail: appointment ? `From ${appointment.reference ?? appointment.id}` : 'Walk-in' },
     ...(appointment?.arrivedAt ? [{ key: 'arrive', at: appointment.arrivedAt, title: 'Patient checked-in at Reception Desk', detail: `Token ${appointment.queueToken} issued` }] : []),
     ...allVitals.map((entry) => ({ key: entry.id, at: entry.time, title: 'Vitals recorded', detail: `BP ${entry.bp.sys}/${entry.bp.dia} · Pulse ${entry.pulse}` })),
     ...prescriptions.map((entry) => ({ key: entry.id, at: entry.time, title: `E-Prescription generated (${entry.items.length} items)`, detail: entry.prescriber })),
-    ...orders.map((entry) => ({ key: entry.id, at: entry.time, title: `Order ${entry.id} placed`, detail: entry.title })),
+    ...orders.map((entry) => ({ key: entry.id, at: entry.time, title: `Order ${entry.reference} placed`, detail: entry.title })),
   ].sort((a, b) => b.at.localeCompare(a.at))
 
-  const saveNote = () => {
+  // Saves the documentation; returns false (with a notice) when the server refuses it.
+  const persist = async () => {
     const { complaint, ...soap } = draft
-    update('encounters', encounter.id, { complaint, soap })
-    setNotice({ tone: 'brand', text: 'Clinical documentation saved to the encounter.' })
+    try {
+      await clinicalApi.updateEncounter(encounter.id, { chiefComplaint: complaint, ...soap, version: encounter.version })
+      await refresh()
+      return true
+    } catch (error) {
+      setNotice({ tone: 'danger', text: error.message })
+      return false
+    }
   }
 
-  const complete = () => {
+  const saveNote = async () => {
+    setSaving(true)
+    if (await persist()) setNotice({ tone: 'brand', text: 'Clinical documentation saved to the encounter.' })
+    setSaving(false)
+  }
+
+  // Signing on the server files the note, locks the encounter and completes the appointment.
+  const complete = async () => {
     if (!draft.complaint.trim()) return setNotice({ tone: 'danger', text: 'Document the chief complaint before completing the encounter.' })
     if (diagnoses.length === 0) return setNotice({ tone: 'danger', text: 'Attach at least one diagnosis before completing the encounter.' })
-    const { complaint, ...soap } = draft
-    update('encounters', encounter.id, {
-      status: 'Signed & Locked', complaint, soap, icd: `ICD-10: ${diagnoses.map((entry) => entry.icd).join(', ')}`,
-      artifacts: [...(prescriptions.length ? [`${prescriptions.length} Rx Issued`] : []), ...(orders.length ? [`${orders.length} Orders`] : []), 'EHR Signed'],
-    })
-    if (appointment) update('appointments', appointment.id, (current) => ({ status: 'Completed', audit: [auditEntry(`Encounter ${encounter.id} completed`, encounter.doctor), ...(current.audit ?? [])] }))
-    navigate(pathFor(ROUTES.patientEncounters, { patientId }))
+    setSaving(true)
+    if (!(await persist())) return setSaving(false)
+    try {
+      await clinicalApi.signEncounter(encounter.id)
+      await refresh()
+      navigate(pathFor(ROUTES.patientEncounters, { patientId }))
+    } catch (error) {
+      setSaving(false)
+      setNotice({ tone: 'danger', text: error.message })
+    }
   }
 
-  const addPrescription = (rx) => {
-    add('prescriptions', {
-      ...rx, id: `RX-2026-${encounter.id.slice(-4)}-${String.fromCharCode(65 + prescriptions.length)}`,
-      patientId, encounterId: encounter.id, prescriber: encounter.doctor, department: encounter.department, registration: 'NMC #61820', branch: encounter.branch, status: 'Active', dispensing: 'Awaiting pharmacy acknowledgement',
-      hash: 'sha256:pending', events: [{ time: formatTime(rx.time), title: 'Prescription authorized & digitally signed', actor: encounter.doctor, note: `Linked to ${encounter.id}.` }],
-    })
+  const recordVitals = async (record) => {
+    try {
+      await clinicalApi.recordVitals(patientId, {
+        encounterId: encounter.id, systolic: record.bp.sys, diastolic: record.bp.dia, pulse: record.pulse, respiration: record.resp, temperatureF: record.temp, spo2: record.spo2,
+        weightKg: record.weight, heightCm: record.height, bloodSugar: record.rbs ?? undefined, painScore: record.pain ?? undefined, site: record.site, posture: record.posture, device: record.device,
+      })
+      await refresh()
+    } catch (error) {
+      setNotice({ tone: 'danger', text: error.message })
+    }
   }
 
-  const addOrder = (order) => add('orders', { ...order, id: newId('ORD-2026-', 'orders', 4), patientId, encounterId: encounter.id, ordering: `${encounter.doctor} (${encounter.department})` })
+  // Both belong to this encounter; the drawers show the server's message if it refuses.
+  const addPrescription = async (draft) => {
+    await clinicalApi.prescribe(patientId, toPrescriptionRequest(draft, { encounterId: encounter.id }))
+    await refresh()
+  }
+
+  const addOrder = async (draft) => {
+    await clinicalApi.placeOrder(patientId, toOrderRequest(draft, { encounterId: encounter.id }))
+    await refresh()
+  }
 
   const launch = [
     { label: 'Note', hint: 'Clinical note', icon: FileText, onClick: () => document.getElementById('soap-subjective')?.focus() },
@@ -105,11 +142,11 @@ export default function EncounterPage() {
     <FlowFrame
       title="Consultation"
       badge={<StatusPill tone={open ? 'success' : 'neutral'} dot>{open ? 'IN PROGRESS' : encounter.status.toUpperCase()}</StatusPill>}
-      description={`Encounter ${encounter.id} · ${formatDate(encounter.date)} · Started ${formatTime(encounter.time)} IST · ${encounter.doctor} · ${encounter.department}`}
+      description={`Encounter ${encounter.reference ?? encounter.id} · ${formatDate(encounter.date)} · Started ${formatTime(encounter.time)} IST · ${encounter.doctor} · ${encounter.department}`}
       actions={
         <>
           <BackLink to={pathFor(ROUTES.patientEncounters, { patientId })}>Encounters</BackLink>
-          {open && <ActionButton variant="primary" icon={CheckCircle2} onClick={complete}>Complete encounter</ActionButton>}
+          {open && <ActionButton variant="primary" icon={CheckCircle2} disabled={saving} onClick={complete}>Complete encounter</ActionButton>}
         </>
       }
     >
@@ -169,7 +206,7 @@ export default function EncounterPage() {
             )}
           </Block>
 
-          <Block icon={FileText} title="Clinical documentation (SOAP framework)" aside={open && <ActionButton size="sm" onClick={saveNote}>Save note</ActionButton>}>
+          <Block icon={FileText} title="Clinical documentation (SOAP framework)" aside={open && <ActionButton size="sm" disabled={saving} onClick={saveNote}>Save note</ActionButton>}>
             <div className="grid gap-4">
               {[['subjective', 'S — Subjective'], ['objective', 'O — Objective'], ['assessment', 'A — Assessment'], ['plan', 'P — Plan']].map(([key, label]) =>
                 open ? (
@@ -200,7 +237,7 @@ export default function EncounterPage() {
             {orders.length ? (
               <ul className="grid gap-3 md:grid-cols-2">
                 {orders.map((order) => (
-                  <li key={order.id} className="rounded-md border border-slate-200 p-3 text-xs"><p className="flex items-start justify-between gap-2 text-sm font-semibold">{order.title} <StatusPill>{order.status}</StatusPill></p><p className="mt-1 text-on-surface-variant">{order.category} · {order.id}</p></li>
+                  <li key={order.id} className="rounded-md border border-slate-200 p-3 text-xs"><p className="flex items-start justify-between gap-2 text-sm font-semibold">{order.title} <StatusPill>{order.status}</StatusPill></p><p className="mt-1 text-on-surface-variant">{order.category} · {order.reference}</p></li>
                 ))}
               </ul>
             ) : (
@@ -246,7 +283,7 @@ export default function EncounterPage() {
 
       {open && (
         <>
-          <RecordVitalsDrawer open={overlay === 'vitals'} onClose={() => setOverlay(null)} patient={patient} encounter={encounter} onSave={(record) => add('vitals', { ...record, id: newId('VIT-', 'vitals', 4) })} />
+          <RecordVitalsDrawer open={overlay === 'vitals'} onClose={() => setOverlay(null)} patient={patient} encounter={encounter} onSave={recordVitals} />
           <CreatePrescriptionDrawer open={overlay === 'rx'} onClose={() => setOverlay(null)} patient={patient} encounter={encounter} allergies={allergies} diagnoses={diagnoses} latestVitals={latestVitals} onAuthorize={addPrescription} />
           <CreateOrderDrawer open={overlay === 'order'} onClose={() => setOverlay(null)} patient={patient} encounter={encounter} diagnoses={diagnoses} onSubmit={addOrder} />
         </>

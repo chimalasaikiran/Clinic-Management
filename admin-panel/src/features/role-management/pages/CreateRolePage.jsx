@@ -10,12 +10,11 @@ import Panel from '../../../components/workspace/Panel'
 import StatusPill from '../../../components/workspace/StatusPill'
 import WorkspacePage from '../../../components/workspace/WorkspacePage'
 import { ROUTES } from '../../../config/routes'
-import { OWNER } from '../../../config/workspace'
 import { useFormFields } from '../../../hooks/useFormFields'
 import { cn } from '../../../lib/cn'
 import { GROUP_ICONS } from '../components/roleIcons'
+import { useAuth } from '../../auth/context/useAuth'
 import { useRoles } from '../context/useRoles'
-import { BRANCHES } from '../../configuration/data/organisation'
 import { PERMISSION_GROUPS, STAFF_CATEGORIES } from '../data/roles'
 import { canGrant, grantablePermissionIds, keepGrantable } from '../rolePermissions'
 import { validateRole } from '../validation'
@@ -36,7 +35,7 @@ function ChecklistItem({ done, children }) {
 export default function CreateRolePage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { roles, getRole, addRole } = useRoles()
+  const { roles, branches, getRole, addRole } = useRoles()
   // Duplicating starts from a copy of the source role, minus rights a custom role cannot hold.
   const source = getRole(location.state?.duplicateOf)
   const initialScope = source && !source.system ? source.scope : source ? 'org' : 'branch'
@@ -51,6 +50,9 @@ export default function CreateRolePage() {
   const [branchIds, setBranchIds] = useState(source?.branchIds ?? [])
   const [permissions, setPermissions] = useState(source ? keepGrantable({ scope: initialScope }, source.permissions) : [])
   const [submitted, setSubmitted] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [failure, setFailure] = useState('')
+  const { user, organisation } = useAuth()
 
   const draftRole = { scope, branchIds }
   const fields = {
@@ -65,7 +67,7 @@ export default function CreateRolePage() {
   const ready = Object.keys(liveErrors).length === 0
   const grantableCount = grantablePermissionIds(draftRole).length
   const financeCount = permissions.filter((id) => FINANCE_IDS.includes(id)).length
-  const selectedBranches = BRANCHES.filter((branch) => branchIds.includes(branch.id))
+  const selectedBranches = branches.filter((branch) => branchIds.includes(branch.id))
 
   const toggle = (setter, id) => setter((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id]))
 
@@ -77,11 +79,18 @@ export default function CreateRolePage() {
 
   const setGroup = (ids, on) => setPermissions((current) => (on ? [...new Set([...current, ...ids])] : current.filter((id) => !ids.includes(id))))
 
-  const save = (draft) => {
+  const save = async (draft) => {
     setSubmitted(draft ? 'draft' : 'create')
+    setFailure('')
     if (Object.keys(validateRole(fields, { draft })).length > 0) return
-    const role = addRole({ ...values, scope, branchIds, permissions, status: draft ? 'Draft' : active ? 'Active' : 'Inactive' })
-    navigate(ROUTES.roles, { state: { roleId: role.id } })
+    setSaving(true)
+    try {
+      const role = await addRole({ ...values, scope, branchIds, permissions, status: draft ? 'Draft' : active ? 'Active' : 'Inactive' })
+      navigate(ROUTES.roles, { state: { roleId: role.id } })
+    } catch (error) {
+      setFailure(error.message)
+      setSaving(false)
+    }
   }
 
   const handleSubmit = (event) => {
@@ -178,11 +187,11 @@ export default function CreateRolePage() {
                 <div className="rounded-md border border-slate-200 bg-surface-lowest p-4">
                   <p className="mb-3 text-xs font-semibold text-on-surface">Authorized branches (select 1 or more)</p>
                   <div className="grid gap-2 sm:grid-cols-2">
-                    {BRANCHES.map((branch) => (
+                    {branches.map((branch) => (
                       <CheckRow key={branch.id} checked={branchIds.includes(branch.id)} onChange={() => toggle(setBranchIds, branch.id)} label={branch.name}>
                         <p className="text-[13px] font-semibold text-on-surface">{branch.name}</p>
                         <p className="text-[11px] text-on-surface-variant">
-                          {branch.abdmNode} · {branch.secondary}
+                          {branch.code} · {branch.city}
                         </p>
                       </CheckRow>
                     ))}
@@ -307,7 +316,7 @@ export default function CreateRolePage() {
                 <div className="flex items-start gap-2 rounded-md border border-slate-200 p-3 text-xs">
                   <MapPin className="mt-0.5 size-3.5 shrink-0 text-brand" aria-hidden="true" />
                   {scope === 'org' ? (
-                    <p className="font-semibold text-on-surface">Org-wide access (all {BRANCHES.length} branches)</p>
+                    <p className="font-semibold text-on-surface">Org-wide access (all {branches.length} branches)</p>
                   ) : (
                     <div>
                       <p className="font-semibold text-on-surface">Branch-level access ({selectedBranches.length})</p>
@@ -342,10 +351,15 @@ export default function CreateRolePage() {
             </Panel>
 
             <div className="flex flex-col gap-2">
-              <ActionButton variant="primary" type="submit" icon={CircleCheck} className="w-full py-2.5">
-                Create role
+              {failure && (
+                <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-danger">
+                  {failure}
+                </p>
+              )}
+              <ActionButton variant="primary" type="submit" icon={CircleCheck} className="w-full py-2.5" disabled={saving}>
+                {saving ? 'Saving…' : 'Create role'}
               </ActionButton>
-              <ActionButton onClick={() => save(true)} className="w-full">
+              <ActionButton onClick={() => save(true)} className="w-full" disabled={saving}>
                 Save as draft
               </ActionButton>
               <ActionButton variant="soft" to={ROUTES.roles} className="w-full bg-transparent text-on-surface-variant">
@@ -353,7 +367,7 @@ export default function CreateRolePage() {
               </ActionButton>
             </div>
             <p className="text-center text-[11px] leading-4 text-outline">
-              Created by: {OWNER.name} ({OWNER.role})
+              Created by: {user.fullName} ({organisation?.roles.map((role) => role.name).join(', ')})
             </p>
           </div>
         </div>

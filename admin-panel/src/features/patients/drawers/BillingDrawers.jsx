@@ -9,8 +9,8 @@ import { cn } from '../../../lib/cn'
 import { allocatedToInvoice, autoAllocate, invoiceBalance, invoiceStatus, invoiceTotals, lineAmounts } from '../billing'
 import { Check, KeyValueRows, OptionSelect, TextArea } from '../components/parts'
 import Timeline from '../components/Timeline'
-import { CHARGE_CATALOG, PAYMENT_CHANNELS } from '../data/catalog'
-import { TODAY, formatDate, formatINR, formatTime } from '../format'
+import { PAYERS as PAYER_OPTIONS } from '../../billing/constants'
+import { daysBetween, formatDate, formatINR, formatTime, localToday } from '../format'
 import { validateInvoice, validatePayment } from '../validation'
 
 function Section({ title, aside, children }) {
@@ -22,20 +22,23 @@ function Section({ title, aside, children }) {
   )
 }
 
-const PAYERS = [
-  { id: 'Self-Pay / Patient Direct', title: 'Self-Pay / Patient Direct', detail: 'Patient settles legal debt directly via cash, UPI, or card.' },
-  { id: 'Corporate Sponsor', title: 'Corporate Sponsor (CCL Req)', detail: 'Billed to corporate coalfields ltd MOU credit account.' },
-  { id: 'Insurance / TPA Policy', title: 'Insurance / TPA Policy', detail: 'Star Health pre-auth claim against the sanctioned limit.' },
-]
+const PAYER_DETAIL = {
+  'Patient Direct (Self)': 'The patient settles the invoice directly by cash, UPI, card or transfer.',
+  'Insurance / TPA': 'Billed to the patient’s insurer or third-party administrator.',
+  'Corporate Account': 'Billed to the employer or sponsor that covers the patient.',
+}
+const PAYERS = PAYER_OPTIONS.filter((payer) => PAYER_DETAIL[payer]).map((payer) => ({ id: payer, title: payer, detail: PAYER_DETAIL[payer] }))
 
 const STATUS_TONE = { 'Paid in Full': 'success', 'Partially Paid': 'warning', Issued: 'neutral' }
 
-export function CreateInvoiceDrawer({ open, onClose, patient, encounter, charges, onCreate }) {
+export function CreateInvoiceDrawer({ open, onClose, patient, encounter, charges, catalogue, onCreate }) {
   const [tab, setTab] = useState('charges')
   const [lines, setLines] = useState([])
   const [payer, setPayer] = useState(PAYERS[0].id)
   const [notes, setNotes] = useState({ publicNote: '', internalNote: '' })
   const [submitted, setSubmitted] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [serverError, setServerError] = useState('')
   const totals = invoiceTotals(lines)
   const errors = submitted ? validateInvoice({ lines }) : {}
 
@@ -45,21 +48,30 @@ export function CreateInvoiceDrawer({ open, onClose, patient, encounter, charges
     setPayer(PAYERS[0].id)
     setNotes({ publicNote: '', internalNote: '' })
     setSubmitted(false)
+    setServerError('')
     onClose()
   }
   const chargeLine = (charge) => ({ ...charge.lines[0], chargeId: charge.id })
   const toggleCharge = (charge) => setLines((current) => (current.some((line) => line.chargeId === charge.id) ? current.filter((line) => line.chargeId !== charge.id) : [...current, chargeLine(charge)]))
-  const addCatalog = (entry) => setLines((current) => (current.some((line) => line.code === entry.code && !line.chargeId) ? current.map((line) => (line.code === entry.code && !line.chargeId ? { ...line, qty: line.qty + 1 } : line)) : [...current, { code: entry.code, name: entry.name, note: entry.note, qty: 1, price: entry.price, discountPct: entry.discountPct, gstPct: entry.gstPct }]))
+  const addCatalog = (entry) => setLines((current) => (current.some((line) => line.serviceId === entry.serviceId) ? current.map((line) => (line.serviceId === entry.serviceId ? { ...line, qty: line.qty + 1 } : line)) : [...current, { serviceId: entry.serviceId, code: entry.code, name: entry.name, note: entry.note, qty: 1, price: entry.price, discountPct: 0, gstPct: entry.gstPct }]))
   const removeLine = (index) => setLines((current) => current.filter((_, position) => position !== index))
 
-  const submit = () => {
+  const submit = async () => {
     setSubmitted(true)
     if (Object.keys(validateInvoice({ lines })).length) return
-    onCreate({ lines: lines.map((line) => Object.fromEntries(Object.entries(line).filter(([key]) => key !== 'chargeId'))), chargeIds: lines.filter((line) => line.chargeId).map((line) => line.chargeId), payer, ...notes })
-    finish()
+    setSaving(true)
+    setServerError('')
+    try {
+      await onCreate({ chargeIds: lines.filter((line) => line.chargeId).map((line) => line.chargeId), items: lines.filter((line) => line.serviceId).map((line) => ({ serviceId: line.serviceId, quantity: line.qty })), payer, ...notes })
+      finish()
+    } catch (error) {
+      setServerError(error.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const catalog = CHARGE_CATALOG.filter((entry) => (tab === 'catalog' ? entry.type === 'service' : entry.type === 'consumable'))
+  const catalog = catalogue.filter((entry) => (tab === 'catalog' ? entry.type === 'service' : entry.type === 'consumable'))
 
   return (
     <Drawer
@@ -69,10 +81,10 @@ export function CreateInvoiceDrawer({ open, onClose, patient, encounter, charges
       title="Create Invoice"
       description={`${patient.name} · MRN ${patient.mrn} · ${patient.branch}`}
       width="max-w-3xl"
-      footer={<div className="flex items-center justify-between gap-3"><ActionButton onClick={finish}>Cancel (Esc)</ActionButton><div className="flex items-center gap-4"><span className="text-right text-[10px] text-outline">NET PAYABLE<br /><strong className="text-base text-on-surface">{formatINR(totals.total, 2)}</strong></span><ActionButton variant="primary" onClick={submit}>Review &amp; Issue Invoice →</ActionButton></div></div>}
+      footer={<div className="flex items-center justify-between gap-3"><ActionButton onClick={finish}>Cancel (Esc)</ActionButton><div className="flex items-center gap-4"><span className="text-right text-[10px] text-outline">NET PAYABLE<br /><strong className="text-base text-on-surface">{formatINR(totals.total, 2)}</strong></span><ActionButton variant="primary" disabled={saving} onClick={submit}>Review &amp; Issue Invoice →</ActionButton></div></div>}
     >
       <div className="flex flex-col gap-4 p-5">
-        <Section title="Linked clinical encounter" aside={encounter?.id ?? 'No open encounter'}>
+        <Section title="Linked clinical encounter" aside={encounter?.reference ?? 'No open encounter'}>
           <p className="text-sm font-semibold">{encounter ? `${encounter.type} · ${encounter.doctor}` : 'Standalone invoice'}</p>
           <div role="tablist" aria-label="Billable source" className="mt-3 grid grid-cols-3 border-b border-slate-200 text-center text-xs">
             {[['charges', `Unbilled Charges (${charges.length} Available)`], ['catalog', 'Service Catalogue'], ['consumables', 'Consumables / Supplies']].map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} className={cn('border-b-2 px-2 py-2', tab === id ? 'border-brand font-semibold text-brand' : 'border-transparent text-on-surface-variant')}>{label}</button>)}
@@ -80,7 +92,8 @@ export function CreateInvoiceDrawer({ open, onClose, patient, encounter, charges
           <ul className="mt-3 flex flex-col gap-2">
             {tab === 'charges' && charges.map((charge) => <li key={charge.id}><Check checked={lines.some((line) => line.chargeId === charge.id)} onChange={() => toggleCharge(charge)} label={`${charge.title} — ${formatINR(lineAmounts(charge.lines[0]).total, 2)}`} /></li>)}
             {tab === 'charges' && charges.length === 0 && <li className="text-xs text-on-surface-variant">There are no unbilled charges for this patient.</li>}
-            {tab !== 'charges' && catalog.map((entry) => <li key={entry.code} className="flex items-center justify-between gap-3 rounded border border-slate-200 px-3 py-2 text-xs"><span><strong>{entry.name}</strong><br /><span className="text-on-surface-variant">{entry.note} · {formatINR(entry.price, 2)}</span></span><ActionButton size="sm" onClick={() => addCatalog(entry)} aria-label={`Add ${entry.name}`}>+ Add</ActionButton></li>)}
+            {tab !== 'charges' && catalog.length === 0 && <li className="text-xs text-on-surface-variant">No active, priced service of this kind is offered at {patient.branch}. Add one in Services &amp; Pricing.</li>}
+            {tab !== 'charges' && catalog.map((entry) => <li key={entry.serviceId} className="flex items-center justify-between gap-3 rounded border border-slate-200 px-3 py-2 text-xs"><span><strong>{entry.name}</strong><br /><span className="text-on-surface-variant">{entry.note} · {formatINR(entry.price, 2)}</span></span><ActionButton size="sm" onClick={() => addCatalog(entry)} aria-label={`Add ${entry.name}`}>+ Add</ActionButton></li>)}
           </ul>
         </Section>
 
@@ -96,13 +109,14 @@ export function CreateInvoiceDrawer({ open, onClose, patient, encounter, charges
 
         <Section title="Payer responsibility & terms" aside="Accounting debtor">
           <div role="radiogroup" aria-label="Payer" className="grid gap-2 sm:grid-cols-3">{PAYERS.map((entry) => <RadioCard key={entry.id} name="payer" value={entry.id} checked={payer === entry.id} onChange={() => setPayer(entry.id)} title={entry.title} detail={entry.detail} />)}</div>
-          <InfoNote tone="brand" className="mt-3"><strong>Statutory distinction:</strong> invoice issuance establishes patient legal liability under Indian commercial code. Payment receipt and cashbook settlement are executed via separate cashier ledger transactions.</InfoNote>
+          <InfoNote tone="brand" className="mt-3"><strong>Invoice ≠ payment:</strong> issuing the invoice records what is owed. Payments, receipts and allocations are recorded separately against it.</InfoNote>
         </Section>
 
         <Section title="Billing remarks & documentation">
           <div className="grid gap-3 sm:grid-cols-2"><TextArea label="Invoice public notes (printed on tax invoice PDF)" rows={2} value={notes.publicNote} onChange={(event) => setNotes((current) => ({ ...current, publicNote: event.target.value }))} /><TextArea label="Internal finance audit remark (staff confidential)" rows={2} value={notes.internalNote} onChange={(event) => setNotes((current) => ({ ...current, internalNote: event.target.value }))} /></div>
         </Section>
 
+        {serverError && <p role="alert" className="text-xs text-rose-600">{serverError}</p>}
         <Section title="Financial ledger calculation summary" aside="Currency: INR (₹)">
           <KeyValueRows rows={[['Gross billable subtotal', formatINR(totals.gross, 2)], ['Consumables discount', `-${formatINR(totals.discount, 2)}`], ['Clinical healthcare services (0% GST exempt)', formatINR(totals.exemptBase, 2)], ['Taxable medical supplies base', formatINR(totals.taxableBase, 2)], ['CGST', `+${formatINR(totals.cgst, 2)}`], ['SGST', `+${formatINR(totals.sgst, 2)}`]]} />
           <p className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3 text-lg font-bold">Net total payable <span>{formatINR(totals.total, 2)}</span></p>
@@ -120,8 +134,8 @@ export function InvoiceDetailDrawer({ invoice, patient, payments, unallocated, o
   const status = invoiceStatus(invoice, payments)
   const related = payments.filter((payment) => payment.allocations.some((allocation) => allocation.invoiceId === invoice.id))
   const events = [
-    ...related.map((payment) => ({ time: `${formatDate(payment.date)}, ${formatTime(payment.time)}`, title: `Payment ${payment.id} allocated`, detail: `${formatINR(payment.allocations.find((entry) => entry.invoiceId === invoice.id).amount)} applied · ${payment.cashier}` })),
-    { time: `${formatDate(invoice.date)}, ${formatTime(invoice.time)}`, title: 'Invoice issued & sealed', detail: `${invoice.kind} · ${invoice.cashier}` },
+    ...related.flatMap((payment) => payment.allocations.filter((entry) => entry.invoiceId === invoice.id).map((entry) => ({ time: `${formatDate(entry.date)}, ${formatTime(entry.time)}`, title: entry.amount < 0 ? `Released for a refund on ${payment.id}` : `Payment ${payment.id} allocated`, detail: `${formatINR(Math.abs(entry.amount))} · ${entry.by}` }))),
+    { time: `${formatDate(invoice.date)}, ${formatTime(invoice.time)}`, title: 'Invoice issued', detail: `${invoice.kind} · ${invoice.cashier}` },
   ]
 
   return (
@@ -154,15 +168,17 @@ export function InvoiceDetailDrawer({ invoice, patient, payments, unallocated, o
           <KeyValueRows className="mt-3 border-t border-slate-100 pt-3" rows={[['Gross subtotal', formatINR(totals.gross, 2)], ['Tax invoice total', formatINR(totals.total, 2)], ['Less allocated payments', `-${formatINR(paid, 2)}`]]} />
           <p className="mt-2 flex items-center justify-between rounded bg-red-50 px-3 py-2 text-base font-bold">Balance due: <span>{formatINR(balance, 2)}</span></p>
         </Section>
-        <Section title="Billing & payer specifications"><KeyValueRows rows={[['Payer responsibility', invoice.payer], ['Linked clinical encounter', invoice.encounterId], ['Creator & cashier station', invoice.cashier], ['Payment terms', `Net 7 days · due ${formatDate(invoice.dueDate)}`]]} />{invoice.publicNote && <p className="mt-3 rounded bg-surface-low p-3 text-xs"><strong>Public invoice note (printed):</strong> {invoice.publicNote}</p>}</Section>
+        <Section title="Billing & payer specifications"><KeyValueRows rows={[['Payer responsibility', invoice.payer], ['Linked clinical encounter', invoice.encounterId], ['Issued by', invoice.cashier], ['Payment terms', `Net ${daysBetween(invoice.date, invoice.dueDate)} days · due ${formatDate(invoice.dueDate)}`]]} />{invoice.publicNote && <p className="mt-3 rounded bg-surface-low p-3 text-xs"><strong>Public invoice note (printed):</strong> {invoice.publicNote}</p>}</Section>
         <Section title="Statutory audit trail & ledger log"><Timeline events={events} /></Section>
       </div>
     </Drawer>
   )
 }
 
-export function RecordPaymentDrawer({ open, onClose, patient, openInvoices, unallocated, onRecord }) {
-  const [values, setValues] = useState({ amount: '', channel: PAYMENT_CHANNELS[0], reference: '', payer: 'Patient Direct (Self)', narration: '', notify: true })
+export function RecordPaymentDrawer({ open, onClose, patient, openInvoices, unallocated, channels, onRecord }) {
+  const [values, setValues] = useState({ amount: '', channel: channels[0] ?? '', reference: '', payer: 'Patient Direct (Self)', narration: '' })
+  const [saving, setSaving] = useState(false)
+  const [serverError, setServerError] = useState('')
   const [picked, setPicked] = useState({})
   const [submitted, setSubmitted] = useState(false)
   const outstanding = openInvoices.reduce((sum, entry) => sum + entry.balance, 0)
@@ -173,7 +189,8 @@ export function RecordPaymentDrawer({ open, onClose, patient, openInvoices, unal
 
   const set = (name, value) => setValues((current) => ({ ...current, [name]: value }))
   const finish = () => {
-    setValues({ amount: '', channel: PAYMENT_CHANNELS[0], reference: '', payer: 'Patient Direct (Self)', narration: '', notify: true })
+    setValues({ amount: '', channel: channels[0] ?? '', reference: '', payer: 'Patient Direct (Self)', narration: '' })
+    setServerError('')
     setPicked({})
     setSubmitted(false)
     onClose()
@@ -185,14 +202,23 @@ export function RecordPaymentDrawer({ open, onClose, patient, openInvoices, unal
   }
   const toggleInvoice = (entry) => setPicked((current) => (entry.invoiceId in current ? Object.fromEntries(Object.entries(current).filter(([id]) => id !== entry.invoiceId)) : { ...current, [entry.invoiceId]: String(Math.min(entry.balance, Math.max(amount - allocated, 0)) || '') }))
 
-  const commit = (commitAllocation) => {
+  const commit = async (commitAllocation) => {
     setSubmitted(true)
     const allocationPlan = commitAllocation ? Object.entries(picked).filter(([, value]) => Number(value) > 0).map(([invoiceId, value]) => ({ invoiceId, amount: Number(value) })) : []
     if (Object.keys(validatePayment({ amount: values.amount, allocated: allocationPlan.reduce((sum, entry) => sum + entry.amount, 0) })).length) return
     const overpaid = allocationPlan.find((entry) => entry.amount > (openInvoices.find((invoice) => invoice.invoiceId === entry.invoiceId)?.balance ?? 0))
     if (overpaid) return
-    onRecord({ amount, channel: values.channel, reference: values.reference.trim(), payer: values.payer, narration: values.narration.trim(), allocations: allocationPlan })
-    finish()
+    if (values.channel !== 'Cash Desk' && !values.reference.trim()) return setServerError('Enter the transaction reference for this method.')
+    setSaving(true)
+    setServerError('')
+    try {
+      await onRecord({ amount, channel: values.channel, reference: values.reference.trim(), payer: values.payer, narration: values.narration.trim(), allocations: allocationPlan })
+      finish()
+    } catch (error) {
+      setServerError(error.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -203,20 +229,20 @@ export function RecordPaymentDrawer({ open, onClose, patient, openInvoices, unal
       title="Record Payment"
       description={`${patient.name} · MRN ${patient.mrn} · New payment (uncommitted)`}
       width="max-w-3xl"
-      footer={<div className="flex items-center justify-between gap-3"><ActionButton onClick={finish}>Cancel (Esc)</ActionButton><div className="flex gap-2"><ActionButton onClick={() => commit(false)}>Save as Unallocated Advance</ActionButton><ActionButton variant="primary" onClick={() => commit(true)}>Record Payment &amp; Commit Allocation ({formatINR(amount, 2)}) →</ActionButton></div></div>}
+      footer={<div className="flex items-center justify-between gap-3"><ActionButton onClick={finish}>Cancel (Esc)</ActionButton><div className="flex gap-2"><ActionButton disabled={saving} onClick={() => commit(false)}>Save as Unallocated Advance</ActionButton><ActionButton variant="primary" disabled={saving} onClick={() => commit(true)}>Record Payment &amp; Commit Allocation ({formatINR(amount, 2)}) →</ActionButton></div></div>}
     >
       <div className="flex flex-col gap-4 p-5">
-        <InfoNote><strong>Strict object separation protocol:</strong> recording a payment ingests actual collected tender into the ledger. It does not issue an official tax receipt voucher or modify clinical invoices until allocation is confirmed.</InfoNote>
+        <InfoNote><strong>Payment ≠ allocation:</strong> recording a payment logs the money received and issues its receipt number. Invoices are only reduced by the allocations you confirm below.</InfoNote>
         <Section title="Patient account balances (pre-payment)">
           <dl className="grid gap-3 sm:grid-cols-3">{[['Outstanding invoiced balance', formatINR(outstanding, 2)], ['Unallocated deposit credit', formatINR(unallocated, 2)], ['Net patient liability', formatINR(Math.max(outstanding - unallocated, 0), 2)]].map(([label, value]) => <div key={label} className="rounded-md border border-slate-200 p-3"><dt className="text-[10px] font-semibold tracking-wide text-outline uppercase">{label}</dt><dd className="text-lg font-bold">{value}</dd></div>)}</dl>
         </Section>
         <Section title="1 · Payment amount & intake terms" aside="* Required fields">
           <TextInput label="Amount received (INR)" name="amount" type="number" min="0" required prefix="₹" value={values.amount} onChange={(event) => setAmount(event.target.value)} error={errors.amount} />
           <p className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-outline">Quick fill: {outstanding > 0 && <ActionButton size="sm" onClick={() => setAmount(outstanding)}>Pay full balance {formatINR(outstanding)}</ActionButton>}<ActionButton size="sm" onClick={() => setAmount(1000)}>₹1,000</ActionButton></p>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2"><TextInput label="Received date" type="date" value={TODAY} readOnly /><OptionSelect label="Payer entity & relation" value={values.payer} onChange={(event) => set('payer', event.target.value)} options={['Patient Direct (Self)', 'Family / Caregiver', 'Insurance / TPA']} /></div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2"><TextInput label="Received date" type="date" value={localToday()} readOnly /><OptionSelect label="Payer entity & relation" value={values.payer} onChange={(event) => set('payer', event.target.value)} options={['Patient Direct (Self)', 'Family / Caregiver', 'Insurance / TPA']} /></div>
         </Section>
         <Section title="2 · Payment channel & gateway capture">
-          <div role="radiogroup" aria-label="Payment channel" className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5">{PAYMENT_CHANNELS.map((channel) => <button key={channel} type="button" role="radio" aria-checked={values.channel === channel} onClick={() => set('channel', channel)} className={cn('rounded-md border px-2 py-3 text-xs font-medium', values.channel === channel ? 'border-2 border-brand bg-teal-50 text-brand' : 'border-slate-200')}>{channel}</button>)}</div>
+          <div role="radiogroup" aria-label="Payment channel" className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5">{channels.map((channel) => <button key={channel} type="button" role="radio" aria-checked={values.channel === channel} onClick={() => set('channel', channel)} className={cn('rounded-md border px-2 py-3 text-xs font-medium', values.channel === channel ? 'border-2 border-brand bg-teal-50 text-brand' : 'border-slate-200')}>{channel}</button>)}</div>
           {values.channel !== 'Cash Desk' && <TextInput label="UTR / banking reference number" value={values.reference} onChange={(event) => set('reference', event.target.value)} />}
         </Section>
         <Section title="3 · Invoice allocation matrix" aside={`Allocation target: ${formatINR(amount, 2)}`}>
@@ -233,7 +259,7 @@ export function RecordPaymentDrawer({ open, onClose, patient, openInvoices, unal
         </Section>
         <Section title="4 · Payment narration & cashier audit note">
           <div className="grid gap-3 sm:grid-cols-2"><TextArea label="Public payment narration (prints on receipt voucher)" rows={2} value={values.narration} onChange={(event) => set('narration', event.target.value)} /></div>
-          <div className="mt-3"><Check checked={values.notify} onChange={(event) => set('notify', event.target.checked)} label={`Trigger automated SMS & WhatsApp notification to patient (${patient.mobile}) upon transaction commitment`} /></div>
+          {serverError && <p role="alert" className="mt-3 text-xs text-rose-600">{serverError}</p>}
         </Section>
       </div>
     </Drawer>

@@ -29,6 +29,13 @@ export function validateSignIn({ email, password }) {
   return errors
 }
 
+export function validatePasswordReset({ code, password }) {
+  const errors = { ...validateOtp(code) }
+  if (!password) errors.password = 'Create a new password.'
+  else if (!isStrongPassword(password)) errors.password = `Use at least ${MIN_PASSWORD_LENGTH} characters with a letter and a number.`
+  return errors
+}
+
 export function validateOtp(digits) {
   const code = digits.join('')
   if (code.length < OTP_LENGTH) return { code: `Enter the ${OTP_LENGTH}-digit code.` }

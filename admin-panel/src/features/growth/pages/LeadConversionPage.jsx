@@ -6,7 +6,9 @@ import StatusPill from '../../../components/workspace/StatusPill'
 import { Banner, Section } from '../../../components/workspace/RecordKit'
 import { pathFor, ROUTES } from '../../../config/routes'
 import { cn } from '../../../lib/cn'
-import { PATIENTS } from '../../patients/data/patients'
+import { useApiResource } from '../../../hooks/useApiResource'
+import { toPatientView } from '../../patients/adapters'
+import { patientsApi } from '../../patients/api'
 import { Check, OptionSelect } from '../../patients/components/parts'
 import GrowthFrame, { GrowthFooter } from '../components/GrowthFrame'
 import { GROWTH_NOW, GROWTH_TODAY, OWNERS } from '../constants'
@@ -38,7 +40,9 @@ function Conversion({ lead }) {
   const detailPath = pathFor(ROUTES.lead, { leadId: lead.id })
   const digits = lead.phone.replace(/\D/g, '')
   const duplicateLeads = data.leads.filter((entry) => entry.id !== lead.id && entry.phone.replace(/\D/g, '') === digits)
-  const duplicatePatients = PATIENTS.filter((patient) => patient.mobile.replace(/\D/g, '').endsWith(digits))
+  // Registered patients with the lead's mobile number, from the patient master.
+  const matches = useApiResource(() => (digits.length >= 10 ? patientsApi.duplicates(digits.slice(-10)) : Promise.resolve([])), digits)
+  const duplicatePatients = (matches.data ?? []).map(toPatientView)
   const duplicates = duplicateLeads.length + duplicatePatients.length
   const [form, setForm] = useState({ reviewed: false, path: '', patientId: '', noMatch: false, identity: false, pathConfirmed: false, conversion: false, branchAccess: false })
   const [plan, setPlan] = useState({ date: '2026-10-29', time: '11:00', owner: lead.owner, disposition: '', action: '', reason: '', consent: false, confirmed: false })
@@ -51,7 +55,7 @@ function Conversion({ lead }) {
   const steps = [['1. Review lead', 'Saved context'], ['2. Duplicate checks', duplicates ? 'Review required' : 'No match found'], ['3. Patient identity', pathReady ? 'Path chosen' : 'Verification pending'], ['4. Confirm conversion', ready ? 'Ready' : 'Locked'], ['5. Next steps', 'After conversion']]
 
   const convert = () => {
-    update('leads', lead.id, (current) => ({ stage: 'Converted', patientId: form.path === 'existing' ? form.patientId : null, patientPath: form.path, due: null, nextAction: '', activities: [{ id: `a${current.activities.length + 1}`, at: { date: GROWTH_TODAY, time: GROWTH_NOW }, title: 'Lead converted', text: `Qualified → Converted. ${form.path === 'existing' ? `Linked to patient ${PATIENTS.find((patient) => patient.id === form.patientId)?.name}.` : 'New patient to be registered after an explicit no-match review.'} Original attribution preserved; no appointment booked.` }, ...current.activities] }))
+    update('leads', lead.id, (current) => ({ stage: 'Converted', patientId: form.path === 'existing' ? form.patientId : null, patientPath: form.path, due: null, nextAction: '', activities: [{ id: `a${current.activities.length + 1}`, at: { date: GROWTH_TODAY, time: GROWTH_NOW }, title: 'Lead converted', text: `Qualified → Converted. ${form.path === 'existing' ? `Linked to patient ${duplicatePatients.find((patient) => patient.id === form.patientId)?.name}.` : 'New patient to be registered after an explicit no-match review.'} Original attribution preserved; no appointment booked.` }, ...current.activities] }))
     navigate(detailPath, { state })
   }
 
@@ -78,7 +82,7 @@ function Conversion({ lead }) {
 
           <Section title="3. Resolve patient identity" aside="Choose exactly one path">
             <div className="grid gap-4 sm:grid-cols-2">{PATHS.map(([id, label]) => <label key={id} className={cn('cursor-pointer rounded-md border p-4 text-xs', form.path === id ? 'border-brand bg-teal-50' : 'border-slate-200')}><span className="flex items-center gap-2 text-[13px] font-semibold"><input type="radio" name="path" checked={form.path === id} onChange={() => set('path', id)} className="accent-[#006a61]" />{label}</span><span className="mt-2 block leading-5 text-on-surface-variant">{id === 'existing' ? 'Select and verify a permitted shared patient record. Linking must not silently edit patient details.' : 'Available only after duplicate review and an explicit no-match confirmation. Create one shared patient record, then link the lead.'}</span></label>)}</div>
-            {form.path === 'existing' && <div className="mt-4 max-w-md"><OptionSelect label="Select verified match" value={form.patientId} onChange={(event) => set('patientId', event.target.value)} placeholder="Choose a shared patient" options={PATIENTS.map((patient) => ({ value: patient.id, label: `${patient.name} · ${patient.mrn}` }))} /></div>}
+            {form.path === 'existing' && <div className="mt-4 max-w-md"><OptionSelect label="Select verified match" value={form.patientId} onChange={(event) => set('patientId', event.target.value)} placeholder="Choose a shared patient" options={duplicatePatients.map((patient) => ({ value: patient.id, label: `${patient.name} · ${patient.mrn}` }))} /></div>}
             {form.path === 'new' && <div className="mt-4"><Check checked={form.noMatch} onChange={(event) => set('noMatch', event.target.checked)} label="I confirm no matching shared patient exists after duplicate review." /></div>}
             <div className="mt-4 space-y-3"><Check checked={form.identity} onChange={(event) => set('identity', event.target.checked)} label="Verify identity and document permission to proceed" /><Check checked={form.pathConfirmed} onChange={(event) => set('pathConfirmed', event.target.checked)} label="Confirm the chosen path" /></div>
           </Section>
@@ -96,7 +100,7 @@ function Conversion({ lead }) {
         <div className="space-y-6">
           <Section title="4. Conversion confirmation" aside={converted ? 'Converted' : 'Not converted'}>
             <p className="text-[13px] font-semibold">{lead.name} · {lead.id.replace('LD', 'LD ')}</p>
-            <ul className="mt-3 space-y-1.5 text-xs text-on-surface-variant"><li>{lead.stage} → Converted · proposed only</li><li className={form.path ? '' : 'text-amber-700'}>Patient: {form.path === 'existing' ? PATIENTS.find((patient) => patient.id === form.patientId)?.name ?? 'select a match' : form.path === 'new' ? 'new record after no-match review' : 'verification pending'}</li><li>Appointment: not booked</li></ul>
+            <ul className="mt-3 space-y-1.5 text-xs text-on-surface-variant"><li>{lead.stage} → Converted · proposed only</li><li className={form.path ? '' : 'text-amber-700'}>Patient: {form.path === 'existing' ? duplicatePatients.find((patient) => patient.id === form.patientId)?.name ?? 'select a match' : form.path === 'new' ? 'new record after no-match review' : 'verification pending'}</li><li>Appointment: not booked</li></ul>
             <div className="mt-4 space-y-3"><Check checked={form.pathConfirmed && pathReady} disabled readOnly label="Confirm verified link or authorized creation" /><Check checked={form.branchAccess} onChange={(event) => set('branchAccess', event.target.checked)} label={`Verify conversion & branch permissions for ${lead.branch}`} /><Check checked={form.conversion} onChange={(event) => set('conversion', event.target.checked)} label="Confirm conversion separately" /></div>
             {!ready && !converted && <Banner tone="warning" title="Conversion action locked" className="mt-4">Identity review, path, access and confirmations are incomplete. No conversion has occurred.</Banner>}
           </Section>

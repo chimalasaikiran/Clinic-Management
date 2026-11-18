@@ -7,63 +7,41 @@ import { SelectInput, TextInput } from '../../../components/workspace/FormContro
 import StatusPill from '../../../components/workspace/StatusPill'
 import WorkspacePage from '../../../components/workspace/WorkspacePage'
 import { pathFor, ROUTES } from '../../../config/routes'
+import { useApiResource } from '../../../hooks/useApiResource'
 import { cn } from '../../../lib/cn'
+import { formValuesFromPatient, patientPayload, toPatientView } from '../adapters'
+import { branchesApi, patientsApi } from '../api'
 import { ledgerSummary } from '../billing'
 import FormSection from '../components/FormSection'
+import LoadingState from '../components/LoadingState'
 import PatientNotFound from '../components/PatientNotFound'
 import { KeyValueRows } from '../components/parts'
-import { usePatientRecords } from '../context/usePatientRecords'
-import { REGISTRATION_BRANCHES } from '../data/catalog'
-import { BLOOD_GROUPS, CONSULT_LANGUAGES, FIRST_NEW_MRN, INTAKE_UNITS, PATIENTS, RELATIONSHIPS, TITLE_PREFIXES } from '../data/patients'
-import { ageFrom, digitsOf, formatDate, formatINR, TODAY } from '../format'
+import { usePatient } from '../context/usePatient'
+import { usePatientLedger } from '../../billing/usePatientLedger'
+import { BLOOD_GROUPS, CONSULT_LANGUAGES, INTAKE_UNITS, RELATIONSHIPS, TITLE_PREFIXES } from '../data/patients'
+import { ageFrom, digitsOf, formatDate, formatINR, localToday } from '../format'
 import { validatePatient } from '../validation'
 
 const BLANK = {
-  title: '', fullName: '', alias: '', aadhaarLast4: '', mobile: '', altMobile: '', email: '', house: '', area: '', city: 'Hyderabad', state: 'Telangana', pin: '',
+  title: '', fullName: '', alias: '', aadhaarLast4: '', mobile: '', altMobile: '', email: '', house: '', area: '', city: '', state: '', pin: '',
   dob: '', gender: '', bloodGroup: '', language: 'English', emergencyName: '', emergencyRelation: '', emergencyPhone: '',
-  whatsapp: true, sms: true, branch: REGISTRATION_BRANCHES[0], intakeUnit: INTAKE_UNITS[0], abha: '', mobileVerified: false,
+  whatsapp: true, sms: true, branchId: '', intakeUnit: INTAKE_UNITS[0], abha: '', mobileVerified: false,
 }
 
-// Reverse of the store's patientFromForm for the edit flow.
-function valuesFromPatient(patient) {
-  const pin = /(\d{6})\s*$/.exec(patient.address ?? '')?.[1] ?? ''
-  return {
-    ...BLANK,
-    title: patient.gender === 'Male' ? 'Mr.' : 'Ms.',
-    fullName: patient.name,
-    mobile: digitsOf(patient.mobile).slice(-10),
-    email: patient.email ?? '',
-    house: (patient.address ?? '').replace(/[\s—-]*\d{6}\s*$/, ''),
-    pin,
-    dob: patient.dob ?? '',
-    gender: patient.gender,
-    bloodGroup: patient.bloodGroup === 'Unknown' ? '' : patient.bloodGroup,
-    emergencyName: patient.emergencyName ?? '',
-    emergencyRelation: patient.emergencyRelation ?? '',
-    emergencyPhone: patient.emergencyPhone ?? '',
-    branch: REGISTRATION_BRANCHES.find((name) => name.startsWith(patient.branch)) ?? REGISTRATION_BRANCHES[0],
-    abha: patient.abha === 'Not linked' ? '' : patient.abha,
-    mobileVerified: patient.contactNote !== 'Unverified',
-  }
-}
+// API field names to form field names, so server validation errors appear under the right input.
+const FORM_FIELDS = { pinCode: 'pin', dateOfBirth: 'dob', abhaNumber: 'abha', addressLine: 'house', homeBranchId: 'branchId', notifyWhatsapp: 'whatsapp', notifySms: 'sms' }
+const formErrors = (error) => Object.fromEntries(Object.entries(error.fieldErrors()).map(([field, message]) => [FORM_FIELDS[field] ?? field, message]))
 
 export default function RegisterPatientPage() {
   const { patientId } = useParams()
-  const navigate = useNavigate()
-  const { patients, records, getPatient, addPatient, updatePatient } = usePatientRecords()
-  const editing = patientId ? getPatient(patientId) : null
-  const [values, setValues] = useState(() => (editing ? valuesFromPatient(editing) : BLANK))
-  const [submitted, setSubmitted] = useState(false)
-  const [dismissedMatch, setDismissedMatch] = useState(null)
-
-  const mobileDigits = digitsOf(values.mobile).slice(-10)
-  const duplicate = useMemo(
-    () => (mobileDigits.length === 10 ? patients.find((patient) => patient.id !== editing?.id && digitsOf(patient.mobile).slice(-10) === mobileDigits) : undefined),
-    [patients, mobileDigits, editing],
-  )
-  const duplicateResolved = !duplicate || dismissedMatch === duplicate.id
-  const errors = submitted ? validatePatient(values, { duplicateResolved }) : {}
-
+  const { patient: editing, loading, refresh } = usePatient()
+  if (patientId && loading) {
+    return (
+      <WorkspacePage>
+        <LoadingState label="Loading patient record…" />
+      </WorkspacePage>
+    )
+  }
   if (patientId && !editing) {
     return (
       <WorkspacePage>
@@ -71,18 +49,63 @@ export default function RegisterPatientPage() {
       </WorkspacePage>
     )
   }
+  return <PatientForm key={editing?.id ?? 'new'} editing={editing} refresh={refresh} />
+}
 
-  const set = (name, value) => setValues((current) => ({ ...current, [name]: value }))
+function PatientForm({ editing, refresh }) {
+  const navigate = useNavigate()
+  const [values, setValues] = useState(() => (editing ? formValuesFromPatient(editing.record, BLANK) : BLANK))
+  const [submitted, setSubmitted] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [serverErrors, setServerErrors] = useState({})
+  const [formError, setFormError] = useState('')
+  const [dismissedMatch, setDismissedMatch] = useState(null)
+
+  const branches = useApiResource(() => branchesApi.list(), 'branches')
+  const branchOptions = (branches.data ?? []).filter((branch) => branch.status === 'active' || branch.id === values.branchId)
+  // Until someone picks a branch, the first one is the registration branch.
+  const branchId = values.branchId || branchOptions[0]?.id || ''
+
+  const mobileDigits = digitsOf(values.mobile).slice(-10)
+  const matches = useApiResource(() => (mobileDigits.length === 10 ? patientsApi.duplicates(mobileDigits, editing?.id) : Promise.resolve([])), mobileDigits)
+  const matchCount = matches.data?.length ?? 0
+  const duplicate = useMemo(() => (matches.data?.[0] ? toPatientView(matches.data[0]) : undefined), [matches.data])
+  const duplicateResolved = !duplicate || dismissedMatch === duplicate.id
+  const errors = submitted ? { ...validatePatient(values, { duplicateResolved, today: localToday() }), ...serverErrors } : {}
+  const branchName = branchOptions.find((branch) => branch.id === branchId)?.name ?? 'Choose a branch'
+
+  const set = (name, value) => {
+    setValues((current) => ({ ...current, [name]: value }))
+    setServerErrors((current) => ({ ...current, [name]: undefined }))
+  }
   const update = (event) => set(event.target.name, event.target.value)
-  const newMrn = `PT-${String(FIRST_NEW_MRN + (patients.length - PATIENTS.length)).padStart(6, '0')}`
-  const duplicateLedger = duplicate ? ledgerSummary({ invoices: records.invoices.filter((entry) => entry.patientId === duplicate.id), payments: records.payments.filter((entry) => entry.patientId === duplicate.id), refunds: records.refunds.filter((entry) => entry.patientId === duplicate.id) }) : null
+  const duplicateBooks = usePatientLedger(duplicate?.id)
+  const duplicateLedger = duplicate ? ledgerSummary(duplicateBooks) : null
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
     setSubmitted(true)
-    if (Object.keys(validatePatient(values, { duplicateResolved })).length) return
-    const patient = editing ? (updatePatient(editing.id, values), editing) : addPatient(values)
-    navigate(pathFor(ROUTES.patientHub, { patientId: patient.id }))
+    setFormError('')
+    setServerErrors({})
+    if (Object.keys(validatePatient(values, { duplicateResolved, today: localToday() })).length) return
+    setSaving(true)
+    try {
+      const body = patientPayload({ ...values, branchId })
+      const saved = editing ? await patientsApi.update(editing.id, { ...body, version: editing.version }) : await patientsApi.create({ ...body, confirmedNotDuplicate: dismissedMatch === duplicate?.id })
+      if (editing) await refresh()
+      navigate(pathFor(ROUTES.patientHub, { patientId: saved.id }))
+    } catch (error) {
+      setSaving(false)
+      if (error.code === 'POSSIBLE_DUPLICATE') {
+        matches.reload()
+        setFormError(error.message)
+      } else if (error.code === 'VALIDATION_FAILED') {
+        setServerErrors(formErrors(error))
+        setFormError('Some fields need attention.')
+      } else {
+        setFormError(error.message)
+      }
+    }
   }
 
   return (
@@ -100,7 +123,7 @@ export default function RegisterPatientPage() {
           <p className="mt-1 text-sm text-on-surface-variant">Create an authoritative organization-level patient record that syncs across all clinic branches, appointments, and care workflows.</p>
         </div>
         <InfoNote tone="brand" icon={ShieldCheck} className="max-w-xs">
-          <strong className="text-on-surface">{values.branch}</strong>
+          <strong className="text-on-surface">{branchName}</strong>
           <br />Multi-Branch Synchronization Active
         </InfoNote>
       </div>
@@ -112,11 +135,11 @@ export default function RegisterPatientPage() {
               <div>
                 <p className="text-[10px] font-semibold tracking-wide text-outline uppercase">Permanent master ID (MRN)</p>
                 <p className="mt-1 flex items-center gap-2 text-xl font-bold">
-                  {editing ? editing.mrn : newMrn}
+                  {editing ? editing.mrn : 'Issued on save'}
                   <StatusPill tone="success"><Lock className="size-3" aria-hidden="true" />Auto-reserved</StatusPill>
                 </p>
               </div>
-              <TextInput label="ABDM national health ID (ABHA)" name="abha" value={values.abha} onChange={update} placeholder="14-0000-0000-0000" hint="Optional" />
+              <TextInput label="ABDM national health ID (ABHA)" name="abha" value={values.abha} onChange={update} error={errors.abha} placeholder="14-0000-0000-0000" hint="Optional" />
             </div>
             <div className="grid gap-4 sm:grid-cols-[160px_1fr]">
               <SelectInput label="Title prefix" name="title" required value={values.title} onChange={update} error={errors.title} placeholder="Select" options={TITLE_PREFIXES} />
@@ -124,7 +147,7 @@ export default function RegisterPatientPage() {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <TextInput label="Preferred name / alias" name="alias" value={values.alias} onChange={update} placeholder="Known as, nickname, or clinical alias" hint="Optional" />
-              <TextInput label="Aadhaar card reference (last 4 digits)" name="aadhaarLast4" inputMode="numeric" maxLength={4} prefix="XXXX-XXXX-" value={values.aadhaarLast4} onChange={update} error={errors.aadhaarLast4} hint="Stored encrypted" />
+              <TextInput label="Aadhaar card reference (last 4 digits)" name="aadhaarLast4" inputMode="numeric" maxLength={4} prefix="XXXX-XXXX-" value={values.aadhaarLast4} onChange={update} error={errors.aadhaarLast4} hint="Last 4 digits only" />
             </div>
           </FormSection>
 
@@ -149,7 +172,7 @@ export default function RegisterPatientPage() {
 
           <FormSection number="03" title="Demographics" tag="Clinical Stratification">
             <div className="grid gap-4 sm:grid-cols-2">
-              <TextInput label="Date of birth" name="dob" type="date" required value={values.dob} onChange={update} error={errors.dob} hint={values.dob && values.dob <= TODAY ? `Age ${ageFrom(values.dob)} yrs` : undefined} />
+              <TextInput label="Date of birth" name="dob" type="date" required value={values.dob} onChange={update} error={errors.dob} hint={values.dob && values.dob <= localToday() ? `Age ${ageFrom(values.dob, localToday())} yrs` : undefined} />
               <fieldset>
                 <legend className="mb-1.5 text-[13px] font-semibold text-slate-800">Gender at birth <span className="text-rose-500">*</span></legend>
                 <div className="grid grid-cols-3 gap-2">
@@ -193,7 +216,7 @@ export default function RegisterPatientPage() {
 
           <FormSection number="05" title="Registration context & branch attribution" tag="Multi-Clinic Sync Engine">
             <div className="grid gap-4 sm:grid-cols-2">
-              <SelectInput label="Originating registration branch" name="branch" value={values.branch} onChange={update} options={REGISTRATION_BRANCHES} />
+              <SelectInput label="Originating registration branch" name="branchId" required value={branchId} onChange={update} error={errors.branchId} placeholder={branches.loading ? 'Loading branches…' : 'Select'} options={branchOptions.map((branch) => ({ value: branch.id, label: branch.name }))} />
               <SelectInput label="Initial intake clinical unit" name="intakeUnit" value={values.intakeUnit} onChange={update} options={INTAKE_UNITS} />
             </div>
             <InfoNote tone="brand" icon={Landmark}>
@@ -203,10 +226,10 @@ export default function RegisterPatientPage() {
           </FormSection>
 
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-4">
-            {errors.duplicate ? <p role="alert" className="text-xs text-rose-600">{errors.duplicate}</p> : <p className="text-xs text-outline">Required fields are marked with *</p>}
+            {formError || errors.duplicate ? <p role="alert" className="text-xs text-rose-600">{formError || errors.duplicate}</p> : <p className="text-xs text-outline">Required fields are marked with *</p>}
             <div className="flex gap-2">
               <ActionButton to={editing ? pathFor(ROUTES.patientHub, { patientId: editing.id }) : ROUTES.patients}>Cancel</ActionButton>
-              <ActionButton variant="primary" type="submit">{editing ? 'Save changes' : 'Register patient'}</ActionButton>
+              <ActionButton variant="primary" type="submit" disabled={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Register patient'}</ActionButton>
             </div>
           </div>
         </div>
@@ -218,11 +241,11 @@ export default function RegisterPatientPage() {
                 {duplicate ? <AlertTriangle className="size-4 text-amber-600" aria-hidden="true" /> : <CheckCircle2 className="size-4 text-brand" aria-hidden="true" />}
                 Duplicate Detection Engine
               </h2>
-              <StatusPill tone={duplicate ? 'warning' : 'success'}>{duplicate ? '1 match alert' : 'No matches'}</StatusPill>
+              <StatusPill tone={duplicate ? 'warning' : 'success'}>{duplicate ? `${matchCount} match alert` : 'No matches'}</StatusPill>
             </header>
             {duplicate ? (
               <>
-                <p className="mb-3 text-xs text-on-surface-variant">Queried: <strong className="font-mono text-on-surface">+91 {mobileDigits}</strong> · Real-time check</p>
+                <p className="mb-3 text-xs text-on-surface-variant">Queried: <strong className="font-mono text-on-surface">+91 {mobileDigits}</strong> · {matchCount} registered with this number</p>
                 <div className="rounded-md border border-slate-200 bg-white p-3">
                   <p className="text-sm font-semibold">{duplicate.name} <span className="font-mono text-[11px] font-normal text-on-surface-variant">{duplicate.mrn}</span></p>
                   <p className="mb-2 text-[11px] text-on-surface-variant">{duplicate.age} yrs · {duplicate.gender}</p>

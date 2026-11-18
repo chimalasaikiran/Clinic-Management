@@ -1,3 +1,4 @@
+// Test fixture: billing, family, communication and consent records for the sample patient.
 // Sample billing, family, communication and consent records for PT-000184.
 const PATIENT = 'pt-000184'
 
@@ -36,7 +37,6 @@ export const SEED_CHARGES = [
   { id: 'CHG-2026-321', patientId: PATIENT, date: '2026-10-05', time: '11:40', title: 'Echocardiography 2D Doppler Study', reference: 'Enc #ENC-2026-0894', status: 'Unbilled', invoiceId: null, lines: [line('RAD-ECHO-004', 'Echocardiography 2D Doppler Study', 'SAC 999315 · Dept of Radiology & Echo · Healthcare Service (GST Exempt)', 3500)], location: 'Diagnostics & Imaging', branch: 'Main Surgical Pavilion' },
 ]
 
-export const INSURANCE = { policy: 'Star Health Comprehensive', claim: 'SH-88219-CORP', preAuthLimit: 500000 }
 
 export const SEED_FAMILY = [
   { id: 'FAM-00914', patientId: PATIENT, personCode: '#PER-00914', name: 'Ravi Sharma', initials: 'RS', age: 36, gender: 'Male', relationship: 'Spouse', kinship: 'Immediate Kin', mobile: '+91 98452 88410', email: 'ravi.sharma@outlook.com', location: 'Indiranagar, Bengaluru', caregiver: 'Primary Caregiver', caregiverNote: 'Post-CABG home recovery & meds', emergencyTier: 'Tier 1 Primary', emergencyNote: 'Priority 1 · 24/7 Immediate', access: 'Legal Proxy', consentId: '#CONS-2026-9041', scope: 'OPD Records, Billing, Meds', portal: 'Portal account active', status: 'Active', dob: '1990-02-12' },

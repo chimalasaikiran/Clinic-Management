@@ -4,7 +4,7 @@ import ActionButton from '../../../components/workspace/ActionButton'
 import { CheckRow, InfoNote, Toggle } from '../../../components/workspace/controls'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { cn } from '../../../lib/cn'
-import { BRANCHES } from '../../configuration/data/organisation'
+import { useRoles } from '../context/useRoles'
 import { PERMISSION_GROUPS } from '../data/roles'
 import { canGrant, grantablePermissionIds, scopeLabel } from '../rolePermissions'
 import { validateRole } from '../validation'
@@ -28,9 +28,11 @@ function groupPill(available, enabled, total) {
 
 // Side panel showing one role's scope and permissions. Parents remount it (via `key`) to reset the draft.
 export default function RoleInspector({ role, editing, onEdit, onCancel, onSave, onDuplicate }) {
+  const { branches } = useRoles()
   const [permissions, setPermissions] = useState(role.permissions)
   const [branchIds, setBranchIds] = useState(role.branchIds)
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const granted = new Set(editing ? permissions : role.permissions)
   const shownBranchIds = editing ? branchIds : role.branchIds
@@ -40,14 +42,20 @@ export default function RoleInspector({ role, editing, onEdit, onCancel, onSave,
 
   const toggle = (setter, id) => setter((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id]))
 
-  const save = () => {
+  const save = async () => {
     const errors = validateRole({ ...role, branchCount: branchIds.length, permissionCount: permissions.length })
     const message = errors.branches ?? errors.permissions
     if (message) {
       setError(message)
       return
     }
-    onSave({ permissions, branchIds })
+    setSaving(true)
+    try {
+      await onSave({ permissions, branchIds })
+    } catch (saveError) {
+      setError(saveError.message)
+      setSaving(false)
+    }
   }
 
   return (
@@ -85,17 +93,17 @@ export default function RoleInspector({ role, editing, onEdit, onCancel, onSave,
           </div>
           {role.scope === 'org' ? (
             <InfoNote icon={Info} className="mt-3">
-              Org-wide roles see records across all {BRANCHES.length} branches. Use a branch-level role to confine access to specific clinics.
+              Org-wide roles see records across all {branches.length} branches. Use a branch-level role to confine access to specific clinics.
             </InfoNote>
           ) : (
             <div className="mt-3 rounded-md border border-slate-200 p-3">
               <p className="mb-2 text-[11px] font-semibold text-on-surface-variant">Authorized branches ({shownBranchIds.length} selected)</p>
               <div className="grid gap-2 sm:grid-cols-2">
-                {BRANCHES.map((branch) =>
+                {branches.map((branch) =>
                   editing ? (
                     <CheckRow key={branch.id} checked={branchIds.includes(branch.id)} onChange={() => toggle(setBranchIds, branch.id)} label={branch.name}>
                       <p className="text-xs font-semibold text-on-surface">{branch.name}</p>
-                      <p className="text-[11px] text-outline">{branch.abdmNode}</p>
+                      <p className="text-[11px] text-outline">{branch.code} · {branch.city}</p>
                     </CheckRow>
                   ) : (
                     <div
@@ -106,7 +114,7 @@ export default function RoleInspector({ role, editing, onEdit, onCancel, onSave,
                       )}
                     >
                       <p className="text-xs font-semibold">{branch.name}</p>
-                      <p className="text-[11px] text-outline">{branch.abdmNode}</p>
+                      <p className="text-[11px] text-outline">{branch.code} · {branch.city}</p>
                     </div>
                   ),
                 )}
@@ -201,8 +209,8 @@ export default function RoleInspector({ role, editing, onEdit, onCancel, onSave,
             <ActionButton variant="soft" onClick={onCancel}>
               Cancel
             </ActionButton>
-            <ActionButton variant="primary" onClick={save}>
-              Save role changes
+            <ActionButton variant="primary" onClick={save} disabled={saving}>
+              {saving ? 'Saving…' : 'Save role changes'}
             </ActionButton>
           </div>
         )}

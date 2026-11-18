@@ -4,7 +4,6 @@ import { SearchBox } from '../../../components/workspace/controls'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
 import { exportCsv } from '../../../lib/exportCsv'
-import { usePatientRecords } from '../../patients/context/usePatientRecords'
 import { formatDate } from '../../patients/format'
 import BillingFrame from '../components/BillingFrame'
 import { Banner, FilterField, GovernanceFooter, MetricStrip, TextLink } from '../../../components/workspace/RecordKit'
@@ -19,8 +18,7 @@ const TONE = { Pending: 'warning', Approved: 'brand', Processed: 'success', Fail
 const byNewest = (a, b) => `${b.date} ${b.time ?? ''}`.localeCompare(`${a.date} ${a.time ?? ''}`)
 
 export default function RefundRegisterPage() {
-  const { records, getPatient } = usePatientRecords()
-  const { refundRequests } = useBilling()
+  const { records, getPatient, refundRequests, scopeText } = useBilling()
   const filters = useRegisterFilters({ range: DATE_RANGES[0].id })
   const range = DATE_RANGES.find((entry) => entry.id === filters.get('range')) ?? DATE_RANGES[0]
   const { refunds } = refundContext(records, refundRequests)
@@ -38,10 +36,10 @@ export default function RefundRegisterPage() {
   const exportRegister = () => exportCsv('refund-register.csv', [['Refund ID', 'Date', 'Patient', 'Payer', 'Original payment', 'Amount (INR)', 'Reason', 'Status'], ...rows.map((refund) => { const party = refundParty(refund, getPatient); return [refund.id, refund.date, party.name, party.payer, refund.paymentId, refund.amount, refund.reason, refund.status] })])
 
   return (
-    <BillingFrame back={{ to: ROUTES.billing, label: 'Billing & Finance' }} crumb="Billing & Finance / Refunds" code="BF-15 / Aura Health · Billing & Finance" title="Refund Register" description="Track refund requests, approvals and gateway outcomes. Each refund stays linked to its original payment." actions={<ActionButton variant="brand" icon={Plus} to={ROUTES.billingRefundNew} state={state}>Create Refund</ActionButton>} scope={false}>
+    <BillingFrame back={{ to: ROUTES.billing, label: 'Billing & Finance' }} crumb="Billing & Finance / Refunds" code="BF-15 / Billing & Finance" title="Refund Register" description="Track refund requests, approvals and gateway outcomes. Each refund stays linked to its original payment." actions={<ActionButton variant="brand" icon={Plus} to={ROUTES.billingRefundNew} state={state}>Create Refund</ActionButton>} scope={false}>
       <div className="mb-6 grid items-end gap-4 sm:grid-cols-3 lg:grid-cols-[1fr_1fr_1fr_1fr]">
         <FilterField label="Date range · Refund created" value={range.id} onChange={(value) => filters.change('range', value, DATE_RANGES[0].id)} options={DATE_RANGES.map((entry) => [entry.id, entry.label])} />
-        <FilterField label="Organization / branch" value="" disabled options={[['', 'Aura Health · All locations (3)']]} />
+        <FilterField label="Organization / branch" value="" disabled options={[['', scopeText]]} />
         <FilterField label="Refund status" value={filters.get('status')} onChange={(value) => filters.change('status', value)} options={[['', 'All statuses'], ...REFUND_STATUSES]} />
         <p className="text-right text-[11px] text-outline">Currency: INR (₹) · Time: IST<br />Finance Manager · Create & review enabled</p>
       </div>

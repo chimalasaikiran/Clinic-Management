@@ -4,7 +4,7 @@ import ActionButton from '../../../components/workspace/ActionButton'
 import { SearchBox } from '../../../components/workspace/controls'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
-import { usePatientRecords } from '../../patients/context/usePatientRecords'
+import { useBilling } from '../context/useBilling'
 import { formatDate, formatINR, formatTime } from '../../patients/format'
 import BillingFrame, { Card, Note } from '../components/BillingFrame'
 import { DATE_RANGES } from '../constants'
@@ -15,7 +15,7 @@ const TONE = { 'Partially Paid': 'warning', 'Paid in Full': 'success', Issued: '
 
 // Search, status and date range live in the address, so opening an invoice and coming back keeps the register as it was.
 export default function InvoiceRegisterPage() {
-  const { records, getPatient } = usePatientRecords()
+  const { records, getPatient } = useBilling()
   const [params, setParams] = useSearchParams()
   const query = params.get('q') ?? ''
   const status = params.get('status') ?? ''
@@ -38,7 +38,7 @@ export default function InvoiceRegisterPage() {
   const search = params.toString() ? `?${params.toString()}` : ''
 
   return (
-    <BillingFrame back={{ to: ROUTES.billing, label: 'Billing & Finance' }} crumb="Billing & Finance / Invoices" code="BF-06 / Aura Health" title="Invoice Register" description="Find invoices and review balances without changing settled history." actions={<ActionButton variant="primary" icon={Plus} to={ROUTES.billingInvoiceNew}>Create Invoice</ActionButton>} scope={false}>
+    <BillingFrame back={{ to: ROUTES.billing, label: 'Billing & Finance' }} crumb="Billing & Finance / Invoices" code="BF-06 / Billing & Finance" title="Invoice Register" description="Find invoices and review balances without changing settled history." actions={<ActionButton variant="primary" icon={Plus} to={ROUTES.billingInvoiceNew}>Create Invoice</ActionButton>} scope={false}>
       <div className="mb-3 grid gap-4 sm:grid-cols-3">
         <label className="text-xs text-outline">Date range<select aria-label="Date range" value={rangeId} onChange={(event) => change('range', event.target.value, DATE_RANGES[0].id)} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-on-surface outline-none focus:border-brand">{DATE_RANGES.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}</select></label>
         <label className="text-xs text-outline">Status<select aria-label="Status" value={status} onChange={(event) => change('status', event.target.value)} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-on-surface outline-none focus:border-brand"><option value="">All statuses</option>{STATUSES.map((entry) => <option key={entry}>{entry}</option>)}</select></label>

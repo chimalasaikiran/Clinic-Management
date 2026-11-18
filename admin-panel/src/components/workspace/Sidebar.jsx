@@ -1,6 +1,8 @@
 import { Link, useLocation } from 'react-router-dom'
 import { dashboardIcons as icons } from '../../assets/icons/dashboard'
+import { canOpen } from '../../config/access'
 import { NAV_ITEMS, SIDEBAR_BRANCH } from '../../config/workspace'
+import { useAuth } from '../../features/auth/context/useAuth'
 import { cn } from '../../lib/cn'
 
 function NavItem({ item }) {
@@ -64,6 +66,9 @@ function NavItem({ item }) {
 }
 
 export default function Sidebar({ className }) {
+  // Sections the user's role cannot open are hidden; the route guard and the API enforce the same rule.
+  const { can } = useAuth()
+
   return (
     <aside className={cn('h-full w-64 border-r border-outline-variant/60 bg-white font-inter', className)}>
       <div className="flex h-full flex-col justify-between p-4">
@@ -93,7 +98,7 @@ export default function Sidebar({ className }) {
         </button>
 
         <nav aria-label="Primary" className="mt-4 flex flex-col gap-1 overflow-y-auto">
-          {NAV_ITEMS.map((item) => (
+          {NAV_ITEMS.filter((item) => canOpen(item.to, can)).map((item) => (
             <NavItem key={item.id} item={item} />
           ))}
         </nav>

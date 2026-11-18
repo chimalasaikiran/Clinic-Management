@@ -4,7 +4,6 @@ import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
 import { exportCsv } from '../../../lib/exportCsv'
 import { invoiceBalance } from '../../patients/billing'
-import { usePatientRecords } from '../../patients/context/usePatientRecords'
 import { formatDate } from '../../patients/format'
 import BillingFrame from '../components/BillingFrame'
 import { Banner, FilterField, GovernanceFooter, MetricStrip, Section, TextLink } from '../../../components/workspace/RecordKit'
@@ -19,8 +18,7 @@ const BAR = { Pending: 'bg-amber-700', Approved: 'bg-brand', Failed: 'bg-red-600
 const REFUND_NOTE = { Pending: 'request', Approved: 'Not processed', Failed: 'Not returned', Processed: 'Returned', Rejected: 'Excluded' }
 
 export default function FinanceReportsPage() {
-  const { records } = usePatientRecords()
-  const { refundRequests } = useBilling()
+  const { records, refundRequests, scopeText } = useBilling()
   const filters = useRegisterFilters({ range: DATE_RANGES[0].id })
   const range = DATE_RANGES.find((entry) => entry.id === filters.get('range')) ?? DATE_RANGES[0]
   const { refunds } = refundContext(records, refundRequests)
@@ -46,11 +44,11 @@ export default function FinanceReportsPage() {
   }
 
   return (
-    <BillingFrame back={{ to: ROUTES.billing, label: 'Back to Finance Workspace' }} crumb="Billing & Finance / Finance Reports" code="BF-22 / Aura Health · Billing & Finance" title="Finance Reports" description="Review available financial evidence with explicit report coverage. Source-slice values are not organization totals." actions={<ActionButton variant="brand" icon={Download} onClick={exportSlice}>Export source slice</ActionButton>} scope={false}>
+    <BillingFrame back={{ to: ROUTES.billing, label: 'Back to Finance Workspace' }} crumb="Billing & Finance / Finance Reports" code="BF-22 / Billing & Finance" title="Finance Reports" description="Review available financial evidence with explicit report coverage. Source-slice values are not organization totals." actions={<ActionButton variant="brand" icon={Download} onClick={exportSlice}>Export source slice</ActionButton>} scope={false}>
       <p className="mb-5 border-b border-slate-200 pb-4 text-[11px] text-outline">Return to Finance Workspace with {range.label} · All locations (3) · Billing model: All models · Queue context retained.</p>
       <div className="mb-6 grid items-end gap-4 sm:grid-cols-3 lg:grid-cols-[1fr_1fr_1fr_1fr]">
         <FilterField label="Date range · Source dates" value={range.id} onChange={(value) => filters.change('range', value, DATE_RANGES[0].id)} options={DATE_RANGES.map((entry) => [entry.id, entry.label])} />
-        <FilterField label="Organization / branch" value="" disabled options={[['', 'Aura Health · All locations (3)']]} />
+        <FilterField label="Organization / branch" value="" disabled options={[['', scopeText]]} />
         <FilterField label="Report coverage" value="" disabled options={[['', 'Source slice']]} />
         <p className="text-right text-[11px] text-outline">Currency: INR (₹) · Time: IST<br />Finance Manager · Source-slice view</p>
       </div>

@@ -1,39 +1,13 @@
-// Reference catalogues the patient screens pick from. They stand in for the Configuration module's
-// branches, services and staff APIs.
-export const FACILITIES = ['Main Surgical Pavilion · Kondapur Branch', 'Kondapur Satellite Clinic', 'Metro North Clinic']
-export const REGISTRATION_BRANCHES = ['Main Surgical Pavilion (Kondapur)', 'Kondapur Satellite Clinic', 'Metro North Clinic']
-
-export const DEPARTMENTS = ['Cardiology', 'Cardio-Thoracic Surgery', 'General Medicine', 'Physical Medicine & Rehab', 'Radiology & Diagnostics', 'Internal Medicine']
-
-export const DOCTORS = [
-  { id: 'rahul-mehta', name: 'Dr. Rahul Mehta, MD, DM', short: 'Dr. Rahul Mehta', initials: 'RM', department: 'Cardiology', specialty: 'Interventional Cardiology', suite: 'Suite 302 (Wing B)' },
-  { id: 'ananya-rao', name: 'Dr. Ananya Rao, MD', short: 'Dr. Ananya Rao', initials: 'AR', department: 'Cardiology', specialty: 'Cardiology', suite: 'Suite 204' },
-  { id: 'julian-vance', name: 'Dr. Julian Vance, MD, FRCS', short: 'Dr. Julian Vance', initials: 'JV', department: 'Cardio-Thoracic Surgery', specialty: 'Cardio-Thoracic Surgery', suite: 'Suite 401' },
-  { id: 'sarita-nambiar', name: 'Dr. Sarita V. Nambiar, MD', short: 'Dr. Sarita V. Nambiar', initials: 'SN', department: 'General Medicine', specialty: 'General Medicine', suite: 'Suite 108' },
-  { id: 'preeti-deshmukh', name: 'Dr. Preeti Deshmukh, BPT', short: 'Dr. Preeti Deshmukh', initials: 'PD', department: 'Physical Medicine & Rehab', specialty: 'Physiotherapy', suite: 'Chamber 104' },
-  { id: 'amitav-ghosh', name: 'Dr. Amitav Ghosh, MD', short: 'Dr. Amitav Ghosh', initials: 'AG', department: 'Radiology & Diagnostics', specialty: 'Radiology & Diagnostics', suite: 'Room B-12' },
-  { id: 'rajesh-nair', name: 'Dr. Rajesh K. Nair, MD', short: 'Dr. Rajesh K. Nair', initials: 'RN', department: 'Internal Medicine', specialty: 'Internal Medicine', suite: 'Floor 1 Wing A' },
-]
-
+// Fixed option lists and reference catalogues for the patient, appointment and clinical screens (formulary,
+// investigations, priorities). People come from the API: therapists, staff and referral targets.
 export const APPOINTMENT_TYPES = ['Consultation', 'Follow-up', 'Procedure', 'Diagnostic Review']
-
-export const SERVICES = [
-  { code: 'SRV-CARD-001', name: 'Cardiology Consultation', department: 'Cardiology', minutes: 30, price: 1500 },
-  { code: 'SRV-CARD-004', name: 'Cardio + 2D Echo Screen', department: 'Cardiology', minutes: 45, price: 3200 },
-  { code: 'SRV-CARD-009', name: 'Comprehensive Post-CABG Review', department: 'Cardiology', minutes: 45, price: 2800 },
-  { code: 'SRV-CTS-001', name: 'Cardio-Thoracic Consultation', department: 'Cardio-Thoracic Surgery', minutes: 30, price: 2200 },
-  { code: 'SRV-GM-001', name: 'General Medicine Consultation', department: 'General Medicine', minutes: 30, price: 800 },
-  { code: 'SRV-PMR-001', name: 'Rehabilitation Evaluation', department: 'Physical Medicine & Rehab', minutes: 45, price: 1200 },
-  { code: 'SRV-RAD-001', name: 'Diagnostic Imaging Review', department: 'Radiology & Diagnostics', minutes: 30, price: 1000 },
-  { code: 'SRV-IM-001', name: 'Internal Medicine Consultation', department: 'Internal Medicine', minutes: 30, price: 900 },
-]
 
 export const BOOKING_SOURCES = ['Reception / In-Person Intake', 'Phone Call', 'Patient Portal', 'Referral Desk']
 
 export const SESSIONS = [
-  { id: 'morning', label: 'Morning', range: '09:00 AM – 01:00 PM', start: '09:00', end: '13:00' },
-  { id: 'afternoon', label: 'Afternoon', range: '02:00 PM – 05:00 PM', start: '14:00', end: '17:00' },
-  { id: 'evening', label: 'Evening', range: '05:00 PM – 08:30 PM', start: '17:00', end: '20:30' },
+  { id: 'morning', label: 'Morning', range: 'Until 01:00 PM', start: '00:00', end: '13:00' },
+  { id: 'afternoon', label: 'Afternoon', range: '01:00 PM – 05:00 PM', start: '13:00', end: '17:00' },
+  { id: 'evening', label: 'Evening', range: 'From 05:00 PM', start: '17:00', end: '24:00' },
 ]
 
 export const CANCEL_REASONS = [
@@ -100,12 +74,12 @@ export const ROUTES_OF_ADMIN = ['Oral', 'Sublingual', 'Topical']
 export const DURATIONS = [3, 5, 7, 10, 14, 30, 90]
 
 export const ORDER_CATALOG = [
-  { code: 'RAD-MRI-LUM-01', name: 'MRI Spine - Lumbar Spine with Screening Whole Spine', category: 'Imaging', loinc: '24725-4', destination: 'Main In-house Radiology Wing (Suite B-02)' },
-  { code: 'LAB-INF-PANEL', name: 'Erythrocyte Sedimentation Rate (ESR) & High-Sensitivity C-Reactive Protein (hs-CRP)', category: 'Laboratory', loinc: '30341-2', destination: 'Central Phlebotomy Unit (Room 102)' },
-  { code: 'LAB-LIPID-01', name: 'Fasting Lipid Profile', category: 'Laboratory', loinc: '24331-1', destination: 'St. Jude Pathology Lab · Routine Ambulatory' },
-  { code: 'LAB-RFT-01', name: 'Serum Creatinine & eGFR', category: 'Laboratory', loinc: '2160-0', destination: 'St. Jude Pathology Lab · Routine Ambulatory' },
-  { code: 'CARD-ECG-12', name: '12-Lead ECG at Rest', category: 'Special Diagnostics', loinc: '11524-6', destination: 'Cardiology Special Diagnostics Suite' },
-  { code: 'LAB-HBA1C-01', name: 'Glycated Hemoglobin (HbA1c)', category: 'Laboratory', loinc: '4548-4', destination: 'In-House Endocrinology Lab' },
+  { code: 'RAD-MRI-LUM-01', name: 'MRI Spine - Lumbar Spine with Screening Whole Spine', category: 'Imaging', loinc: '24725-4', destination: 'In-house radiology' },
+  { code: 'LAB-INF-PANEL', name: 'Erythrocyte Sedimentation Rate (ESR) & High-Sensitivity C-Reactive Protein (hs-CRP)', category: 'Laboratory', loinc: '30341-2', destination: 'In-house laboratory' },
+  { code: 'LAB-LIPID-01', name: 'Fasting Lipid Profile', category: 'Laboratory', loinc: '24331-1', destination: 'In-house laboratory' },
+  { code: 'LAB-RFT-01', name: 'Serum Creatinine & eGFR', category: 'Laboratory', loinc: '2160-0', destination: 'In-house laboratory' },
+  { code: 'CARD-ECG-12', name: '12-Lead ECG at Rest', category: 'Special Diagnostics', loinc: '11524-6', destination: 'Cardiology diagnostics' },
+  { code: 'LAB-HBA1C-01', name: 'Glycated Hemoglobin (HbA1c)', category: 'Laboratory', loinc: '4548-4', destination: 'In-house laboratory' },
 ]
 export const ORDER_CATEGORIES = ['All Enabled', 'Laboratory', 'Imaging', 'Special Diagnostics']
 export const ORDER_BUNDLES = [
@@ -115,17 +89,6 @@ export const ORDER_BUNDLES = [
 ]
 export const ORDER_PRIORITIES = ['Routine (Outpatient OPD)', 'Urgent', 'STAT']
 
-export const CHARGE_CATALOG = [
-  { code: 'SVC-CRD-001', name: 'Outpatient Cardiology Consult', note: 'SAC 999312 · Cardiology OPD', price: 1500, gstPct: 0, discountPct: 0, type: 'service' },
-  { code: 'RAD-ECHO-004', name: '2D Echocardiography Doppler', note: 'SAC 999315 · Imaging & Diagnostics', price: 3500, gstPct: 0, discountPct: 0, type: 'service' },
-  { code: 'SVC-ECG-002', name: 'Resting 12-Lead ECG', note: 'SAC 999315 · Special Diagnostics', price: 600, gstPct: 0, discountPct: 0, type: 'service' },
-  { code: 'MED-SUP-201', name: 'ECG Sterile Electrodes & Gel Kit', note: 'HSN 9018 · Consumable Supply', price: 450, gstPct: 12, discountPct: 10, type: 'consumable' },
-  { code: 'MED-SUP-114', name: 'Disposable Syringe Pack (5)', note: 'HSN 9018 · Consumable Supply', price: 120, gstPct: 12, discountPct: 0, type: 'consumable' },
-]
-
-export const PAYMENT_CHANNELS = ['UPI / QR', 'Cash Desk', 'Card / POS', 'NEFT / IMPS', 'Cheque / DD']
-export const REFUND_REASONS = ['Service Cancelled / Not Rendered', 'Duplicate Payment', 'Overcharge Correction', 'Insurance Settlement Adjustment']
-
 export const MESSAGE_PURPOSES = ['Post-Op Follow-up & Symptom Check', 'Appointment Reminder', 'Result Notification', 'Billing Notice']
 export const MESSAGE_TEMPLATES = [
   { id: 'postop', purpose: 'Post-Op Follow-up & Symptom Check', label: 'POST_CABG_DAY90_SYMPTOM_SURVEY_EN_HI — DLT #14071688921104', body: "This is an automated follow-up check from {doctor}'s cardiology care team at St. Jude Surgical Health System.\n\nAs you complete your Day 90 Post-CABG milestone, please confirm your recovery status with the clinic.\n\nIf you experience sudden shortness of breath or chest discomfort, contact our 24/7 cardiac desk immediately at 040 2341 8892." },
@@ -134,14 +97,6 @@ export const MESSAGE_TEMPLATES = [
   { id: 'billing', purpose: 'Billing Notice', label: 'BILL_NOTICE_V2 — DLT #14071688712', body: 'A payment of the outstanding balance on your account is due. Please contact the billing desk at the clinic for settlement options.' },
 ]
 export const CHANNELS = ['WhatsApp', 'SMS', 'Email']
-
-export const REFERRAL_TARGETS = [
-  { id: 'rahul-mehta', group: 'Internal ClinicOS network', name: 'Dr. Rahul Mehta, MD, DM', specialty: 'Interventional Cardiology', facility: 'Main Surgical Pavilion — Advanced Cardiac Suite', clinicianNote: 'Cardiology · Kondapur' },
-  { id: 'julian-vance', group: 'Internal ClinicOS network', name: 'Dr. Julian Vance, MD, FRCS', specialty: 'Cardio-Thoracic Surgery', facility: 'Main Surgical Pavilion — Surgical Suite 401', clinicianNote: 'Cardio-Thoracic Surgery' },
-  { id: 'preeti-deshmukh', group: 'Internal ClinicOS network', name: 'Dr. Preeti Deshmukh, BPT', specialty: 'Physiotherapy & Rehab', facility: 'Kondapur Rehab Suite', clinicianNote: 'Physical Medicine & Rehab' },
-  { id: 'city-heart', group: 'External verified facility', name: 'Dr. K. S. Someshwar', specialty: 'Cardiac Electrophysiology', facility: 'City Heart Centre — Advanced Arrhythmia Suite', clinicianNote: 'Senior Interventional Electrophysiologist' },
-  { id: 'mohan-eye', group: 'External verified facility', name: "Dr. Mohan's Eye Centre", specialty: 'Retina & Vitreous', facility: "Dr. Mohan's Eye Centre", clinicianNote: 'Retina & Vitreous Clinic' },
-]
 
 export const REFERRAL_PRIORITIES = [
   { label: 'Routine (within 2 weeks)', windowHours: 336 },
@@ -163,3 +118,14 @@ export const FOLLOW_UP_OUTCOMES = [
   { id: 'declined', status: 'Declined', title: 'Referral Declined / Capacity Constraint', detail: 'No specialist availability, out of scope, or bed unavailability. Automatically triggers urgent re-route to a secondary panelist.' },
   { id: 'noanswer', status: 'Pending Acceptance', title: 'No Answer / Line Busy', detail: 'Attempt unsuccessful. No verbal or automated connection achieved. Prompts expedited follow-up task.' },
 ]
+
+export const ALERT_DISPOSITIONS = [
+  { id: 'acknowledged', title: 'Clinical Risk Acknowledged — Benefit Outweighs Risk', detail: 'Authorize the action for a brief, defined window with mandatory ambulatory monitoring.' },
+  { id: 'modify', title: 'Modify / Substitute Prescribed Therapy', detail: 'Withhold the flagged order and substitute a safer alternative.' },
+  { id: 'defer', title: 'Defer to Attending Consultant Review', detail: 'Flag the encounter for senior consultant review before the order proceeds.' },
+]
+
+export const ORDER_STEPS = {
+  imaging: ['Ordered', 'Completed', 'Result In', 'Review Required', 'Reviewed'],
+  lab: ['Ordered', 'Phlebotomy Done', 'In Transit to Analyzer', 'Review', 'Signed'],
+}

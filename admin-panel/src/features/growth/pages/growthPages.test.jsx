@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { pathFor, ROUTES } from '../../../config/routes'
-import { renderRoute } from '../../../test/renderRoute'
+import { renderBillingRoute, renderRoute } from '../../../test/renderRoute'
 
 const setup = () => userEvent.setup({ delay: null })
 
@@ -59,8 +59,9 @@ const SCREENS = [
 ]
 
 describe('every Growth and Reports screen opens from its route', () => {
-  it.each(SCREENS)('%s', (_name, path, title) => {
-    renderRoute(path)
+  // Report screens wait for the billing ledger; the others render at once.
+  it.each(SCREENS)('%s', async (_name, path, title) => {
+    await renderBillingRoute(path)
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(title)
   })
 
@@ -319,32 +320,34 @@ describe('workflows', () => {
 })
 
 describe('reports', () => {
-  it('shows the operations measures with their denominators', () => {
-    renderRoute(ROUTES.reportsOperations)
+  it('shows the operations measures with their denominators', async () => {
+    await renderBillingRoute(ROUTES.reportsOperations)
     expect(screen.getByText('6.3%')).toBeInTheDocument()
     expect(screen.getByText('10 ÷ 160 (150 completed + 10 no-show). Exact rate 6.25%.')).toBeInTheDocument()
     expect(screen.getByText('15 min')).toBeInTheDocument()
   })
 
-  it('shows billed, collected and outstanding apart from one another', () => {
-    renderRoute(ROUTES.reportsFinancial)
+  it('shows billed, collected and outstanding apart from one another', async () => {
+    const user = setup()
+    await renderBillingRoute(ROUTES.reportsFinancial)
+    await user.selectOptions(screen.getByLabelText('Period'), 'all')
     expect(screen.getByText('Billed ≠ collected ≠ recognized revenue')).toBeInTheDocument()
-    expect(screen.getAllByText('₹8,500').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('₹7,000').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('₹62,500').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('₹66,900').length).toBeGreaterThan(0)
     expect(screen.getAllByText('₹3,500').length).toBeGreaterThan(0)
   })
 
   it('filters the inventory table by expiry status', async () => {
     const user = setup()
-    renderRoute(ROUTES.reportsPharmacy)
+    await renderBillingRoute(ROUTES.reportsPharmacy)
 
     await user.selectOptions(screen.getByLabelText(/Stock expiry/), 'Near expiry')
 
     expect(screen.getByText('2 of 8 SKUs · Main Pharmacy at Main Surgical Pavilion · snapshot 25 Oct 2026 18:00 IST')).toBeInTheDocument()
   })
 
-  it('links the overview to each report', () => {
-    renderRoute(ROUTES.reports)
+  it('links the overview to each report', async () => {
+    await renderBillingRoute(ROUTES.reports)
     expect(screen.getByRole('link', { name: /View Operations/ })).toHaveAttribute('href', ROUTES.reportsOperations)
     expect(screen.getByRole('link', { name: /View Financial/ })).toHaveAttribute('href', ROUTES.reportsFinancial)
     expect(screen.getByRole('link', { name: /View Pharmacy/ })).toHaveAttribute('href', ROUTES.reportsPharmacy)

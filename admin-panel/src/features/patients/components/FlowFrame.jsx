@@ -4,6 +4,7 @@ import ActionButton from '../../../components/workspace/ActionButton'
 import WorkspacePage from '../../../components/workspace/WorkspacePage'
 import { pathFor, ROUTES } from '../../../config/routes'
 import EmptyState from './EmptyState'
+import LoadingState from './LoadingState'
 import PatientNotFound from './PatientNotFound'
 
 // Full-page frame for the appointment and encounter flows: title row, then content.
@@ -25,8 +26,22 @@ export default function FlowFrame({ title, badge, description, actions, children
   )
 }
 
-// What a flow page renders when its patient or appointment cannot be found.
-export function FlowMissing({ patient, what = 'appointment' }) {
+// What a flow page renders while its records load, or when the patient or appointment cannot be found.
+export function FlowMissing({ patient, loading, error, what = 'appointment' }) {
+  if (loading) {
+    return (
+      <WorkspacePage>
+        <LoadingState label={`Loading ${what}…`} />
+      </WorkspacePage>
+    )
+  }
+  if (error && error.status !== 404) {
+    return (
+      <WorkspacePage>
+        <LoadingState error={error} />
+      </WorkspacePage>
+    )
+  }
   if (!patient) {
     return (
       <WorkspacePage>

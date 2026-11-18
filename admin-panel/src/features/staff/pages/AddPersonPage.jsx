@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ArrowRight, X } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import ActionButton from '../../../components/workspace/ActionButton'
 import { RadioCard } from '../../../components/workspace/controls'
 import { SelectInput, TextInput } from '../../../components/workspace/FormControls'
@@ -9,8 +9,12 @@ import Panel from '../../../components/workspace/Panel'
 import StatusPill from '../../../components/workspace/StatusPill'
 import WorkspacePage from '../../../components/workspace/WorkspacePage'
 import { pathFor, ROUTES } from '../../../config/routes'
+import { useApiResource } from '../../../hooks/useApiResource'
 import { useFormFields } from '../../../hooks/useFormFields'
-import { useStaffDirectory } from '../context/useStaffDirectory'
+import LoadingState from '../../patients/components/LoadingState'
+import StaffNotFound from '../components/StaffNotFound'
+import { digitsOf } from '../../patients/format'
+import { staffApi } from '../api'
 import { DEPARTMENTS, ENGAGEMENT_TYPES, MEDICAL_COUNCILS } from '../data/directory'
 import { validatePerson } from '../validation'
 
@@ -24,13 +28,13 @@ const INITIAL_VALUES = {
   designation: '',
   council: '',
   councilNumber: '',
-  engagement: 'full-time',
+  engagement: 'full_time',
 }
 
 const NEXT_ACTIONS = [
-  ['Step 1 · Next action', 'Branch assignment', 'Assign this person to Main Surgical Pavilion or Kondapur Clinic chambers.', 'Triggerable directly upon submit'],
-  ['Step 2 · Decoupled', 'Login & credentials', 'Generate ClinicOS portal login or role-based RBAC access only if system access is required.', 'Managed in Configuration › RBAC'],
-  ['Step 3 · Decoupled', 'OPD schedule & tariff', 'Define consultation slot duration, OT block privileges, and specialty pricing slabs.', 'Managed in Services & Pricing'],
+  ['Step 1 · Next action', 'Branch assignment', 'Assign this person to the branches where they work.', 'Offered directly after creating the record'],
+  ['Step 2 · Optional', 'Login & credentials', 'Invite them to ClinicOS with a role, only if they need system access.', 'From the profile › Manage Access'],
+  ['Step 3 · Optional', 'OPD schedule', 'For people who see patients: slot length and weekly consulting hours.', 'From the profile › OPD schedule'],
 ]
 
 function QualificationInput({ items, onChange, error }) {
@@ -75,41 +79,92 @@ function QualificationInput({ items, onChange, error }) {
   )
 }
 
+const valuesFrom = (person) => ({
+  classification: person.type,
+  fullName: person.fullName,
+  mobile: person.mobile ?? '',
+  email: person.email ?? '',
+  masterStatus: person.status === 'inactive' ? 'active' : person.status,
+  department: person.department,
+  designation: person.designation,
+  council: person.council ?? '',
+  councilNumber: person.councilNumber ?? '',
+  engagement: person.engagement,
+})
+
+// /staff/new creates a record; /staff/:staffId/edit changes one.
 export default function AddPersonPage() {
+  const { staffId } = useParams()
+  const existing = useApiResource(() => (staffId ? staffApi.get(staffId) : Promise.resolve(null)), staffId ?? 'new')
+  if (staffId && existing.loading && !existing.data) return <WorkspacePage><LoadingState label="Loading staff record…" /></WorkspacePage>
+  if (staffId && !existing.data) return <StaffNotFound />
+  return <PersonForm key={existing.data?.id ?? 'new'} existing={existing.data} />
+}
+
+function PersonForm({ existing }) {
   const navigate = useNavigate()
-  const { addPerson } = useStaffDirectory()
-  const [values, handleChange] = useFormFields(INITIAL_VALUES)
-  const [qualifications, setQualifications] = useState([])
+  const [values, handleChange] = useFormFields(existing ? valuesFrom(existing) : INITIAL_VALUES)
+  const [qualifications, setQualifications] = useState(existing?.qualifications ?? [])
   const [proceed, setProceed] = useState(true)
   const [submitted, setSubmitted] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [serverErrors, setServerErrors] = useState({})
+  const [formError, setFormError] = useState('')
 
   const payload = { ...values, qualifications }
-  const errors = submitted ? validatePerson(payload) : {}
+  const errors = submitted ? { ...validatePerson(payload), ...serverErrors } : {}
   const isDoctor = values.classification === 'doctor'
+
+  const body = (overrides = {}) => ({
+    type: values.classification,
+    fullName: values.fullName.trim(),
+    email: values.email.trim(),
+    mobile: digitsOf(values.mobile).slice(-10),
+    department: values.department,
+    designation: values.designation.trim(),
+    council: values.council,
+    councilNumber: values.councilNumber.trim(),
+    qualifications,
+    engagement: values.engagement,
+    status: values.masterStatus,
+    ...overrides,
+  })
+
+  const save = async (data, next) => {
+    setSaving(true)
+    setFormError('')
+    setServerErrors({})
+    try {
+      const person = existing ? await staffApi.update(existing.id, { ...data, status: existing.status === 'inactive' ? 'inactive' : data.status, version: existing.version }) : await staffApi.create(data)
+      navigate(next(person))
+    } catch (error) {
+      setSaving(false)
+      if (error.code === 'VALIDATION_FAILED') setServerErrors(error.fieldErrors())
+      setFormError(error.message)
+    }
+  }
 
   const handleSubmit = (event) => {
     event.preventDefault()
     setSubmitted(true)
     if (Object.keys(validatePerson(payload)).length) return
-    const person = addPerson(payload)
-    navigate(proceed ? pathFor(ROUTES.staffBranches, { staffId: person.id }) : ROUTES.staffDirectory)
+    save(body(), (person) => (proceed && !existing ? pathFor(ROUTES.staffBranches, { staffId: person.id }) : pathFor(ROUTES.staffMember, { staffId: person.id })))
   }
 
+  // A draft needs only a name; the rest can be completed later on the profile.
   const saveDraft = () => {
     setSubmitted(true)
     if (!values.fullName.trim()) return
-    addPerson({ ...payload, masterStatus: 'draft', designation: values.designation || 'Draft profile', department: values.department || 'Unassigned' })
-    navigate(ROUTES.staffDirectory)
+    save(body({ status: 'draft', designation: values.designation.trim() || 'Draft profile', department: values.department || 'Unassigned' }), () => ROUTES.staffDirectory)
   }
 
   return (
     <WorkspacePage>
       <form onSubmit={handleSubmit} noValidate className="pb-20">
         <PageIntro
-          eyebrow={<StatusPill>Master Registry v2.4 · ABDM HPR compatible</StatusPill>}
-          title="Add a person"
+          eyebrow={<StatusPill>Workforce master record</StatusPill>}
+          title={existing ? `Edit ${existing.fullName}` : 'Add a person'}
           description="Create a staff or doctor master record for your organization. This establishes their central profile, credentials, and identity across all branches."
-          actions={<StatusPill tone="success">0 duplicate records found in 42 active files</StatusPill>}
         />
 
         <div className="flex flex-col gap-5">
@@ -120,7 +175,7 @@ export default function AddPersonPage() {
             </div>
           </Panel>
 
-          <Panel title="2 · Basic information" subtitle="Canonical demographic and identity data shared across St. Jude medical facilities." action={<StatusPill>Shared profile data</StatusPill>} bodyClassName="flex flex-col gap-5">
+          <Panel title="2 · Basic information" subtitle="Identity and contact details shared across your branches." action={<StatusPill>Shared profile data</StatusPill>} bodyClassName="flex flex-col gap-5">
             <TextInput label="Full name" name="fullName" required hint="Include title/salutation for verified prescription headers" value={values.fullName} onChange={handleChange} error={errors.fullName} placeholder="e.g. Dr. Sarita V. Nambiar" />
             <div className="grid gap-5 sm:grid-cols-2">
               <TextInput label="Mobile number" name="mobile" type="tel" prefix="+91" hint="Recommended for 2FA" value={values.mobile} onChange={handleChange} error={errors.mobile} />
@@ -135,7 +190,7 @@ export default function AddPersonPage() {
             </fieldset>
           </Panel>
 
-          <Panel title="3 · Professional credentials & council registration" subtitle="ABDM Healthcare Professionals Registry (HPR) compliant statutory clinical record." action={<StatusPill tone="success">{isDoctor ? 'Active for Doctor' : 'Optional for Staff'}</StatusPill>} bodyClassName="flex flex-col gap-5">
+          <Panel title="3 · Professional credentials & council registration" subtitle="Statutory registration for clinicians; optional for operational staff." action={<StatusPill tone="success">{isDoctor ? 'Active for Doctor' : 'Optional for Staff'}</StatusPill>} bodyClassName="flex flex-col gap-5">
             <div className="grid gap-5 sm:grid-cols-2">
               <SelectInput label="Primary department" name="department" required placeholder="Choose a department" options={DEPARTMENTS} value={values.department} onChange={handleChange} error={errors.department} />
               <TextInput label="Professional title / designation" name="designation" required value={values.designation} onChange={handleChange} error={errors.designation} placeholder="e.g. Senior Consultant Interventional Cardiologist" />
@@ -172,11 +227,14 @@ export default function AddPersonPage() {
         </div>
 
         <div className="fixed inset-x-0 bottom-0 z-20 flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-5 py-3 lg:pl-72">
-          <ActionButton onClick={() => navigate(ROUTES.staffDirectory)}>Cancel</ActionButton>
+          <span className="flex items-center gap-3">
+            <ActionButton onClick={() => navigate(existing ? pathFor(ROUTES.staffMember, { staffId: existing.id }) : ROUTES.staffDirectory)}>Cancel</ActionButton>
+            {formError && <span role="alert" className="text-xs text-rose-600">{formError}</span>}
+          </span>
           <div className="flex gap-2">
-            <ActionButton onClick={saveDraft}>Save as Draft</ActionButton>
-            <ActionButton variant="primary" type="submit">
-              {proceed ? 'Create person & assign branches' : 'Create person'} <ArrowRight className="size-3.5" aria-hidden="true" />
+            {!existing && <ActionButton onClick={saveDraft} disabled={saving}>Save as Draft</ActionButton>}
+            <ActionButton variant="primary" type="submit" disabled={saving}>
+              {existing ? 'Save changes' : proceed ? 'Create person & assign branches' : 'Create person'} <ArrowRight className="size-3.5" aria-hidden="true" />
             </ActionButton>
           </div>
         </div>

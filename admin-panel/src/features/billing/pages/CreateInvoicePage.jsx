@@ -7,26 +7,29 @@ import { pathFor, ROUTES } from '../../../config/routes'
 import { cn } from '../../../lib/cn'
 import { useDraft } from '../../../lib/useDraft'
 import { FieldError, OptionSelect } from '../../patients/components/parts'
-import { usePatientRecords } from '../../patients/context/usePatientRecords'
-import { formatINR, TODAY } from '../../patients/format'
+import { useBilling } from '../context/useBilling'
+import { formatINR, localToday } from '../../patients/format'
+import PatientPicker from '../components/PatientPicker'
+import { usePickedPatient } from '../patientChoice'
 import { addDays } from '../../appointments/logic'
-import { clockTime } from '../../patients/selectors'
 import BillingFrame, { Card, Note } from '../components/BillingFrame'
 import { BILLING_MODELS } from '../constants'
-import { buildInvoice, draftTotals, eligibleCharges, PAYERS, validateInvoiceDraft } from '../invoiceLogic'
+import { draftTotals, eligibleCharges, invoiceRequest, PAYERS, validateInvoiceDraft } from '../invoiceLogic'
 
 const STEPS = [['Draft', 'Select recipient and eligible charges'], ['Review', 'Validate source, pricing and totals'], ['Issue / finalize', 'Locks financial fields']]
 
 export default function CreateInvoicePage() {
-  const { records, patients, getPatient, add, update } = usePatientRecords()
+  const { records, createInvoice } = useBilling()
   const navigate = useNavigate()
   const [params] = useSearchParams()
-  const draft = useDraft('invoice-draft', { patientId: params.get('patient') ?? '', payer: '', date: TODAY, dueDate: addDays(TODAY, 7), model: '', discount: '', chargeIds: [] })
+  const draft = useDraft('invoice-draft', { patientId: params.get('patient') ?? '', payer: '', date: localToday(), dueDate: addDays(localToday(), 7), model: '', discount: '', chargeIds: [] })
   const values = draft.value
   const [step, setStep] = useState(0)
   const [attempted, setAttempted] = useState(false)
   const [query, setQuery] = useState('')
-  const patient = getPatient(values.patientId)
+  const patient = usePickedPatient(values.patientId)
+  const [issuing, setIssuing] = useState(false)
+  const [serverError, setServerError] = useState('')
   const charges = values.patientId ? eligibleCharges(records.charges, values.patientId) : []
   const shown = charges.filter((charge) => `${charge.id} ${charge.title}`.toLowerCase().includes(query.trim().toLowerCase()))
   const errors = attempted ? validateInvoiceDraft(values, { review: step > 0 || attempted === 'review' }) : {}
@@ -48,16 +51,21 @@ export default function CreateInvoicePage() {
     setStep(1)
   }
 
-  const issue = () => {
-    const invoice = buildInvoice({ ...values, time: clockTime() }, { charges, invoices: records.invoices, patient })
-    add('invoices', invoice)
-    values.chargeIds.forEach((id) => update('charges', id, { status: 'Invoiced', invoiceId: invoice.id }))
-    draft.clear()
-    navigate(pathFor(ROUTES.billingInvoice, { invoiceId: invoice.id }))
+  const issue = async () => {
+    setIssuing(true)
+    setServerError('')
+    try {
+      const invoice = await createInvoice(invoiceRequest(values, charges))
+      draft.clear()
+      navigate(pathFor(ROUTES.billingInvoice, { invoiceId: invoice.reference }))
+    } catch (error) {
+      setServerError(error.message)
+      setIssuing(false)
+    }
   }
 
   return (
-    <BillingFrame back={{ to: ROUTES.billingInvoices, label: 'Invoice Register' }} crumb="Billing & Finance / Invoices / New invoice" code="BF-07 / Aura Health" title="Create / Review Invoice" badge={<span className="rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-normal text-on-surface-variant">{draft.savedAt ? `Draft saved ${draft.savedAt}` : 'Draft · not saved'}</span>} description="Build an invoice only from verified, eligible charges. A draft is not an issued invoice." scope={false}>
+    <BillingFrame back={{ to: ROUTES.billingInvoices, label: 'Invoice Register' }} crumb="Billing & Finance / Invoices / New invoice" code="BF-07 / Billing & Finance" title="Create / Review Invoice" badge={<span className="rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-normal text-on-surface-variant">{draft.savedAt ? `Draft saved ${draft.savedAt}` : 'Draft · not saved'}</span>} description="Build an invoice only from verified, eligible charges. A draft is not an issued invoice." scope={false}>
       <ol className="mb-5 grid overflow-hidden rounded-lg border border-slate-200 bg-white sm:grid-cols-3">
         {STEPS.map(([title, hint], index) => <li key={title} aria-current={index === step ? 'step' : undefined} className={cn('border-b-2 px-5 py-3 text-xs', index === step ? 'border-brand' : 'border-transparent text-outline')}><strong className="block text-[13px] text-on-surface">{index + 1} {title}</strong>{hint}</li>)}
       </ol>
@@ -69,7 +77,7 @@ export default function CreateInvoicePage() {
         <div className="flex flex-col gap-5">
           <Card title="Recipient & invoice dates" aside="New invoice · no number assigned">
             <div className="grid gap-4 sm:grid-cols-2">
-              <OptionSelect label="Patient context" required placeholder="Select the patient" value={values.patientId} onChange={(event) => draft.setValue((current) => ({ ...current, patientId: event.target.value, chargeIds: [] }))} error={errors.patientId} options={patients.map((entry) => ({ value: entry.id, label: `${entry.name} · ${entry.mrn}` }))} />
+              <PatientPicker label="Patient context" placeholder="Select the patient" value={values.patientId} onChange={(id) => draft.setValue((current) => ({ ...current, patientId: id, chargeIds: [] }))} error={errors.patientId} />
               <OptionSelect label="Invoice recipient / payer" required placeholder="Select recipient" value={values.payer} onChange={(event) => set('payer', event.target.value)} error={errors.payer} options={PAYERS.map((entry) => ({ value: entry, label: entry }))} />
               <TextInput label="Branch" readOnly value={patient?.branch ?? ''} />
               <span />
@@ -127,8 +135,9 @@ export default function CreateInvoicePage() {
         <div className="flex items-center gap-2">
           <ActionButton onClick={() => { draft.clear(); navigate(ROUTES.billingInvoices) }}>Cancel</ActionButton>
           <ActionButton onClick={() => draft.setValue((current) => ({ ...current }))}>Save draft</ActionButton>
-          {step === 0 ? <ActionButton variant="primary" onClick={review}>Review invoice</ActionButton> : <><ActionButton onClick={() => setStep(0)}>Back to draft</ActionButton><ActionButton variant="primary" onClick={issue} disabled={!ready}>Issue / finalize</ActionButton></>}
+          {step === 0 ? <ActionButton variant="primary" onClick={review}>Review invoice</ActionButton> : <><ActionButton onClick={() => setStep(0)}>Back to draft</ActionButton><ActionButton variant="primary" onClick={issue} disabled={!ready || issuing}>Issue / finalize</ActionButton></>}
         </div>
+        {serverError && <p role="alert" className="w-full text-xs text-rose-600">{serverError}</p>}
       </div>
     </BillingFrame>
   )

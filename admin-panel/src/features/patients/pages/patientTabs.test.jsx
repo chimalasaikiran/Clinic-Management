@@ -1,8 +1,39 @@
-import { act, screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { pathFor, ROUTES } from '../../../config/routes'
+import { apiPatient, createPatientsApi } from '../../../test/fixtures/patientsApi'
+import { createBillingApi, ledgerSeed } from '../../../test/fixtures/billingApi'
+import { billingFake } from '../../../test/fixtures/billingFake'
 import { renderRoute } from '../../../test/renderRoute'
+
+// The patient and the clinical chart come from the API (faked here, seeded from test/fixtures/patients); the
+// billing, family and communication records come from the in-memory fixtures, keyed by the same patient ids.
+const fake = vi.hoisted(() => ({ api: null, state: null }))
+vi.mock('../api', async (importOriginal) => {
+  const actual = await importOriginal()
+  const forward = (name) => new Proxy({}, { get: (_, method) => (...args) => fake.api[name][method](...args) })
+  return { ...actual, patientsApi: forward('patientsApi'), appointmentsApi: forward('appointmentsApi'), practitionersApi: forward('practitionersApi'), branchesApi: forward('branchesApi'), clinicalApi: forward('clinicalApi') }
+})
+
+beforeEach(() => {
+  const created = createPatientsApi({
+    patients: [
+      apiPatient({ id: 'pt-000184', mrn: 'PT-000184', fullName: 'Ananya Sharma', mobile: '9845211029' }),
+      apiPatient({ id: 'pt-000789', mrn: 'PT-000789', fullName: 'Kavita S. Deshpande', mobile: '9922481092', dateOfBirth: '2018-03-02', bloodGroup: 'A+' }),
+    ],
+  })
+  fake.api = created.api
+  fake.state = created.state
+})
+
+// What the screens sent to the (fake) API, and the fake's stored charts.
+const patientsApiFake = {
+  calls: (name) => fake.state.calls.filter(([call]) => call === name).map(([, ...args]) => args),
+  get state() {
+    return fake.state
+  },
+}
 
 const ananya = { patientId: 'pt-000184' }
 const setup = () => userEvent.setup({ delay: null })
@@ -15,18 +46,39 @@ async function fill(user, field, text) {
 
 const dialog = () => screen.getByRole('dialog')
 
+// Renders a patient hub page and waits for the patient to load from the API.
+async function openHub(path) {
+  const router = renderRoute(path)
+  await screen.findByRole('navigation', { name: 'Patient sections' })
+  return router
+}
+
+// The billing tab loads the patient's ledger from the (faked) billing API before it shows anything.
+async function openBilling() {
+  const router = await openHub(tab(ROUTES.patientBilling))
+  await screen.findByRole('tablist', { name: 'Ledger view' })
+  return router
+}
+
+// Without the pending ₹1,500 refund request, PAY-2026-112 holds ₹1,500 of credit the desk can apply.
+function withCredit() {
+  const seed = ledgerSeed()
+  seed.refunds = seed.refunds.filter((refund) => refund.reference !== 'REF-2026-018')
+  billingFake.use(createBillingApi({ seed }))
+}
+
 describe('overview tab', () => {
-  it('derives attention items and billing from the records', () => {
-    renderRoute(pathFor(ROUTES.patientHub, ananya))
+  it('derives attention items and billing from the records', async () => {
+    await openHub(pathFor(ROUTES.patientHub, ananya))
 
     expect(screen.getByText('Needs attention')).toBeInTheDocument()
     expect(screen.getByText(/awaiting validation/)).toBeInTheDocument()
-    expect(screen.getByText('₹3,500.00')).toBeInTheDocument()
+    expect(await screen.findByText('₹3,500.00')).toBeInTheDocument()
     expect(screen.getByText('Ravi Sharma')).toBeInTheDocument()
   })
 
-  it('starts a new patient with honest empty states', () => {
-    renderRoute('/patients/pt-000789')
+  it('starts a new patient with honest empty states', async () => {
+    await openHub('/patients/pt-000789')
 
     expect(screen.getByText('Nothing needs attention right now.')).toBeInTheDocument()
     expect(screen.getByText('No activity has been recorded yet.')).toBeInTheDocument()
@@ -37,7 +89,7 @@ describe('overview tab', () => {
 describe('clinical records tab', () => {
   it('requires a disposition and justification before acknowledging an alert', async () => {
     const user = setup()
-    renderRoute(tab(ROUTES.patientRecords))
+    await openHub(tab(ROUTES.patientRecords))
 
     expect(screen.getByText(/\(3 Active Alerts\)/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Acknowledge Safety Context' }))
@@ -54,10 +106,10 @@ describe('clinical records tab', () => {
 
   it('opens the allergy, vital and note detail drawers', async () => {
     const user = setup()
-    renderRoute(tab(ROUTES.patientRecords))
+    await openHub(tab(ROUTES.patientRecords))
 
     await user.click(screen.getByRole('button', { name: 'Open allergy Penicillin' }))
-    expect(within(dialog()).getByText('Amoxicillin Trihydrate')).toBeInTheDocument()
+    expect(within(dialog()).getAllByText(/Penicillin/).length).toBeGreaterThan(0)
     await user.keyboard('{Escape}')
 
     await user.click(screen.getByRole('button', { name: 'Open blood pressure detail' }))
@@ -76,7 +128,7 @@ describe('clinical records tab', () => {
 
   it('records a structured progress review against the care plan', async () => {
     const user = setup()
-    renderRoute(tab(ROUTES.patientRecords))
+    await openHub(tab(ROUTES.patientRecords))
 
     await user.click(screen.getByRole('button', { name: 'View full care plan →' }))
     await user.click(within(dialog()).getByRole('button', { name: 'Update Progress' }))
@@ -93,7 +145,7 @@ describe('clinical records tab', () => {
 describe('prescriptions tab', () => {
   it('shows the four active medications and opens detail and activity', async () => {
     const user = setup()
-    renderRoute(tab(ROUTES.patientPrescriptions))
+    await openHub(tab(ROUTES.patientPrescriptions))
 
     expect(screen.getByText('Atorvastatin Tablets')).toBeInTheDocument()
     expect(screen.getByText('Metoprolol Tartrate ER (Succinate)')).toBeInTheDocument()
@@ -103,23 +155,41 @@ describe('prescriptions tab', () => {
     expect(within(dialog()).getByText('Prescription Detail')).toBeInTheDocument()
     await user.click(within(dialog()).getByRole('button', { name: 'Audit Ledger' }))
     expect(within(dialog()).getByText('Prescription activity')).toBeInTheDocument()
+    expect(within(dialog()).getByText('Prescription authorized & signed')).toBeInTheDocument()
+    // There is no pharmacy module yet, so nothing has been dispensed.
     await user.click(within(dialog()).getByRole('tab', { name: 'Dispensing' }))
-    expect(within(dialog()).getByText(/Pharmacy acknowledged/)).toBeInTheDocument()
+    expect(within(dialog()).getByText('No events of this type were recorded for this prescription.')).toBeInTheDocument()
+  })
+
+  it('discontinues a prescription with a reason', async () => {
+    const user = setup()
+    await openHub(tab(ROUTES.patientPrescriptions))
+
+    await user.click(screen.getByRole('button', { name: 'View Rx details for Atorvastatin Tablets' }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Discontinue' }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Confirm Discontinue' }))
+    expect(within(dialog()).getByText(/at least 10 characters/)).toBeInTheDocument()
+    await fill(user, within(dialog()).getByLabelText(/reason for discontinuing/i), 'Replaced by a lower-dose statin.')
+    await user.click(within(dialog()).getByRole('button', { name: 'Confirm Discontinue' }))
+
+    await waitFor(() => expect(patientsApiFake.calls('clinical.discontinuePrescription')[0]).toEqual(['RX-2026-0894-A', 'Replaced by a lower-dose statin.']))
+    expect(await within(dialog()).findByText(/Discontinued by Dr\. Rahul Mehta: Replaced by a lower-dose statin\./)).toBeInTheDocument()
   })
 
   it('filters the history to discontinued prescriptions', async () => {
     const user = setup()
-    renderRoute(tab(ROUTES.patientPrescriptions))
+    await openHub(tab(ROUTES.patientPrescriptions))
 
     await user.click(screen.getByRole('tab', { name: /discontinued/i }))
-    expect(screen.getByText(/Switched to Olmesartan|Discontinued \(Replaced\)/)).toBeInTheDocument()
+    expect(screen.getByText('Telmisartan 40 mg')).toBeInTheDocument()
+    expect(screen.queryByText('Pantoprazole 40 mg')).not.toBeInTheDocument()
   })
 })
 
 describe('orders & results tab', () => {
-  it('signs off a result and clears the linked safety alert', async () => {
+  it('signs off a result', async () => {
     const user = setup()
-    const router = renderRoute(tab(ROUTES.patientOrders))
+    await openHub(tab(ROUTES.patientOrders))
 
     await user.click(screen.getByRole('button', { name: 'Review Result' }))
     await user.click(within(dialog()).getByRole('button', { name: 'Sign & Acknowledge Result' }))
@@ -129,28 +199,54 @@ describe('orders & results tab', () => {
     await fill(user, within(dialog()).getByLabelText(/clinician note/i), 'Discuss at the next visit.')
     await user.click(within(dialog()).getByRole('button', { name: 'Sign & Acknowledge Result' }))
 
-    expect(screen.queryByRole('button', { name: 'Review Result' })).not.toBeInTheDocument()
-    await act(() => router.navigate(tab(ROUTES.patientRecords)))
-    expect(await screen.findByText(/\(2 Active Alerts\)/)).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Review Result' })).not.toBeInTheDocument())
+    expect(patientsApiFake.calls('clinical.reviewResult')[0]).toEqual(['ORD-2026-1184', { outcome: 'routine', note: 'Discuss at the next visit.' }])
   })
 
-  it('tracks a specimen and cancels a processing order', async () => {
+  it('enters a critical result that flags the chart until a clinician reviews it', async () => {
     const user = setup()
-    renderRoute(tab(ROUTES.patientOrders))
+    await openHub(tab(ROUTES.patientOrders))
+
+    await user.click(screen.getByRole('button', { name: 'Enter Result' }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Save Result' }))
+    expect(within(dialog()).getByText('Enter the result.')).toBeInTheDocument()
+    await fill(user, within(dialog()).getByLabelText(/result and key findings/i), 'LDL 212 mg/dL; hs-CRP 9.8 mg/L.')
+    await user.click(within(dialog()).getByRole('radio', { name: /^Critical/ }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Save Result' }))
+
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Review Result' })).toHaveLength(2))
+    const chart = () => patientsApiFake.state.charts['pt-000184']
+    expect(chart().alerts.find((alert) => alert.orderId === 'ORD-2026-1142')).toMatchObject({ kind: 'RESULT: CRITICAL', status: 'active' })
+
+    await user.click(screen.getAllByRole('button', { name: 'Review Result' })[1])
+    await user.click(within(dialog()).getByRole('radio', { name: /clinical action required/i }))
+    await fill(user, within(dialog()).getByLabelText(/clinician note/i), 'Start high-intensity statin; recheck in 6 weeks.')
+    await user.click(within(dialog()).getByRole('button', { name: 'Sign & Acknowledge Result' }))
+    await waitFor(() => expect(chart().alerts.find((alert) => alert.orderId === 'ORD-2026-1142').status).toBe('resolved'))
+  })
+
+  it('tracks a specimen and cancels a processing order with a reason', async () => {
+    const user = setup()
+    await openHub(tab(ROUTES.patientOrders))
 
     await user.click(screen.getByRole('button', { name: 'Track Specimen' }))
     expect(within(dialog()).getByText('SPEC-8829104')).toBeInTheDocument()
     await user.keyboard('{Escape}')
 
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(screen.getByText('Cancelled', { selector: 'span' })).toBeInTheDocument()
+    await user.click(within(dialog()).getByRole('button', { name: 'Cancel Order' }))
+    expect(within(dialog()).getByText(/at least 10 characters/)).toBeInTheDocument()
+    await fill(user, within(dialog()).getByLabelText(/reason for cancelling/i), 'Duplicate of an outside lab order.')
+    await user.click(within(dialog()).getByRole('button', { name: 'Cancel Order' }))
+    expect(await screen.findByText('Cancelled', { selector: 'span' })).toBeInTheDocument()
+    expect(patientsApiFake.calls('clinical.cancelOrder')[0]).toEqual(['ORD-2026-1142', 'Duplicate of an outside lab order.'])
   })
 })
 
 describe('referrals tab', () => {
   it('logs a follow-up and moves the referral to the logged outcome', async () => {
     const user = setup()
-    renderRoute(tab(ROUTES.patientReferrals))
+    await openHub(tab(ROUTES.patientReferrals))
 
     await user.click(screen.getByRole('button', { name: 'Follow Up with Receiving Center →' }))
     await user.click(within(dialog()).getByRole('button', { name: /save follow-up/i }))
@@ -158,17 +254,18 @@ describe('referrals tab', () => {
     expect(within(dialog()).getByText('Select a contact outcome.')).toBeInTheDocument()
 
     await fill(user, within(dialog()).getByLabelText(/receiving representative/i), 'Ms. Kavita Reddy')
+    await fill(user, within(dialog()).getByLabelText(/recording staff member/i), 'Liaison desk')
     await user.click(within(dialog()).getByRole('radio', { name: /acceptance confirmed/i }))
     await fill(user, within(dialog()).getByLabelText(/conversation record/i), 'Consultant agreed to see the patient on Friday.')
     await user.click(within(dialog()).getByRole('button', { name: /save follow-up/i }))
 
-    const row = screen.getByText('#REF-2026-084').closest('tr')
-    expect(within(row).getByText('Accepted')).toBeInTheDocument()
+    const row = await waitFor(() => screen.getByText('#REF-2026-084').closest('tr'))
+    expect(await within(row).findByText('Accepted')).toBeInTheDocument()
   })
 
   it('accepts an inbound referral only after the checklist is complete', async () => {
     const user = setup()
-    renderRoute(tab(ROUTES.patientReferrals))
+    await openHub(tab(ROUTES.patientReferrals))
 
     await user.click(screen.getByRole('button', { name: 'Review Referral & Triage →' }))
     await user.click(within(dialog()).getByRole('button', { name: 'Accept Referral' }))
@@ -177,55 +274,80 @@ describe('referrals tab', () => {
     for (const box of within(dialog()).getAllByRole('checkbox')) await user.click(box)
     await user.click(within(dialog()).getByRole('button', { name: 'Accept Referral' }))
     const row = screen.getByText('#IN-REF-2026-192').closest('tr')
-    expect(within(row).getByText('Accepted')).toBeInTheDocument()
+    expect(await within(row).findByText('Accepted')).toBeInTheDocument()
   })
 
   it('creates an outbound referral that starts pending acceptance', async () => {
     const user = setup()
-    renderRoute(tab(ROUTES.patientReferrals))
+    await openHub(tab(ROUTES.patientReferrals))
 
     await user.click(screen.getByRole('button', { name: 'Create referral' }))
     await user.click(within(dialog()).getByRole('button', { name: 'Create & Authorize Referral' }))
     expect(within(dialog()).getByText('Choose a destination specialist or facility.')).toBeInTheDocument()
 
-    await user.selectOptions(within(dialog()).getByLabelText(/target specialist/i), 'mohan-eye')
+    await user.selectOptions(within(dialog()).getByLabelText(/target specialist/i), 'dr-1')
     await fill(user, within(dialog()).getByLabelText(/primary clinical indication/i), 'Annual retinopathy screening')
     await fill(user, within(dialog()).getByLabelText(/clinical narrative/i), 'Diabetic screening is due this year.')
     await user.click(within(dialog()).getByRole('button', { name: 'Create & Authorize Referral' }))
 
-    const row = (await screen.findByText('#REF-2026-085')).closest('tr')
+    expect(patientsApiFake.calls('clinical.refer')[0]).toEqual(['pt-000184', expect.objectContaining({ direction: 'outgoing', targetPractitionerId: 'dr-1', indication: 'Annual retinopathy screening' })])
+    const row = (await screen.findByText('Annual retinopathy screening')).closest('tr')
     expect(within(row).getByText('Pending Acceptance')).toBeInTheDocument()
+  })
+
+  it('refers to an outside facility typed in by hand', async () => {
+    const user = setup()
+    await openHub(tab(ROUTES.patientReferrals))
+
+    await user.click(screen.getByRole('button', { name: 'Create referral' }))
+    await user.selectOptions(within(dialog()).getByLabelText(/target specialist/i), 'external')
+    await fill(user, within(dialog()).getByLabelText(/^facility/i), 'City Eye Hospital')
+    await fill(user, within(dialog()).getByLabelText(/^specialty/i), 'Retina & Vitreous')
+    await fill(user, within(dialog()).getByLabelText(/primary clinical indication/i), 'Annual retinopathy screening')
+    await fill(user, within(dialog()).getByLabelText(/clinical narrative/i), 'Diabetic screening is due this year.')
+    await user.click(within(dialog()).getByRole('button', { name: 'Create & Authorize Referral' }))
+
+    await waitFor(() => expect(patientsApiFake.calls('clinical.refer')[0]).toEqual(['pt-000184', expect.objectContaining({ facility: 'City Eye Hospital', specialty: 'Retina & Vitreous' })]))
   })
 })
 
 describe('billing tab', () => {
-  it('shows the ledger summary and flags unallocated credit', () => {
-    renderRoute(tab(ROUTES.patientBilling))
+  it('shows the ledger summary and flags unallocated credit', async () => {
+    withCredit()
+    await openBilling()
 
     expect(screen.getAllByText('₹3,500').length).toBeGreaterThan(0)
     expect(screen.getByText('₹62,500')).toBeInTheDocument()
     expect(screen.getByText(/Invoice Due & Unallocated Payment Available/)).toBeInTheDocument()
   })
 
-  it('applies unallocated credit to the open invoice', async () => {
-    const user = setup()
-    renderRoute(tab(ROUTES.patientBilling))
+  it('keeps credit held by a pending refund out of the allocation prompt', async () => {
+    await openBilling()
 
-    await user.click(screen.getByRole('button', { name: /allocate ₹2,000 to invoice/i }))
+    expect(screen.queryByText(/Invoice Due & Unallocated Payment Available/)).not.toBeInTheDocument()
+  })
+
+  it('applies unallocated credit to the open invoice', async () => {
+    withCredit()
+    const user = setup()
+    await openBilling()
+
+    await user.click(screen.getByRole('button', { name: /allocate ₹1,500 to invoice/i }))
     await user.click(within(dialog()).getByRole('button', { name: /confirm & commit allocation/i }))
     expect(within(dialog()).getByText('Select an invoice and enter an amount to allocate.')).toBeInTheDocument()
 
     await user.click(within(dialog()).getByRole('checkbox', { name: /INV-2026-084/ }))
     await user.click(within(dialog()).getByRole('button', { name: /confirm & commit allocation/i }))
 
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(screen.getAllByText('₹1,500').length).toBeGreaterThan(0)
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(await screen.findByRole('status')).toHaveTextContent('Allocated ₹1,500.00 from PAY-2026-112.')
     expect(screen.getByText('₹0', { selector: 'dd' })).toBeInTheDocument()
+    expect(billingFake.current.calls).toContainEqual(['allocate', 'u-PAY-2026-112', { invoiceId: 'u-INV-2026-084', amount: 1500 }])
   })
 
   it('records a payment that settles the invoice', async () => {
     const user = setup()
-    renderRoute(tab(ROUTES.patientBilling))
+    await openBilling()
 
     await user.click(screen.getByRole('button', { name: 'Record payment' }))
     await user.click(within(dialog()).getByRole('button', { name: /record payment & commit/i }))
@@ -234,31 +356,33 @@ describe('billing tab', () => {
     await user.click(within(dialog()).getByRole('button', { name: /pay full balance/i }))
     await user.click(within(dialog()).getByRole('button', { name: /record payment & commit/i }))
 
+    expect(await screen.findByText('#PAY-000001')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(screen.getByText('#PAY-2026-113')).toBeInTheDocument()
     const invoiceRow = screen.getByText('#INV-2026-084').closest('tr')
     expect(within(invoiceRow).getByText('Paid in Full')).toBeInTheDocument()
   })
 
-  it('refunds the unallocated credit and records the refund in the ledger', async () => {
+  it('submits a refund of the unallocated credit for approval', async () => {
+    withCredit()
     const user = setup()
-    renderRoute(tab(ROUTES.patientBilling))
+    await openBilling()
 
     await user.click(screen.getByRole('button', { name: 'View PAY-2026-112' }))
     await user.click(within(dialog()).getByRole('button', { name: 'Refund' }))
-    await user.click(within(dialog()).getByRole('button', { name: /authorize & commit refund/i }))
+    await user.click(within(dialog()).getByRole('button', { name: /submit refund for approval/i }))
     expect(within(dialog()).getByText('Select a statutory reason.')).toBeInTheDocument()
 
-    await user.selectOptions(within(dialog()).getByLabelText(/statutory reason/i), 'Duplicate Payment')
+    await user.selectOptions(within(dialog()).getByLabelText(/statutory reason/i), 'Duplicate payment')
     await fill(user, within(dialog()).getByLabelText(/clinical & cashier justification/i), 'Patient paid twice at the desk.')
-    await user.click(within(dialog()).getByRole('button', { name: /authorize & commit refund/i }))
+    await user.click(within(dialog()).getByRole('button', { name: /submit refund for approval/i }))
 
-    expect(screen.getByText('#RFD-2026-001')).toBeInTheDocument()
+    expect(await screen.findByRole('status')).toHaveTextContent('Refund request RFD-000001 of ₹1,500.00 submitted for approval against PAY-2026-112.')
+    expect(billingFake.current.calls.find(([name]) => name === 'requestRefund')[1]).toMatchObject({ paymentId: 'u-PAY-2026-112', amount: 1500, reason: 'Duplicate payment', releasesAllocations: false })
   })
 
   it('issues an invoice from unbilled charges and marks them invoiced', async () => {
     const user = setup()
-    renderRoute(tab(ROUTES.patientBilling))
+    await openBilling()
 
     await user.click(screen.getByRole('button', { name: 'Create invoice' }))
     await user.click(within(dialog()).getByRole('button', { name: /review & issue invoice/i }))
@@ -268,13 +392,34 @@ describe('billing tab', () => {
     expect(within(dialog()).getAllByText('₹1,500.00').length).toBeGreaterThan(0)
     await user.click(within(dialog()).getByRole('button', { name: /review & issue invoice/i }))
 
-    expect(screen.getByText('#INV-2026-085')).toBeInTheDocument()
+    expect(await screen.findByText('#INV-000001')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Linked Inv CHG-2026-320' })).toBeInTheDocument()
+  })
+
+  it('adds a priced catalogue service to an invoice', async () => {
+    const user = setup()
+    await openBilling()
+
+    await user.click(screen.getByRole('button', { name: 'Create invoice' }))
+    await user.click(within(dialog()).getByRole('tab', { name: 'Service Catalogue' }))
+    expect(within(dialog()).queryByRole('button', { name: 'Add Cardiac Follow-up' })).not.toBeInTheDocument()
+    await user.click(within(dialog()).getByRole('button', { name: 'Add General Physician Consultation' }))
+    await user.click(within(dialog()).getByRole('button', { name: /review & issue invoice/i }))
+
+    expect(await screen.findByText('#INV-000001')).toBeInTheDocument()
+    expect(billingFake.current.calls.find(([name]) => name === 'createInvoice')[1]).toMatchObject({ patientId: 'pt-000184', chargeIds: [], items: [{ serviceId: 'srv-gmed-01', quantity: 1 }] })
+  })
+
+  it('shows the billing tab only to finance roles', async () => {
+    billingFake.use({ ...createBillingApi(), api: { ...createBillingApi().api, ledger: () => Promise.reject(Object.assign(new Error('Forbidden'), { status: 403 })) } })
+    await openHub(tab(ROUTES.patientBilling))
+
+    expect(await screen.findByText('Billing is not part of your role')).toBeInTheDocument()
   })
 
   it('opens the receipt voucher with the amount in words', async () => {
     const user = setup()
-    renderRoute(tab(ROUTES.patientBilling))
+    await openBilling()
 
     await user.click(screen.getByRole('button', { name: 'Receipt PAY-2026-112' }))
     expect(within(dialog()).getByText('Indian Rupees Seven Thousand Only')).toBeInTheDocument()
@@ -284,7 +429,7 @@ describe('billing tab', () => {
 describe('family & caregiver tab', () => {
   it('links a new person and lists them', async () => {
     const user = setup()
-    renderRoute(tab(ROUTES.patientFamily))
+    await openHub(tab(ROUTES.patientFamily))
 
     await user.click(screen.getAllByRole('button', { name: /add person/i })[0])
     await user.click(within(dialog()).getByRole('button', { name: /save & link related person/i }))
@@ -303,7 +448,7 @@ describe('family & caregiver tab', () => {
 
   it('requires a verified document for a legal proxy', async () => {
     const user = setup()
-    renderRoute(tab(ROUTES.patientFamily))
+    await openHub(tab(ROUTES.patientFamily))
 
     await user.click(screen.getByRole('button', { name: 'Edit Meena Sharma' }))
     await user.click(within(dialog()).getByRole('switch', { name: 'Legal proxy' }))
@@ -313,7 +458,7 @@ describe('family & caregiver tab', () => {
 
   it('filters to emergency contacts', async () => {
     const user = setup()
-    renderRoute(tab(ROUTES.patientFamily))
+    await openHub(tab(ROUTES.patientFamily))
 
     await user.click(screen.getByRole('tab', { name: /emergency contacts/i }))
     const table = screen.getByRole('table')
@@ -325,7 +470,7 @@ describe('family & caregiver tab', () => {
 describe('communication tab', () => {
   it('sends a composed message to the patient', async () => {
     const user = setup()
-    renderRoute(tab(ROUTES.patientCommunication))
+    await openHub(tab(ROUTES.patientCommunication))
 
     await user.click(screen.getByRole('button', { name: 'New message' }))
     await user.click(within(dialog()).getByRole('button', { name: /send message via whatsapp/i }))
@@ -335,7 +480,7 @@ describe('communication tab', () => {
 
   it('replies to an inbound message and clears the awaiting count', async () => {
     const user = setup()
-    renderRoute(tab(ROUTES.patientCommunication))
+    await openHub(tab(ROUTES.patientCommunication))
 
     expect(screen.getByText('1 Incoming')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Reply to MSG-0411' }))
@@ -349,7 +494,7 @@ describe('communication tab', () => {
 
   it('retries a failed SMS over WhatsApp', async () => {
     const user = setup()
-    renderRoute(tab(ROUTES.patientCommunication))
+    await openHub(tab(ROUTES.patientCommunication))
 
     expect(screen.getByText('1 Failed')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Retry MSG-0377 via WhatsApp' }))
@@ -359,7 +504,7 @@ describe('communication tab', () => {
 
   it('renews an expiring consent and withdraws an active one', async () => {
     const user = setup()
-    renderRoute(tab(ROUTES.patientCommunication))
+    await openHub(tab(ROUTES.patientCommunication))
 
     await user.click(screen.getByRole('button', { name: /manage consent artifacts/i }))
     await user.click(screen.getByRole('button', { name: 'Renew ABDM Health Data Sharing & Care Context' }))

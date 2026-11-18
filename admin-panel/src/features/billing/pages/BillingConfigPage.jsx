@@ -4,7 +4,8 @@ import Modal from '../../../components/workspace/Modal'
 import { ROUTES } from '../../../config/routes'
 import { OptionSelect } from '../../patients/components/parts'
 import BillingFrame, { Card, Note } from '../components/BillingFrame'
-import { BILLING_MODELS, NOW_STAMP } from '../constants'
+import { toSettingsRequest } from '../adapters'
+import { BILLING_MODELS } from '../constants'
 import { useBilling } from '../context/useBilling'
 
 const MODEL_HINT = { 'Pay-as-you-go': 'Bill services individually as they are delivered.', Consolidated: 'Group eligible charges into a consolidated invoice.', Hybrid: 'Use individual and consolidated billing where supported.' }
@@ -15,22 +16,37 @@ const ALLOCATION = ['Allocate manually only', 'Apply to the oldest invoice first
 const DOCS = ['Standard GST invoice', 'Summary invoice']
 const RECEIPT_DOCS = ['Payment receipt', 'Receipt with allocation detail']
 
-const Locked = ({ label, hint }) => <div><p className="mb-1.5 text-[13px] font-semibold">{label}</p><p className="rounded-md border border-slate-200 bg-surface-low px-3 py-2.5 text-xs text-outline">Not verified</p><p className="mt-1 text-[11px] text-outline">{hint}</p></div>
+const Locked = ({ label, hint, value = 'Not verified' }) => <div><p className="mb-1.5 text-[13px] font-semibold">{label}</p><p className="rounded-md border border-slate-200 bg-surface-low px-3 py-2.5 text-xs text-outline">{value}</p><p className="mt-1 text-[11px] text-outline">{hint}</p></div>
 
 // Billing defaults for future records. Existing invoices, payments and receipts are never changed by saving.
 export default function BillingConfigPage() {
+  const { config } = useBilling()
+  const [notice, setNotice] = useState('')
+  // A fresh form for each saved version, so the next save carries the version it was edited from.
+  return <ConfigForm key={config.version ?? 'unsaved'} notice={notice} onSaved={setNotice} />
+}
+
+function ConfigForm({ notice, onSaved }) {
   const { config, saveConfig } = useBilling()
   const [draft, setDraft] = useState(config)
   const [confirming, setConfirming] = useState(false)
-  const [notice, setNotice] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
   const changes = [draft.model !== config.model && 'billing model', JSON.stringify(draft.methods) !== JSON.stringify(config.methods) && 'payment methods', ['advance', 'partial', 'allocation', 'invoiceDoc', 'receiptDoc'].some((key) => draft[key] !== config[key]) && 'financial rules and document defaults'].filter(Boolean)
   const dirty = changes.length > 0
   const set = (name, value) => setDraft((current) => ({ ...current, [name]: value }))
 
-  const commit = () => {
-    saveConfig({ ...draft, audit: [{ at: NOW_STAMP, by: 'Dr. Siddharth Verma', text: `Updated ${changes.join(', ')}` }, ...draft.audit] })
+  const commit = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      await saveConfig(toSettingsRequest(draft))
+      onSaved(`Billing configuration saved: ${changes.join(', ')}. Existing financial records are unchanged.`)
+    } catch (failure) {
+      setError(failure.message)
+      setSaving(false)
+    }
     setConfirming(false)
-    setNotice(`Billing configuration saved: ${changes.join(', ')}. Existing financial records are unchanged.`)
   }
   const save = () => (draft.model !== config.model ? setConfirming(true) : commit())
   const option = (list) => list.map((entry) => ({ value: entry, label: entry }))
@@ -49,8 +65,8 @@ export default function BillingConfigPage() {
 
         <Card title="Invoice preferences" aside="Organization default · branch details">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Locked label="Invoice prefix" hint="Numbering is managed by the supported numbering rules." />
-            <Locked label="Numbering sequence" hint="Sequence resets are not offered here." />
+            <Locked label="Invoice prefix" value="INV-" hint="Invoices are numbered INV-000001, INV-000002 and so on." />
+            <Locked label="Numbering sequence" value="Gap-free, per organisation" hint="Sequence resets are not offered here." />
             <OptionSelect label="Invoice document default" placeholder="Select an option" value={draft.invoiceDoc} onChange={(event) => set('invoiceDoc', event.target.value)} options={option(DOCS)} />
             <OptionSelect label="Receipt document default" placeholder="Select an option" value={draft.receiptDoc} onChange={(event) => set('receiptDoc', event.target.value)} options={option(RECEIPT_DOCS)} />
           </div>
@@ -82,10 +98,11 @@ export default function BillingConfigPage() {
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
         <p className="text-xs"><strong>{dirty ? 'Unsaved changes' : 'No changes'}</strong><br /><span className="text-outline">Save validates the choices and asks to confirm consequential changes.</span></p>
-        <div className="flex items-center gap-2"><ActionButton onClick={() => setDraft(config)} disabled={!dirty}>Cancel</ActionButton><ActionButton variant="brand" onClick={save} disabled={!dirty}>Save Changes</ActionButton></div>
+        <div className="flex items-center gap-2"><ActionButton onClick={() => setDraft(config)} disabled={!dirty}>Cancel</ActionButton><ActionButton variant="brand" onClick={save} disabled={!dirty || saving}>Save Changes</ActionButton></div>
+        {error && <p role="alert" className="w-full text-xs text-rose-600">{error}</p>}
       </div>
 
-      <Modal open={confirming} onClose={() => setConfirming(false)} eyebrow="Consequential change" title={`Change the billing model to ${draft.model}?`} footer={<div className="flex justify-end gap-2"><ActionButton onClick={() => setConfirming(false)}>Keep {config.model}</ActionButton><ActionButton variant="brand" onClick={commit}>Confirm change</ActionButton></div>}>
+      <Modal open={confirming} onClose={() => setConfirming(false)} eyebrow="Consequential change" title={`Change the billing model to ${draft.model}?`} footer={<div className="flex justify-end gap-2"><ActionButton onClick={() => setConfirming(false)}>Keep {config.model}</ActionButton><ActionButton variant="brand" disabled={saving} onClick={commit}>Confirm change</ActionButton></div>}>
         <p className="px-6 py-5 text-sm text-on-surface-variant">The new model applies to invoices created from now on. Invoices already issued keep the model they were created under, and no payment or allocation is changed.</p>
       </Modal>
     </BillingFrame>

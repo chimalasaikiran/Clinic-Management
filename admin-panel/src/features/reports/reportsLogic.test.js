@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { SEED_REFUND_REQUESTS } from '../billing/data/financeSeed'
 import { allRefunds } from '../billing/financeLogic'
-import { SEED_INVOICES, SEED_PAYMENTS, SEED_REFUNDS } from '../patients/data/seedAdmin'
+import { billingViews } from '../../test/fixtures/billingViews'
 import { OPERATIONS, PHARMACY, REPORT_PERIOD } from './data/sampleReports'
 import { financialFigures, operationsFigures, pharmacyFigures, windowTotal } from './reportsLogic'
 
@@ -34,12 +33,12 @@ describe('operations report', () => {
 })
 
 describe('financial report', () => {
-  const records = { invoices: SEED_INVOICES, payments: SEED_PAYMENTS }
-  const figures = financialFigures(records, allRefunds({ refunds: SEED_REFUNDS }, SEED_REFUND_REQUESTS), REPORT_PERIOD)
+  const ledger = billingViews()
+  const figures = financialFigures(ledger.records, allRefunds(ledger.records, ledger.refundRequests), REPORT_PERIOD)
 
   it('keeps billed, collected and outstanding as separate record sets for October', () => {
     expect(figures.billed.amount).toBe(8500)
-    expect(figures.collected.amount).toBe(7000)
+    expect(figures.collected.amount).toBe(7000 + 2400 + 800 + 1200)
     expect(figures.outstanding.amount).toBe(3500)
   })
 

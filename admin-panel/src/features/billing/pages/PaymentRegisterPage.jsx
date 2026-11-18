@@ -3,11 +3,11 @@ import ActionButton from '../../../components/workspace/ActionButton'
 import { SearchBox } from '../../../components/workspace/controls'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
-import { usePatientRecords } from '../../patients/context/usePatientRecords'
+import { useBilling } from '../context/useBilling'
 import { formatDate, formatTime } from '../../patients/format'
 import BillingFrame from '../components/BillingFrame'
 import { Banner, FilterField, GovernanceFooter, Scope, Section, TextLink } from '../../../components/workspace/RecordKit'
-import { money, SCOPE_TEXT } from '../financeFormat'
+import { money } from '../financeFormat'
 import { DATE_RANGES } from '../constants'
 import { paymentRows } from '../financeLogic'
 import { useRegisterFilters } from '../../../hooks/useRegisterFilters'
@@ -16,7 +16,7 @@ const ALLOCATION_STATES = ['Fully allocated', 'Partially allocated', 'Unallocate
 const ALLOCATION_TONE = { 'Fully allocated': 'success', 'Partially allocated': 'brand', Unallocated: 'warning' }
 
 export default function PaymentRegisterPage() {
-  const { records, getPatient } = usePatientRecords()
+  const { records, getPatient, scopeText } = useBilling()
   const filters = useRegisterFilters({ range: DATE_RANGES[0].id })
   const range = DATE_RANGES.find((entry) => entry.id === filters.get('range')) ?? DATE_RANGES[0]
   const nameOf = (id) => getPatient(id)?.name ?? 'Unknown patient'
@@ -29,7 +29,7 @@ export default function PaymentRegisterPage() {
 
   return (
     <BillingFrame back={{ to: ROUTES.billing, label: 'Billing & Finance' }} crumb="Billing & Finance / Payments" code="BF-09 / Payments & receipts" title="Payment Register" description="Find recorded collections, inspect settlement status and review funds awaiting allocation." actions={<><ActionButton to={ROUTES.billingReceipts}>Receipt Register ↗</ActionButton><ActionButton variant="primary" icon={Plus} to={ROUTES.billingPaymentNew} state={state}>Record Payment</ActionButton></>} scope={false}>
-      <Scope left={`${SCOPE_TEXT} / ${range.label} · All models`} />
+      <Scope left={`${scopeText} / ${range.label} · All models`} />
 
       <Section title="Find payments" aside="Search within the available source records; filters preserve your return context." className="mb-6">
         <SearchBox value={query} onChange={(value) => filters.change('q', value)} label="Search payments" placeholder="Search payment ID, patient / payer or transaction reference" className="mb-4" />

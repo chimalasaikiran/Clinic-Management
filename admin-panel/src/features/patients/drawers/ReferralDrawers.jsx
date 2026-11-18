@@ -8,9 +8,9 @@ import StatusPill from '../../../components/workspace/StatusPill'
 import { cn } from '../../../lib/cn'
 import { Check, OptionSelect, PatientStrip, TextArea } from '../components/parts'
 import Timeline from '../components/Timeline'
-import { FOLLOW_UP_METHODS, FOLLOW_UP_OUTCOMES, REFERRAL_MODELS, REFERRAL_PRIORITIES, REFERRAL_TARGETS } from '../data/catalog'
-import { TODAY, formatDate, formatTime } from '../format'
-import { clockTime, slaState } from '../selectors'
+import { FOLLOW_UP_METHODS, FOLLOW_UP_OUTCOMES, REFERRAL_MODELS, REFERRAL_PRIORITIES } from '../data/catalog'
+import { formatDate, formatTime } from '../format'
+import { slaState } from '../selectors'
 import { validateFollowUp, validateInbound, validateReferral } from '../validation'
 
 function Section({ title, aside, children }) {
@@ -22,19 +22,28 @@ function Section({ title, aside, children }) {
   )
 }
 
-const BLANK = { targetId: '', priority: REFERRAL_PRIORITIES[1].label, model: REFERRAL_MODELS[0], indication: '', narrative: '', question: '', questions: [], records: [] }
+// Choosing "outside" asks for the clinician or facility by hand.
+const EXTERNAL = 'external'
+const BLANK = { targetId: '', facility: '', contact: '', specialty: '', priority: REFERRAL_PRIORITIES[1].label, model: REFERRAL_MODELS[0], indication: '', narrative: '', question: '', questions: [], records: [] }
 
-// Outbound referral composer. `records` are the chart items that can travel with the referral.
-export function CreateReferralDrawer({ open, onClose, patient, encounter, records, onCreate }) {
+// Outbound referral composer. `targets` are the clinic's therapists; `records` are the chart items that can
+// travel with the referral. `onCreate` receives the API request and returns the call.
+export function CreateReferralDrawer({ open, onClose, patient, encounter, records, targets = [], onCreate }) {
   const [values, setValues] = useState({ ...BLANK, records: records.map((entry) => entry.id) })
   const [submitted, setSubmitted] = useState(false)
-  const target = REFERRAL_TARGETS.find((entry) => entry.id === values.targetId)
-  const errors = submitted ? validateReferral({ target: values.targetId, priority: values.priority, indication: values.indication, narrative: values.narrative }) : {}
+  const [serverError, setServerError] = useState('')
+  const external = values.targetId === EXTERNAL
+  const target = targets.find((entry) => entry.id === values.targetId)
+  const destination = external ? values.facility.trim() : values.targetId
+  const errors = submitted
+    ? { ...validateReferral({ target: destination, priority: values.priority, indication: values.indication, narrative: values.narrative }), ...(external && !values.specialty.trim() ? { specialty: 'Give the specialty.' } : {}) }
+    : {}
 
   const set = (name, value) => setValues((current) => ({ ...current, [name]: value }))
   const finish = () => {
     setValues({ ...BLANK, records: records.map((entry) => entry.id) })
     setSubmitted(false)
+    setServerError('')
     onClose()
   }
   const addQuestion = () => {
@@ -42,16 +51,29 @@ export function CreateReferralDrawer({ open, onClose, patient, encounter, record
     setValues((current) => ({ ...current, questions: [...current.questions, current.question.trim()], question: '' }))
   }
 
-  const submit = () => {
+  const submit = async () => {
     setSubmitted(true)
-    if (Object.keys(validateReferral({ target: values.targetId, priority: values.priority, indication: values.indication, narrative: values.narrative })).length) return
-    const priority = REFERRAL_PRIORITIES.find((entry) => entry.label === values.priority)
-    onCreate({
-      date: TODAY, time: clockTime(), specialty: target.specialty, indication: values.indication.trim(), direction: 'Outgoing', clinician: encounter?.doctor ?? 'Attending clinician', clinicianNote: encounter?.department ?? 'Clinic',
-      facility: target.facility.split(' — ')[0], facilityNote: `${target.name}${target.specialty ? ` (${target.specialty})` : ''}`, status: 'Pending Acceptance', priority: values.priority, outcome: 'No appointment scheduled yet',
-      sla: { windowHours: priority.windowHours, elapsedHours: 0 }, clinicalIndication: values.narrative.trim(), model: values.model, questions: values.questions, attachments: values.records.length, attachedRecords: records.filter((entry) => values.records.includes(entry.id)).map((entry) => entry.label), log: [],
-    })
-    finish()
+    if (Object.keys(errors).length || !destination || (external && !values.specialty.trim())) return
+    const route = external
+      ? { facility: values.facility.trim(), facilityNote: [values.contact.trim(), values.specialty.trim() && `(${values.specialty.trim()})`].filter(Boolean).join(' ') }
+      : { targetPractitionerId: target.id }
+    try {
+      await onCreate({
+        direction: 'outgoing',
+        ...(encounter?.status === 'In Progress' ? { encounterId: encounter.id } : {}),
+        ...route,
+        priority: values.priority,
+        model: values.model,
+        specialty: external ? values.specialty.trim() : target.specialty,
+        indication: values.indication.trim(),
+        narrative: values.narrative.trim(),
+        questions: values.questions,
+        attachedRecords: records.filter((entry) => values.records.includes(entry.id)).map((entry) => entry.label),
+      })
+      finish()
+    } catch (error) {
+      setServerError(error.message)
+    }
   }
 
   return (
@@ -66,18 +88,26 @@ export function CreateReferralDrawer({ open, onClose, patient, encounter, record
     >
       <div className="flex flex-col gap-4 p-5">
         <PatientStrip patient={patient} />
+        {serverError && <InfoNote tone="danger"><span role="alert">{serverError}</span></InfoNote>}
         <Section title="Inherited clinical context" aside="Zero data re-entry active">
           <dl className="grid gap-3 text-xs sm:grid-cols-2">
             <div><dt className="text-outline">Patient name & MRN</dt><dd className="font-semibold">{patient.name} · {patient.mrn}</dd></div>
-            <div><dt className="text-outline">Originating encounter</dt><dd className="font-semibold">{encounter?.id ?? 'None (standalone referral)'}</dd></div>
+            <div><dt className="text-outline">Originating encounter</dt><dd className="font-semibold">{encounter?.status === 'In Progress' ? encounter.reference : 'None (standalone referral)'}</dd></div>
             <div><dt className="text-outline">Originating branch & dept</dt><dd className="font-semibold">{encounter?.branch ?? patient.branch} · {encounter?.department ?? 'Clinic'}</dd></div>
             <div><dt className="text-outline">Referring clinician</dt><dd className="font-semibold">{encounter?.doctor ?? 'Attending clinician'}</dd></div>
           </dl>
         </Section>
 
         <Section title="Referral destination & provider routing" aside="* Required">
-          <OptionSelect label="Target specialist or service directory" required value={values.targetId} onChange={(event) => set('targetId', event.target.value)} error={errors.target} placeholder="Choose a specialist or facility" options={REFERRAL_TARGETS.map((entry) => ({ value: entry.id, label: `${entry.name} — ${entry.specialty} (${entry.group})` }))} />
-          {target && <div className="mt-3 rounded-md border-2 border-brand p-3 text-xs"><p className="text-sm font-semibold">{target.name} <StatusPill tone="success">Verified</StatusPill></p><p className="text-on-surface-variant">{target.specialty} · {target.facility}</p><p className="text-on-surface-variant">{target.group}</p></div>}
+          <OptionSelect label="Target specialist or service directory" required value={values.targetId} onChange={(event) => set('targetId', event.target.value)} error={external ? undefined : errors.target} placeholder="Choose a specialist or facility" options={[...targets.map((entry) => ({ value: entry.id, label: `${entry.displayName} — ${entry.specialty} (this clinic)` })), { value: EXTERNAL, label: 'Outside clinician or facility…' }]} />
+          {target && <div className="mt-3 rounded-md border-2 border-brand p-3 text-xs"><p className="text-sm font-semibold">{target.displayName} <StatusPill tone="success">This clinic</StatusPill></p><p className="text-on-surface-variant">{target.specialty} · {[target.department, target.room].filter(Boolean).join(' · ')}</p></div>}
+          {external && (
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <TextInput label="Facility" required value={values.facility} onChange={(event) => set('facility', event.target.value)} error={errors.target} />
+              <TextInput label="Specialty" required value={values.specialty} onChange={(event) => set('specialty', event.target.value)} error={errors.specialty} />
+              <TextInput label="Clinician or department (optional)" value={values.contact} onChange={(event) => set('contact', event.target.value)} className="sm:col-span-2" />
+            </div>
+          )}
           <div className="mt-3"><OptionSelect label="Referral clinical priority / acuity tier" required value={values.priority} onChange={(event) => set('priority', event.target.value)} error={errors.priority} options={REFERRAL_PRIORITIES.map((entry) => ({ value: entry.label, label: entry.label }))} /></div>
         </Section>
 
@@ -95,7 +125,7 @@ export function CreateReferralDrawer({ open, onClose, patient, encounter, record
           </div>
         </Section>
 
-        <Section title="Bridge supporting clinical records" aside="ABDM consent verified">
+        <Section title="Bridge supporting clinical records" aside="Listed on the referral">
           {records.length === 0 && <p className="text-xs text-on-surface-variant">There are no chart records to attach.</p>}
           <ul className="flex flex-col gap-2">{records.map((entry) => <li key={entry.id}><Check checked={values.records.includes(entry.id)} onChange={(event) => setValues((current) => ({ ...current, records: event.target.checked ? [...current.records, entry.id] : current.records.filter((id) => id !== entry.id) }))} label={entry.label} /></li>)}</ul>
         </Section>
@@ -112,8 +142,8 @@ export function ReferralDetailDrawer({ referral, patient, onClose, onFollowUp })
     <Drawer
       open
       onClose={onClose}
-      eyebrow={`${referral.id} · ${referral.direction}`}
-      title={`Referral Detail · ${referral.id}`}
+      eyebrow={`${referral.reference} · ${referral.direction}`}
+      title={`Referral Detail · ${referral.reference}`}
       description={`${referral.specialty} · Dispatched ${formatDate(referral.date)}, ${formatTime(referral.time)}`}
       width="max-w-2xl"
       footer={<div className="flex items-center justify-between gap-3"><ActionButton onClick={onClose}>Close</ActionButton>{referral.direction === 'Outgoing' && <ActionButton variant="primary" onClick={onFollowUp}>Follow Up</ActionButton>}</div>}
@@ -126,8 +156,8 @@ export function ReferralDetailDrawer({ referral, patient, onClose, onFollowUp })
         <Section title="Bridged supporting clinical records" aside={`${referral.attachments} attached`}>
           {referral.attachedRecords?.length ? <ul className="flex flex-col gap-1.5 text-xs">{referral.attachedRecords.map((entry) => <li key={entry} className="rounded border border-slate-200 px-3 py-2">{entry}</li>)}</ul> : <p className="text-xs text-on-surface-variant">{referral.attachments} document{referral.attachments === 1 ? '' : 's'} attached to this referral.</p>}
         </Section>
-        <Section title="Chronological activity & immutable audit ledger">
-          <Timeline events={[...referral.log.map((entry) => ({ time: entry.time, title: entry.title, detail: entry.text })), { time: `${formatDate(referral.date)}, ${formatTime(referral.time)}`, title: 'Referral drafted & clinically authorized', detail: `Authorized by ${referral.clinician}` }]} />
+        <Section title="Chronological activity log">
+          <Timeline events={[...referral.log.map((entry) => ({ time: entry.time, title: entry.title, detail: entry.text })), { time: `${formatDate(referral.date)}, ${formatTime(referral.time)}`, title: 'Referral drafted & clinically authorized', detail: referral.direction === 'Outgoing' ? `Authorized by ${referral.clinician}` : `Received from ${referral.clinician}` }]} />
         </Section>
       </div>
     </Drawer>
@@ -135,33 +165,46 @@ export function ReferralDetailDrawer({ referral, patient, onClose, onFollowUp })
 }
 
 export function FollowUpDrawer({ referral, onClose, onSave, onReroute }) {
-  const [values, setValues] = useState({ method: 'phone', representative: '', phone: '', outcome: '', notes: '', staff: 'Liaison staff', reminder: true })
+  const [values, setValues] = useState({ method: 'phone', representative: '', phone: '', outcome: '', notes: '', staff: '' })
   const [submitted, setSubmitted] = useState(false)
+  const [serverError, setServerError] = useState('')
   if (!referral) return null
   const sla = slaState(referral)
   const errors = submitted ? validateFollowUp(values) : {}
   const set = (name, value) => setValues((current) => ({ ...current, [name]: value }))
 
-  const save = () => {
+  const save = async () => {
     setSubmitted(true)
     if (Object.keys(validateFollowUp(values)).length) return
-    const outcome = FOLLOW_UP_OUTCOMES.find((entry) => entry.id === values.outcome)
-    onSave(referral.id, { outcome, method: FOLLOW_UP_METHODS.find((entry) => entry.id === values.method).title, representative: values.representative.trim(), staff: values.staff.trim(), notes: values.notes.trim() })
-    onClose()
+    try {
+      await onSave(referral.id, { method: values.method, outcome: values.outcome, representative: values.representative.trim(), staff: values.staff.trim(), notes: values.notes.trim() })
+      onClose()
+    } catch (error) {
+      setServerError(error.message)
+    }
+  }
+  const reroute = async () => {
+    try {
+      await onReroute(referral.id)
+      onClose()
+    } catch (error) {
+      setServerError(error.message)
+    }
   }
 
   return (
     <Drawer
       open
       onClose={onClose}
-      eyebrow={`Referral ${referral.id}`}
+      eyebrow={`Referral ${referral.reference}`}
       title="Follow Up with Receiving Center"
       description={`${referral.specialty} · ${referral.facility}`}
       width="max-w-2xl"
-      footer={<div className="flex items-center justify-between gap-3"><ActionButton onClick={onClose}>Cancel / Discard</ActionButton><div className="flex gap-2"><ActionButton variant="danger" onClick={() => { onReroute(referral.id); onClose() }}>Re-route to Backup Specialist</ActionButton><ActionButton variant="primary" onClick={save}>Save Follow-Up &amp; Update Ledger</ActionButton></div></div>}
+      footer={<div className="flex items-center justify-between gap-3"><ActionButton onClick={onClose}>Cancel / Discard</ActionButton><div className="flex gap-2"><ActionButton variant="danger" onClick={reroute}>Re-route to Backup Specialist</ActionButton><ActionButton variant="primary" onClick={save}>Save Follow-Up &amp; Update Ledger</ActionButton></div></div>}
     >
       <div className="flex flex-col gap-4 p-5">
-        <section className="rounded-md border-l-4 border-brand bg-surface-lowest p-4 text-xs"><p className="font-semibold text-sm">{referral.facility}</p><p className="text-on-surface-variant">{referral.facilityNote}</p>{sla && <p className={cn('mt-2 font-semibold', sla.overdue ? 'text-danger' : 'text-brand')}>Statutory SLA {referral.sla.windowHours}h · {referral.sla.elapsedHours}h elapsed · {sla.text}</p>}</section>
+        {serverError && <InfoNote tone="danger"><span role="alert">{serverError}</span></InfoNote>}
+        <section className="rounded-md border-l-4 border-brand bg-surface-lowest p-4 text-xs"><p className="font-semibold text-sm">{referral.facility}</p><p className="text-on-surface-variant">{referral.facilityNote}</p>{sla && <p className={cn('mt-2 font-semibold', sla.overdue ? 'text-danger' : 'text-brand')}>Response window {referral.sla.windowHours}h · {referral.sla.elapsedHours}h elapsed · {sla.text}</p>}</section>
         <Section title="Communication history & audit trail"><Timeline events={referral.log.map((entry) => ({ time: entry.time, title: entry.title, detail: entry.text }))} /></Section>
         <Section title="Log follow-up interaction">
           <p className="mb-1.5 text-[13px] font-semibold">1. Contact method <span className="text-rose-500">*</span></p>
@@ -175,7 +218,6 @@ export function FollowUpDrawer({ referral, onClose, onSave, onReroute }) {
           <div role="radiogroup" aria-label="Contact outcome" className="flex flex-col gap-2">{FOLLOW_UP_OUTCOMES.map((entry) => <RadioCard key={entry.id} name="outcome" value={entry.id} checked={values.outcome === entry.id} onChange={() => set('outcome', entry.id)} title={entry.title} detail={entry.detail} />)}</div>
           {errors.outcome && <p role="alert" className="mt-2 text-xs text-rose-600">{errors.outcome}</p>}
           <div className="mt-4"><TextArea label="4. Conversation record & clinical notes" required rows={3} value={values.notes} onChange={(event) => set('notes', event.target.value)} error={errors.notes} /></div>
-          <div className="mt-3"><Check checked={values.reminder} onChange={(event) => set('reminder', event.target.checked)} label="Assign a reminder to the triage liaison for the next follow-up" /></div>
         </Section>
       </div>
     </Drawer>
@@ -185,31 +227,40 @@ export function FollowUpDrawer({ referral, onClose, onSave, onReroute }) {
 export function InboundReferralDrawer({ referral, onClose, onAccept, onDecline }) {
   const [checks, setChecks] = useState(() => referral?.checklist?.map(() => false) ?? [])
   const [submitted, setSubmitted] = useState(false)
+  const [serverError, setServerError] = useState('')
   if (!referral) return null
   const error = submitted ? validateInbound({ checks }).checks : null
 
+  const decide = async (decision) => {
+    try {
+      await (decision === 'accept' ? onAccept : onDecline)(referral.id)
+      onClose()
+    } catch (failure) {
+      setServerError(failure.message)
+    }
+  }
   const accept = () => {
     setSubmitted(true)
     if (Object.keys(validateInbound({ checks })).length) return
-    onAccept(referral.id)
-    onClose()
+    decide('accept')
   }
 
   return (
     <Drawer
       open
       onClose={onClose}
-      eyebrow={`Referral triage · ${referral.id}`}
+      eyebrow={`Referral triage · ${referral.reference}`}
       title="Review Inbound Referral"
-      description={`Received ${formatDate(referral.date)}, ${formatTime(referral.time)} via ABDM HIE Gateway`}
+      description={`Received ${formatDate(referral.date)}, ${formatTime(referral.time)}`}
       width="max-w-2xl"
-      footer={<div className="flex items-center justify-between gap-3"><ActionButton variant="danger" onClick={() => { onDecline(referral.id); onClose() }}>Decline Referral</ActionButton><ActionButton variant="brand" onClick={accept}>Accept Referral</ActionButton></div>}
+      footer={<div className="flex items-center justify-between gap-3"><ActionButton variant="danger" onClick={() => decide('decline')}>Decline Referral</ActionButton><ActionButton variant="brand" onClick={accept}>Accept Referral</ActionButton></div>}
     >
       <div className="flex flex-col gap-4 p-5">
+        {serverError && <InfoNote tone="danger"><span role="alert">{serverError}</span></InfoNote>}
         <div className="flex flex-wrap gap-2"><StatusPill tone="info">Awaiting Clinical Review</StatusPill>{referral.priority && <StatusPill tone="danger">{referral.priority}</StatusPill>}</div>
         <Section title="1. Referral source & routing"><dl className="grid gap-3 text-xs sm:grid-cols-2"><div><dt className="text-outline">Referring clinician & origin</dt><dd className="font-semibold">{referral.clinician}</dd><dd className="text-on-surface-variant">{referral.clinicianNote}</dd></div><div><dt className="text-outline">Requested branch & attending</dt><dd className="font-semibold">{referral.facility}</dd><dd className="text-on-surface-variant">{referral.facilityNote}</dd></div></dl></Section>
         <Section title="3. Referral summary & clinical indication"><blockquote className="border-l-4 border-brand bg-surface-low p-3 text-sm leading-6">{referral.clinicalIndication}</blockquote></Section>
-        <Section title="4. Attached documents & clinical dossier" aside={`${referral.attachments} ingested files`}><p className="text-xs text-on-surface-variant">{referral.attachments} files ingested from the referring system and digitally signed.</p></Section>
+        <Section title="4. Attached documents & clinical dossier" aside={`${referral.attachments} listed`}>{referral.attachedRecords?.length ? <ul className="flex flex-col gap-1.5 text-xs">{referral.attachedRecords.map((entry) => <li key={entry} className="rounded border border-slate-200 px-3 py-2">{entry}</li>)}</ul> : <p className="text-xs text-on-surface-variant">No documents were listed with this referral.</p>}</Section>
         <Section title="5. Clinical review checklist" aside={`${checks.filter(Boolean).length} of ${checks.length} criteria verified`}>
           <ul className="flex flex-col gap-2">{referral.checklist.map((item, index) => <li key={item}><Check checked={checks[index]} onChange={(event) => setChecks((current) => current.map((value, position) => (position === index ? event.target.checked : value)))} label={item} /></li>)}</ul>
           {error && <p role="alert" className="mt-2 text-xs text-rose-600">{error}</p>}

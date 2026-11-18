@@ -1,11 +1,45 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { pathFor, ROUTES } from '../../../config/routes'
+import { createAccessApi } from '../../../test/fixtures/accessApi'
+import { apiPractitioner, createPatientsApi } from '../../../test/fixtures/patientsApi'
+import { apiStaff, createStaffApi } from '../../../test/fixtures/staffApi'
 import { renderRoute } from '../../../test/renderRoute'
+import { localToday } from '../../patients/format'
 
-const ananya = { staffId: 'ananya-rao' }
+const fake = vi.hoisted(() => ({ access: null, scheduling: null, staff: null, staffState: null, schedulingState: null }))
+vi.mock('../../auth/api', () => ({
+  authApi: {},
+  accessApi: new Proxy({}, { get: (_, method) => (...args) => fake.access[method](...args) }),
+}))
+vi.mock('../../patients/api', async (importOriginal) => {
+  const actual = await importOriginal()
+  const forward = (name) => new Proxy({}, { get: (_, method) => (...args) => fake.scheduling[name][method](...args) })
+  return { ...actual, patientsApi: forward('patientsApi'), appointmentsApi: forward('appointmentsApi'), practitionersApi: forward('practitionersApi'), branchesApi: forward('branchesApi'), clinicalApi: forward('clinicalApi') }
+})
+vi.mock('../api', () => ({ staffApi: new Proxy({}, { get: (_, method) => (...args) => fake.staff[method](...args) }) }))
+
+const RAO = apiStaff()
+const NURSE = apiStaff({ id: 's-2', staffCode: 'STF-002', type: 'staff', fullName: 'Priya Sharma', designation: 'Head Nurse', department: 'Clinical Nursing & ICU', council: null, councilNumber: null, qualifications: [] })
+const LINKED = apiStaff({ id: 's-3', staffCode: 'STF-003', fullName: 'Dr. Rahul Mehta', account: { linked: true, membershipId: 'm-1', status: 'active', email: 'rahul@aura.test', lastLoginAt: null, roles: ['Clinician'] }, practitioner: { id: 'dr-1', status: 'active' } })
+
+function install({ people = [RAO, NURSE, LINKED], attendance, leaves } = {}) {
+  fake.access = createAccessApi()
+  const scheduling = createPatientsApi({ practitioners: [apiPractitioner({ availability: [{ branchId: 'b-main', branchName: 'Main Clinic', weekday: 1, start: '09:00', end: '13:00' }] })] })
+  fake.scheduling = scheduling.api
+  fake.schedulingState = scheduling.state
+  const staff = createStaffApi({ people, attendance, leaves })
+  fake.staff = staff.api
+  fake.staffState = staff.state
+}
+const staffCalls = (name) => fake.staffState.calls.filter(([call]) => call === name).map(([, ...args]) => args)
+const schedulingCalls = (name) => fake.schedulingState.calls.filter(([call]) => call === name).map(([, ...args]) => args)
+
+beforeEach(() => install())
+
 const setup = () => userEvent.setup({ delay: null })
+const rao = { staffId: 's-1' }
 
 async function fill(user, field, text) {
   await user.click(field)
@@ -13,278 +47,182 @@ async function fill(user, field, text) {
 }
 
 describe('staff directory', () => {
-  it('highlights Staff in the sidebar and lists the workforce', () => {
+  it('lists the workforce from the API with real summary figures', async () => {
     renderRoute(ROUTES.staffDirectory)
-
-    expect(screen.getByRole('heading', { name: 'Staff & doctors' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /^staff$/i })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByText('Dr. Julian Vance, MD, MCh')).toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: 'Dr. Ananya Rao' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Priya Sharma' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /^staff/i, current: 'page' })).toBeInTheDocument()
+    expect(screen.getByText('Total people').nextElementSibling).toHaveTextContent('3')
   })
 
-  it('filters by type and clears with Reset', async () => {
+  it('filters by type and searches by staff ID on the server', async () => {
     const user = setup()
     renderRoute(ROUTES.staffDirectory)
+    await screen.findByRole('link', { name: 'Priya Sharma' })
 
     await user.selectOptions(screen.getByLabelText('Type'), 'Staff')
-    expect(screen.queryByText('Dr. Julian Vance, MD, MCh')).not.toBeInTheDocument()
-    expect(screen.getByText('Priya Sharma, B.Sc Nursing')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Dr. Ananya Rao' })).not.toBeInTheDocument())
+    expect(staffCalls('staff.list').at(-1)[0]).toMatchObject({ type: 'staff' })
 
     await user.click(screen.getByRole('button', { name: 'Reset' }))
-    expect(screen.getByText('Dr. Julian Vance, MD, MCh')).toBeInTheDocument()
-  })
-
-  it('searches by staff ID and shows an empty state', async () => {
-    const user = setup()
-    renderRoute(ROUTES.staffDirectory)
-
-    await user.type(screen.getByLabelText('Search staff'), 'STF-045')
-    expect(screen.getByText('Dr. Kavita Deshmukh, MD (Paed)')).toBeInTheDocument()
-    expect(screen.queryByText('Rahul Kumar')).not.toBeInTheDocument()
-
-    await user.type(screen.getByLabelText('Search staff'), 'zzz')
-    expect(screen.getByText('No people match your filters.')).toBeInTheDocument()
-  })
-
-  it('opens a profile from a row', async () => {
-    const user = setup()
-    const router = renderRoute(ROUTES.staffDirectory)
-
-    await user.click(screen.getAllByRole('link', { name: 'Profile' })[1])
-    expect(router.state.location.pathname).toBe(pathFor(ROUTES.staffMember, ananya))
+    await fill(user, screen.getByLabelText('Search staff'), 'nobody')
+    expect(await screen.findByText('No people match your filters.')).toBeInTheDocument()
   })
 })
 
-describe('add person to branch assignment to profile', () => {
-  it('requires the doctor credentials before creating a record', async () => {
+describe('add person, branches and profile', () => {
+  it('requires doctor credentials before creating a record', async () => {
     const user = setup()
-    const router = renderRoute(ROUTES.staffNew)
-
-    await user.click(screen.getByRole('button', { name: /create person/i }))
-    expect(screen.getByText('Enter the full name.')).toBeInTheDocument()
+    renderRoute(ROUTES.staffNew)
+    await fill(user, screen.getByLabelText(/^Full name/), 'Dr. Kavita Deshmukh')
+    await user.click(screen.getByRole('button', { name: /Create person/ }))
     expect(screen.getByText('Choose the medical council.')).toBeInTheDocument()
     expect(screen.getByText('Add at least one qualification.')).toBeInTheDocument()
-    expect(router.state.location.pathname).toBe(ROUTES.staffNew)
+    expect(staffCalls('staff.create')).toHaveLength(0)
   })
 
-  it('creates a person, assigns branches and lands on their profile', async () => {
+  it('creates a staff member, assigns branches with a primary and lands on the profile', async () => {
     const user = setup()
     const router = renderRoute(ROUTES.staffNew)
+    await user.click(screen.getByRole('radio', { name: /^Staff/ }))
+    await fill(user, screen.getByLabelText(/^Full name/), 'Ravi Kumar')
+    await user.selectOptions(screen.getByLabelText(/Primary department/), 'Reception & Front Desk')
+    await fill(user, screen.getByLabelText(/Professional title/), 'Receptionist')
+    await user.click(screen.getByRole('button', { name: /Create person & assign branches/ }))
 
-    await fill(user, screen.getByLabelText(/Full name/), 'Dr. Sarita V. Nambiar')
-    await user.selectOptions(screen.getByLabelText(/Primary department/), 'Cardiology & Vascular')
-    await fill(user, screen.getByLabelText(/Professional title/), 'Senior Consultant Interventional Cardiologist')
-    await user.selectOptions(screen.getByLabelText(/Medical council/), 'National Medical Commission (NMC)')
-    await fill(user, screen.getByLabelText(/Council registration number/), 'NMC-TS-2016-89412')
-    await user.type(screen.getByLabelText('Add qualification'), 'MBBS{Enter}')
-    await user.click(screen.getByRole('button', { name: 'Create person & assign branches' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/staff/s-4/branches'))
+    expect(staffCalls('staff.create')[0][0]).toMatchObject({ type: 'staff', fullName: 'Ravi Kumar', department: 'Reception & Front Desk', designation: 'Receptionist', status: 'active' })
 
-    expect(router.state.location.pathname).toBe(pathFor(ROUTES.staffBranches, { staffId: 'dr-sarita-v-nambiar' }))
-    expect(screen.getByText('Dr. Sarita V. Nambiar')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('checkbox', { name: 'Kondapur Surgical Clinic' }))
-    expect(screen.getByText('2 Selected')).toBeInTheDocument()
+    await user.click(await screen.findByRole('checkbox', { name: 'Kondapur Clinic' }))
     await user.click(screen.getByRole('button', { name: /Save branch assignments/ }))
-
-    expect(router.state.location.pathname).toBe(pathFor(ROUTES.staffMember, { staffId: 'dr-sarita-v-nambiar' }))
-    expect(screen.getByRole('heading', { name: /Dr. Sarita V. Nambiar/ })).toBeInTheDocument()
-    expect(screen.getByText('Main Surgical Pavilion, Kondapur Surgical Clinic')).toBeInTheDocument()
+    await waitFor(() => expect(router.state.location.pathname).toBe('/staff/s-4'))
+    expect(staffCalls('staff.setBranches')[0]).toEqual(['s-4', ['b-kondapur'], 'b-kondapur'])
+    expect(await screen.findByRole('heading', { name: /Ravi Kumar/ })).toBeInTheDocument()
   })
 
-  it('goes back to the directory when branch assignment is skipped', async () => {
+  it('edits details with the version it started from', async () => {
     const user = setup()
-    const router = renderRoute(ROUTES.staffNew)
+    const router = renderRoute(pathFor(ROUTES.staffEdit, rao))
+    const title = await screen.findByLabelText(/Professional title/)
+    await user.clear(title)
+    await user.paste('Senior Consultant Cardiologist')
+    await user.click(screen.getByRole('button', { name: /Save changes/ }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/staff/s-1'))
+    expect(staffCalls('staff.update')[0]).toEqual(['s-1', expect.objectContaining({ designation: 'Senior Consultant Cardiologist', version: 1 })])
+  })
 
-    await fill(user, screen.getByLabelText(/Full name/), 'Meera Joseph')
-    await user.click(screen.getByRole('radio', { name: /Staff/ }))
-    await user.selectOptions(screen.getByLabelText(/Primary department/), 'Clinical Nursing & ICU')
-    await fill(user, screen.getByLabelText(/Professional title/), 'Staff Nurse')
-    await user.click(screen.getByRole('checkbox', { name: /Proceed directly to Branch Assignment/ }))
-    await user.click(screen.getByRole('button', { name: 'Create person' }))
-
-    expect(router.state.location.pathname).toBe(ROUTES.staffDirectory)
-    expect(screen.getByText('Meera Joseph')).toBeInTheDocument()
+  it('shows the profile built from the API', async () => {
+    renderRoute(pathFor(ROUTES.staffMember, rao))
+    expect(await screen.findByRole('heading', { name: /Dr. Ananya Rao/ })).toBeInTheDocument()
+    expect(screen.getByText('NMC-TS-2018-49021', { exact: false })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Attendance records/ })).toHaveAttribute('href', '/staff/s-1/attendance')
   })
 
   it('needs at least one branch before saving assignments', async () => {
+    install({ people: [{ ...RAO, branches: [] }] })
     const user = setup()
-    const router = renderRoute(pathFor(ROUTES.staffBranches, ananya))
-
-    await user.click(screen.getByRole('checkbox', { name: 'Main Surgical Pavilion (Flagship)' }))
-    await user.click(screen.getByRole('button', { name: /Save branch assignments/ }))
+    renderRoute(pathFor(ROUTES.staffBranches, rao))
+    await user.click(await screen.findByRole('button', { name: /Save branch assignments/ }))
     expect(screen.getByText('Select at least one facility to deploy to.')).toBeInTheDocument()
-    expect(router.state.location.pathname).toBe(pathFor(ROUTES.staffBranches, ananya))
-  })
-
-  it('does not let blocked or inactive facilities be selected', () => {
-    renderRoute(pathFor(ROUTES.staffBranches, ananya))
-    expect(screen.getByRole('checkbox', { name: 'Metro North Diagnostic & Day Care' })).toBeDisabled()
-    expect(screen.getByRole('checkbox', { name: 'Gachibowli Satellite Annex (Upcoming)' })).toBeDisabled()
-  })
-
-  it('shows not-found for an unknown person', () => {
-    renderRoute(pathFor(ROUTES.staffBranches, { staffId: 'nobody' }))
-    expect(screen.getByText(/could not find this person/i)).toBeInTheDocument()
   })
 })
 
-describe('staff profile hub', () => {
-  it('links every workforce section to its page', () => {
-    renderRoute(pathFor(ROUTES.staffMember, ananya))
-
-    const nav = screen.getByRole('heading', { name: 'Workforce management' }).closest('section')
-    expect(within(nav).getByRole('link', { name: /Branch Assignments/ })).toHaveAttribute('href', pathFor(ROUTES.staffBranches, ananya))
-    expect(within(nav).getByRole('link', { name: /User Account/ })).toHaveAttribute('href', pathFor(ROUTES.staffAccount, ananya))
-    expect(within(nav).getByRole('link', { name: /OPD Schedule/ })).toHaveAttribute('href', pathFor(ROUTES.staffSchedule, ananya))
-    expect(within(nav).getByRole('link', { name: /Leave & Availability/ })).toHaveAttribute('href', pathFor(ROUTES.staffLeave, ananya))
-    expect(within(nav).getByRole('link', { name: /Attendance & Records/ })).toHaveAttribute('href', pathFor(ROUTES.staffAttendance, ananya))
-  })
-})
-
-describe('user account setup', () => {
-  it('validates the mobile number and returns to the profile once provisioned', async () => {
+describe('user account', () => {
+  it('invites the person with a role so the login links to this record', async () => {
     const user = setup()
-    const router = renderRoute(pathFor(ROUTES.staffAccount, ananya))
+    renderRoute(pathFor(ROUTES.staffAccount, rao))
+    await screen.findByRole('option', { name: 'Front Desk & Reception' })
+    await user.click(screen.getByRole('button', { name: /Send Invitation/ }))
+    expect(screen.getByText('Choose the role this person will have.')).toBeInTheDocument()
 
-    const mobile = screen.getByLabelText(/Mobile number/)
-    await user.clear(mobile)
-    await user.click(screen.getByRole('button', { name: /Provision Account/ }))
-    expect(screen.getByText('Enter the mobile number for 2FA.')).toBeInTheDocument()
-
-    await fill(user, mobile, '9845277102')
-    await user.click(screen.getByRole('button', { name: /Provision Account/ }))
-    expect(router.state.location.pathname).toBe(pathFor(ROUTES.staffMember, ananya))
+    await user.selectOptions(screen.getByLabelText(/^Role/), 'Front Desk & Reception')
+    await user.click(screen.getByRole('button', { name: /Send Invitation/ }))
+    expect(await screen.findByText('Invitation sent')).toBeInTheDocument()
+    expect(staffCalls('staff.invite')[0]).toEqual(['s-1', 'a.rao@aura.test', ['front-desk']])
   })
 
-  it('swaps the delivery details between invitation and passcode', async () => {
-    const user = setup()
-    renderRoute(pathFor(ROUTES.staffAccount, ananya))
-
-    expect(screen.getByText('72 hours (auto-revoking token)')).toBeInTheDocument()
-    await user.click(screen.getByRole('radio', { name: /Direct temporary administrative passcode/ }))
-    expect(screen.getByLabelText('Generated temporary passcode')).toBeInTheDocument()
-    expect(screen.queryByText('72 hours (auto-revoking token)')).not.toBeInTheDocument()
+  it('shows the linked account instead of a form for someone who already signs in', async () => {
+    renderRoute(pathFor(ROUTES.staffAccount, { staffId: 's-3' }))
+    expect(await screen.findByText('This person already signs in to ClinicOS.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Send Invitation/ })).not.toBeInTheDocument()
   })
 })
 
 describe('OPD schedule', () => {
-  it('toggles days, adds a session and saves back to the profile', async () => {
-    const user = setup()
-    const router = renderRoute(pathFor(ROUTES.staffSchedule, ananya))
-
-    const sunday = screen.getByRole('switch', { name: 'Sunday OPD' })
-    expect(sunday).not.toBeChecked()
-    await user.click(sunday)
-    expect(sunday).toBeChecked()
-    expect(screen.getByText('Unsaved schedule changes')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: /Save & Apply OPD Schedule/ }))
-    expect(router.state.location.pathname).toBe(pathFor(ROUTES.staffMember, ananya))
+  it('asks for a login before a schedule can be set up', async () => {
+    renderRoute(pathFor(ROUTES.staffSchedule, rao))
+    expect(await screen.findByText(/has no ClinicOS login yet/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Set up user account/ })).toHaveAttribute('href', '/staff/s-1/account')
   })
 
-  it('only offers schedule data for the connected doctor', () => {
-    renderRoute(pathFor(ROUTES.staffSchedule, { staffId: 'priya-sharma' }))
-    expect(screen.getByText(/connected for Dr. Ananya Rao only/i)).toBeInTheDocument()
+  it('edits the weekly hours of a linked therapist and saves them', async () => {
+    const user = setup()
+    renderRoute(pathFor(ROUTES.staffSchedule, { staffId: 's-3' }))
+    const monday = await screen.findByRole('switch', { name: 'Monday OPD' })
+    expect(monday).toBeChecked()
+    await user.click(screen.getByRole('switch', { name: 'Sunday OPD' }))
+    await user.click(screen.getByRole('button', { name: /Save & Apply OPD Schedule/ }))
+
+    expect(await screen.findByText('All changes saved', { exact: false })).toBeInTheDocument()
+    expect(schedulingCalls('practitioners.setAvailability')[0]).toEqual(['dr-1', [
+      { branchId: 'b-main', weekday: 1, start: '09:00', end: '13:00' },
+      { branchId: 'b-main', weekday: 0, start: '09:00', end: '13:00' },
+    ]])
   })
 })
 
 describe('leave & availability', () => {
-  it('validates dates and reason, then adds and removes an exception', async () => {
+  it('validates, adds an exception that is stored, and cancels it', async () => {
     const user = setup()
-    renderRoute(pathFor(ROUTES.staffLeave, ananya))
-
-    await user.click(screen.getByRole('button', { name: 'Add Leave / Exception' }))
+    renderRoute(pathFor(ROUTES.staffLeave, rao))
+    await user.click(await screen.findByRole('button', { name: 'Add Leave / Exception' }))
     const drawer = screen.getByRole('dialog')
-    await user.click(within(drawer).getByRole('button', { name: /Commit Exception/ }))
-    expect(within(drawer).getByText('Pick a start date.')).toBeInTheDocument()
-    expect(within(drawer).getByText('Add an operational justification.')).toBeInTheDocument()
+    await user.click(within(drawer).getByRole('button', { name: 'Commit exception' }))
+    expect(within(drawer).getByText('Name the exception.')).toBeInTheDocument()
 
-    await fill(user, within(drawer).getByLabelText(/Start date/), '2026-12-24')
-    await fill(user, within(drawer).getByLabelText(/End date/), '2026-12-23')
-    await fill(user, within(drawer).getByLabelText(/Reason/), 'Family function')
-    await user.click(within(drawer).getByRole('button', { name: /Commit Exception/ }))
-    expect(within(drawer).getByText('End date cannot be before the start date.')).toBeInTheDocument()
+    await fill(user, within(drawer).getByLabelText(/^Title/), 'Cardiology conference')
+    await fill(user, within(drawer).getByLabelText('Operational justification'), 'Presenting at the annual conference.')
+    await user.click(within(drawer).getByRole('button', { name: 'Commit exception' }))
 
-    await user.clear(within(drawer).getByLabelText(/End date/))
-    await fill(user, within(drawer).getByLabelText(/End date/), '2026-12-26')
-    await user.click(within(drawer).getByRole('button', { name: /Commit Exception/ }))
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(screen.getByText('Family function')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: /Remove Planned Leave on 24 Dec 2026/ }))
-    expect(screen.queryByText('Family function')).not.toBeInTheDocument()
-  })
-
-  it('filters exceptions by branch scope', async () => {
-    const user = setup()
-    renderRoute(pathFor(ROUTES.staffLeave, ananya))
-
-    await user.click(screen.getByRole('tab', { name: 'Kondapur Only' }))
-    expect(screen.getByText(/Cardiological Society of India/)).toBeInTheDocument()
-    expect(screen.queryByText('Scheduled Inpatient Cath Lab Block')).not.toBeInTheDocument()
-  })
-
-  it('links back to the profile and the OPD schedule', () => {
-    renderRoute(pathFor(ROUTES.staffLeave, ananya))
-    expect(screen.getByRole('link', { name: 'Dr. Ananya Rao' })).toHaveAttribute('href', pathFor(ROUTES.staffMember, ananya))
-    expect(screen.getByRole('link', { name: /View OPD Schedule/ })).toHaveAttribute('href', pathFor(ROUTES.staffSchedule, ananya))
+    expect(await screen.findByText('Exception saved. No booked appointments are affected.')).toBeInTheDocument()
+    expect(staffCalls('staff.createLeave')[0][1]).toMatchObject({ kind: 'leave', title: 'Cardiology conference', startDate: localToday(), branchId: null })
+    await user.click(await screen.findByRole('button', { name: 'Cancel Cardiology conference' }))
+    expect(await screen.findByText('Cardiology conference cancelled; the slots are bookable again.')).toBeInTheDocument()
   })
 })
 
 describe('attendance & work records', () => {
-  const path = pathFor(ROUTES.staffAttendance, ananya)
-
   it('records attendance and updates the summary', async () => {
     const user = setup()
-    renderRoute(path)
-
-    const presentTile = screen.getByText('Present', { selector: 'dt' }).parentElement
-    expect(within(presentTile).getByText('18')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Record Attendance' }))
+    renderRoute(pathFor(ROUTES.staffAttendance, rao))
+    await user.click(await screen.findByRole('button', { name: 'Record Attendance' }))
     const drawer = screen.getByRole('dialog')
-    await user.click(within(drawer).getByRole('button', { name: 'Save Attendance' }))
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(within(presentTile).getByText('19')).toBeInTheDocument()
-  })
-
-  it('requires an arrival time for present or late entries', async () => {
-    const user = setup()
-    renderRoute(path)
-
-    await user.click(screen.getByRole('button', { name: 'Record Attendance' }))
-    const drawer = screen.getByRole('dialog')
-    await user.clear(within(drawer).getByLabelText(/Attendance time/))
     await user.click(within(drawer).getByRole('button', { name: 'Save Attendance' }))
     expect(within(drawer).getByText('Enter the arrival time.')).toBeInTheDocument()
+
+    await fill(user, within(drawer).getByLabelText(/Arrival time/), '08:52')
+    await user.click(within(drawer).getByRole('button', { name: 'Save Attendance' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(staffCalls('staff.recordAttendance')[0]).toEqual(['s-1', expect.objectContaining({ branchId: 'b-main', status: 'present', time: '08:52', date: localToday() })])
+    expect(await screen.findByText('08:52 AM')).toBeInTheDocument()
   })
 
-  it('opens a record, corrects it with a reason, and shows the change', async () => {
+  it('corrects a record with a reason and keeps the history', async () => {
+    const today = localToday()
+    install({ attendance: { 's-1': [{ id: 'att-1', date: today, status: 'present', time: '08:52', note: null, branch: { id: 'b-main', name: 'Main Clinic' }, recordedBy: 'Siddharth Verma', recordedAt: `${today}T03:30:00.000Z`, version: 1, corrections: [] }] } })
     const user = setup()
-    renderRoute(path)
-
-    await user.click(screen.getByRole('button', { name: 'View detail for 16 Oct 2026' }))
-    expect(screen.getByRole('dialog', { name: 'Attendance Detail' })).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Edit / Correct Attendance' }))
-    const drawer = screen.getByRole('dialog', { name: 'Edit Attendance' })
-    expect(within(drawer).getByRole('button', { name: 'Save Changes (0)' })).toBeDisabled()
-
+    renderRoute(pathFor(ROUTES.staffAttendance, rao))
+    await user.click(await screen.findByRole('button', { name: `Correct ${today}` }))
+    const drawer = screen.getByRole('dialog')
     await user.click(within(drawer).getByRole('button', { name: 'Late' }))
-    await user.click(within(drawer).getByRole('button', { name: /Save Changes \(1\)/ }))
-    expect(within(drawer).getByText(/Explain the correction/)).toBeInTheDocument()
+    await user.clear(within(drawer).getByLabelText(/Arrival time/))
+    await fill(user, within(drawer).getByLabelText(/Arrival time/), '09:20')
+    await user.click(within(drawer).getByRole('button', { name: /Save Changes/ }))
+    expect(within(drawer).getByText(/at least 10 characters/)).toBeInTheDocument()
 
-    await fill(user, within(drawer).getByLabelText('Correction reason'), 'Biometric gate recorded early lobby entry.')
-    await user.click(within(drawer).getByRole('button', { name: /Save Changes \(2\)/ }))
-
-    expect(screen.getByRole('dialog', { name: 'Attendance Detail' })).toBeInTheDocument()
-    expect(within(screen.getByRole('dialog')).getByText('Manual Entry')).toBeInTheDocument()
-  })
-
-  it('shows an empty state for a facility without sample records', async () => {
-    const user = setup()
-    renderRoute(path)
-
-    await user.click(screen.getByRole('tab', { name: 'Kondapur Satellite Clinic' }))
-    expect(screen.getByText(/No attendance records for Kondapur Satellite Clinic/)).toBeInTheDocument()
+    await fill(user, within(drawer).getByLabelText('Correction reason'), 'Reader was down; supervisor confirmed arrival.')
+    await user.click(within(drawer).getByRole('button', { name: /Save Changes/ }))
+    expect(await screen.findByText('Present (08:52) → Late (09:20)')).toBeInTheDocument()
+    expect(staffCalls('staff.correctAttendance')[0]).toEqual(['s-1', 'att-1', { status: 'late', time: '09:20', reason: 'Reader was down; supervisor confirmed arrival.', version: 1 }])
   })
 })

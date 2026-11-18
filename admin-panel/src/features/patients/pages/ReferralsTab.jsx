@@ -6,11 +6,14 @@ import { FilterSelect, FilterTabs, SearchBox } from '../../../components/workspa
 import { Cell, Row, StatTiles, Table, TableFooter } from '../../../components/workspace/DataTable'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
+import { useApiResource } from '../../../hooks/useApiResource'
+import { useAuth } from '../../auth/context/useAuth'
+import { clinicalApi, practitionersApi } from '../api'
 import EmptyState from '../components/EmptyState'
 import { usePatient } from '../context/usePatient'
 import { CreateReferralDrawer, FollowUpDrawer, InboundReferralDrawer, ReferralDetailDrawer } from '../drawers/ReferralDrawers'
-import { TODAY, formatDate, formatTime } from '../format'
-import { byNewest, clockTime, slaState } from '../selectors'
+import { formatDate, formatTime } from '../format'
+import { byNewest, slaState } from '../selectors'
 
 const ATTENTION = ['Pending Acceptance', 'Awaiting Review', 'Info Requested']
 const ACTIVE = ['Scheduled', 'Accepted']
@@ -25,7 +28,9 @@ const TABS = [
 const STATUS_TONE = { 'Pending Acceptance': 'warning', 'Awaiting Review': 'info', 'Info Requested': 'warning', Scheduled: 'brand', Accepted: 'brand', Completed: 'success', Closed: 'neutral', Declined: 'danger', Cancelled: 'neutral' }
 
 export default function ReferralsTab() {
-  const { patient, patientId, mine, add, update, newId } = usePatient()
+  const { patient, patientId, mine, refresh } = usePatient()
+  const { can } = useAuth()
+  const therapists = useApiResource(() => (can('clinical.write') ? practitionersApi.list({ status: 'active' }) : Promise.resolve([])), 'therapists')
   const [tab, setTab] = useState('all')
   const [query, setQuery] = useState('')
   const [direction, setDirection] = useState('')
@@ -39,27 +44,28 @@ export default function ReferralsTab() {
   const active = referrals.filter((entry) => ATTENTION.includes(entry.status) || ACTIVE.includes(entry.status))
   const selected = TABS.find((entry) => entry.id === tab)
   const needle = query.trim().toLowerCase()
-  const rows = referrals.filter((entry) => selected.test(entry) && (!direction || entry.direction === direction) && (!specialty || entry.specialty === specialty) && (!needle || `${entry.id} ${entry.specialty} ${entry.indication} ${entry.facility}`.toLowerCase().includes(needle)))
+  const rows = referrals.filter((entry) => selected.test(entry) && (!direction || entry.direction === direction) && (!specialty || entry.specialty === specialty) && (!needle || `${entry.reference} ${entry.specialty} ${entry.indication} ${entry.facility}`.toLowerCase().includes(needle)))
   const current = drawer?.id ? referrals.find((entry) => entry.id === drawer.id) : null
 
   const records = [
-    ...mine('orders').slice(0, 3).map((entry) => ({ id: entry.id, label: `Diagnostic order: ${entry.title} (${entry.id})` })),
-    ...(encounter ? [{ id: encounter.id, label: `Encounter note: ${encounter.type} (${encounter.id})` }] : []),
-    ...mine('prescriptions').filter((entry) => entry.status === 'Active').slice(0, 1).map((entry) => ({ id: entry.id, label: `Active medication regimen (${entry.id})` })),
+    ...mine('orders').slice(0, 3).map((entry) => ({ id: entry.id, label: `Diagnostic order: ${entry.title} (${entry.reference})` })),
+    ...(encounter ? [{ id: encounter.id, label: `Encounter note: ${encounter.type} (${encounter.reference ?? encounter.id})` }] : []),
+    ...mine('prescriptions').filter((entry) => entry.status === 'Active').slice(0, 1).map((entry) => ({ id: entry.id, label: `Active medication regimen (${entry.reference})` })),
   ]
 
-  const create = (draft) => add('referrals', { ...draft, id: newId('REF-2026-', 'referrals', 3), patientId })
-  const logFollowUp = (id, { outcome, method, representative, staff, notes }) =>
-    update('referrals', id, (referral) => ({
-      status: outcome.status,
-      log: [{ time: `${formatDate(TODAY)}, ${formatTime(clockTime())} IST`, title: `${method} outreach — ${outcome.title}`, text: `${staff} spoke with ${representative}. ${notes}` }, ...referral.log],
-    }))
-  const reroute = (id) => update('referrals', id, (referral) => ({ status: 'Cancelled', log: [{ time: `${formatDate(TODAY)}, ${formatTime(clockTime())} IST`, title: 'Re-routed to backup specialist', text: 'Original referral closed; a new request is required for the backup panelist.' }, ...referral.log] }))
+  // The server records each step and its log entry; the chart is reloaded so the table matches it.
+  const run = async (call) => {
+    await call
+    await refresh()
+  }
+  const create = (request) => run(clinicalApi.refer(patientId, request))
+  const logFollowUp = (id, followUp) => run(clinicalApi.followUpReferral(id, followUp))
+  const reroute = (id) => run(clinicalApi.rerouteReferral(id))
 
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div><h2 className="flex items-center gap-2 text-2xl font-bold">Referrals <span className="rounded bg-surface-low px-1.5 py-0.5 font-mono text-[10px] font-normal text-on-surface-variant">FHIR ServiceRequest: Active</span></h2><p className="text-sm text-on-surface-variant">Track referrals sent to and received from other clinicians, specialists, and external care networks.</p></div>
+        <div><h2 className="flex items-center gap-2 text-2xl font-bold">Referrals </h2><p className="text-sm text-on-surface-variant">Track referrals sent to and received from other clinicians, specialists, and external care networks.</p></div>
         <div className="flex gap-2"><ActionButton onClick={() => window.print()}>Batch Referral Export (PDF)</ActionButton><ActionButton variant="primary" icon={Plus} onClick={() => setDrawer({ type: 'create' })}>Create referral</ActionButton></div>
       </div>
 
@@ -74,14 +80,14 @@ export default function ReferralsTab() {
               { label: 'Awaiting response', value: `${referrals.filter((entry) => entry.direction === 'Outgoing' && ATTENTION.includes(entry.status)).length} Outgoing`, hint: outgoingPending ? outgoingPending.facility : 'No pending requests' },
               { label: 'Scheduled appointments', value: `${referrals.filter((entry) => entry.status === 'Scheduled').length} Linked`, hint: 'Booked with receiving team' },
               { label: 'Completed & closed', value: `${referrals.filter((entry) => ['Completed', 'Closed'].includes(entry.status)).length} Historical`, hint: 'Past 12 months records' },
-              { label: 'ABDM care network', value: 'Milestone 3 Synced', hint: 'FHIR v4.0.1 validated' },
+              { label: 'Overdue responses', value: `${referrals.filter((entry) => ATTENTION.includes(entry.status) && slaState(entry)?.overdue).length} Overdue`, hint: 'Past their response window' },
             ]}
           />
 
           {outgoingPending && (
             <section className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-5">
               <p className="mb-2 text-[11px] font-semibold tracking-wide text-outline uppercase">Variant A · Outbound referral requiring action</p>
-              <div className="flex flex-wrap items-center gap-2"><h3 className="flex items-center gap-2 text-sm font-semibold"><AlertTriangle className="size-4 text-amber-600" aria-hidden="true" />Action Required — Referral Awaiting Acceptance</h3><StatusPill tone="warning">{outgoingPending.status}</StatusPill>{slaState(outgoingPending) && <StatusPill tone={slaState(outgoingPending).overdue ? 'danger' : 'info'}>{outgoingPending.sla.windowHours}h SLA · {slaState(outgoingPending).text}</StatusPill>}<span className="ml-auto font-mono text-[11px]">{outgoingPending.id}</span></div>
+              <div className="flex flex-wrap items-center gap-2"><h3 className="flex items-center gap-2 text-sm font-semibold"><AlertTriangle className="size-4 text-amber-600" aria-hidden="true" />Action Required — Referral Awaiting Acceptance</h3><StatusPill tone="warning">{outgoingPending.status}</StatusPill>{slaState(outgoingPending) && <StatusPill tone={slaState(outgoingPending).overdue ? 'danger' : 'info'}>{outgoingPending.sla.windowHours}h SLA · {slaState(outgoingPending).text}</StatusPill>}<span className="ml-auto font-mono text-[11px]">{outgoingPending.reference}</span></div>
               <p className="mt-2 text-xs leading-5"><strong>Clinical indication:</strong> {outgoingPending.clinicalIndication}</p>
               <p className="mt-1 text-[11px] text-on-surface-variant">Referring: {outgoingPending.clinician} · Target: {outgoingPending.facility} ({outgoingPending.facilityNote}) · Dispatched: {formatDate(outgoingPending.date)}, {formatTime(outgoingPending.time)} IST</p>
               <div className="mt-3 flex flex-wrap gap-2"><ActionButton onClick={() => setDrawer({ type: 'detail', id: outgoingPending.id })}>View Referral Details</ActionButton><ActionButton onClick={() => setDrawer({ type: 'detail', id: outgoingPending.id })}>Review Clinical Notes Attached ({outgoingPending.attachments} Docs)</ActionButton><ActionButton variant="brand" onClick={() => setDrawer({ type: 'followup', id: outgoingPending.id })}>Follow Up with Receiving Center →</ActionButton></div>
@@ -91,7 +97,7 @@ export default function ReferralsTab() {
           {incomingReview && (
             <section className="mb-5 rounded-lg border border-sky-200 bg-sky-50/50 p-5">
               <p className="mb-2 text-[11px] font-semibold tracking-wide text-outline uppercase">Variant B · Inbound referral requiring action</p>
-              <div className="flex flex-wrap items-center gap-2"><h3 className="flex items-center gap-2 text-sm font-semibold"><Inbox className="size-4 text-sky-700" aria-hidden="true" />Action Required — New Referral Received</h3><StatusPill tone="info">Awaiting Review</StatusPill><span className="ml-auto font-mono text-[11px]">{incomingReview.id}</span></div>
+              <div className="flex flex-wrap items-center gap-2"><h3 className="flex items-center gap-2 text-sm font-semibold"><Inbox className="size-4 text-sky-700" aria-hidden="true" />Action Required — New Referral Received</h3><StatusPill tone="info">Awaiting Review</StatusPill><span className="ml-auto font-mono text-[11px]">{incomingReview.reference}</span></div>
               <p className="mt-2 text-xs leading-5"><strong>Referral reason:</strong> {incomingReview.clinicalIndication}</p>
               <p className="mt-1 text-[11px] text-on-surface-variant">Referring org: {incomingReview.clinicianNote} · Referring clinician: {incomingReview.clinician} · Target: {incomingReview.facilityNote} · Received: {formatDate(incomingReview.date)}, {formatTime(incomingReview.time)} IST</p>
               <div className="mt-3 flex flex-wrap gap-2"><ActionButton onClick={() => setDrawer({ type: 'detail', id: incomingReview.id })}>View Referral Details</ActionButton><ActionButton onClick={() => setDrawer({ type: 'inbound', id: incomingReview.id })}>Review Documents ({incomingReview.attachments} Records)</ActionButton><ActionButton variant="brand" onClick={() => setDrawer({ type: 'inbound', id: incomingReview.id })}>Review Referral &amp; Triage →</ActionButton></div>
@@ -109,7 +115,7 @@ export default function ReferralsTab() {
                 const sla = slaState(entry)
                 return (
                   <Row key={entry.id}>
-                    <Cell><p className="font-mono text-[11px] font-semibold">#{entry.id}</p><p className="text-[11px] text-on-surface-variant">{formatDate(entry.date)} · {formatTime(entry.time)}</p>{sla && ATTENTION.includes(entry.status) && <StatusPill tone={sla.overdue ? 'danger' : 'info'} className="mt-1">SLA: {sla.text}</StatusPill>}</Cell>
+                    <Cell><p className="font-mono text-[11px] font-semibold">#{entry.reference}</p><p className="text-[11px] text-on-surface-variant">{formatDate(entry.date)} · {formatTime(entry.time)}</p>{sla && ATTENTION.includes(entry.status) && <StatusPill tone={sla.overdue ? 'danger' : 'info'} className="mt-1">SLA: {sla.text}</StatusPill>}</Cell>
                     <Cell><p className="font-semibold">{entry.specialty}</p><p className="max-w-56 text-[11px] text-on-surface-variant">{entry.indication}</p></Cell>
                     <Cell><StatusPill tone={entry.direction === 'Outgoing' ? 'info' : 'brand'}>{entry.direction === 'Outgoing' ? '↗' : '↙'} {entry.direction}</StatusPill></Cell>
                     <Cell><p className="font-medium">{entry.clinician}</p><p className="text-[11px] text-on-surface-variant">{entry.clinicianNote}</p></Cell>
@@ -121,7 +127,7 @@ export default function ReferralsTab() {
                         {entry.direction === 'Outgoing' && ATTENTION.includes(entry.status) && <ActionButton size="sm" variant="danger" className="border-danger bg-danger text-white hover:bg-red-800" onClick={() => setDrawer({ type: 'followup', id: entry.id })}>Follow Up</ActionButton>}
                         {entry.direction === 'Incoming' && entry.status === 'Awaiting Review' && <ActionButton size="sm" variant="brand" onClick={() => setDrawer({ type: 'inbound', id: entry.id })}>Triage</ActionButton>}
                         {entry.status === 'Scheduled' && <ActionButton size="sm" to={pathFor(ROUTES.patientAppointments, { patientId })}>View Appt</ActionButton>}
-                        <ActionButton size="sm" onClick={() => setDrawer({ type: 'detail', id: entry.id })} aria-label={`Details for ${entry.id}`}>Details</ActionButton>
+                        <ActionButton size="sm" onClick={() => setDrawer({ type: 'detail', id: entry.id })} aria-label={`Details for ${entry.reference}`}>Details</ActionButton>
                       </span>
                     </Cell>
                   </Row>
@@ -133,10 +139,10 @@ export default function ReferralsTab() {
         </>
       )}
 
-      <CreateReferralDrawer key={String(drawer?.type === 'create')} open={drawer?.type === 'create'} onClose={() => setDrawer(null)} patient={patient} encounter={encounter} records={records} onCreate={create} />
+      <CreateReferralDrawer key={String(drawer?.type === 'create')} open={drawer?.type === 'create'} onClose={() => setDrawer(null)} patient={patient} encounter={encounter} records={records} targets={therapists.data ?? []} onCreate={create} />
       {drawer?.type === 'detail' && <ReferralDetailDrawer referral={current} patient={patient} onClose={() => setDrawer(null)} onFollowUp={() => setDrawer({ type: 'followup', id: drawer.id })} />}
       {drawer?.type === 'followup' && <FollowUpDrawer key={drawer.id} referral={current} onClose={() => setDrawer(null)} onSave={logFollowUp} onReroute={reroute} />}
-      {drawer?.type === 'inbound' && <InboundReferralDrawer key={drawer.id} referral={current} onClose={() => setDrawer(null)} onAccept={(id) => update('referrals', id, { status: 'Accepted', outcome: 'Accepted for clinical intake' })} onDecline={(id) => update('referrals', id, { status: 'Declined', outcome: 'Declined at triage' })} />}
+      {drawer?.type === 'inbound' && <InboundReferralDrawer key={drawer.id} referral={current} onClose={() => setDrawer(null)} onAccept={(id) => run(clinicalApi.triageReferral(id, 'accept'))} onDecline={(id) => run(clinicalApi.triageReferral(id, 'decline'))} />}
     </div>
   )
 }

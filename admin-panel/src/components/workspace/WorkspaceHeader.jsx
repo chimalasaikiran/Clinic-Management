@@ -1,6 +1,91 @@
+import { useEffect, useRef, useState } from 'react'
 import { dashboardIcons as icons } from '../../assets/icons/dashboard'
-import { images } from '../../assets/images'
-import { LOCATION_FILTER, OWNER } from '../../config/workspace'
+import { LOCATION_FILTER } from '../../config/workspace'
+import { useAuth } from '../../features/auth/context/useAuth'
+import Avatar from './Avatar'
+
+const initialsOf = (name) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0].toUpperCase())
+    .join('')
+
+function ProfileMenu() {
+  const { user, organisation, signOut } = useAuth()
+  const [open, setOpen] = useState(false)
+  const [failure, setFailure] = useState('')
+  const ref = useRef(null)
+  const roleLabel = organisation?.roles.map((role) => role.name).join(', ') || 'No role assigned'
+
+  useEffect(() => {
+    if (!open) return undefined
+    const close = (event) => {
+      if (event.type === 'keydown' ? event.key === 'Escape' : !ref.current?.contains(event.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', close)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', close)
+    }
+  }, [open])
+
+  const signOutEverywhere = async () => {
+    setFailure('')
+    try {
+      await signOut({ everywhere: true })
+    } catch (error) {
+      setFailure(error.message)
+    }
+  }
+
+  if (!user) return null
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className="flex items-center gap-2.5 rounded-xl border border-outline-variant/50 bg-white py-[5px] pr-[9px] pl-[7px] text-left"
+      >
+        <span className="relative size-8 shrink-0">
+          <Avatar initials={initialsOf(user.fullName)} tone="teal" size="sm" className="size-8 rounded-xl" />
+          <span className="absolute right-0 bottom-0 size-2.5 rounded-xl bg-emerald-500 ring-2 ring-white" />
+        </span>
+        <span className="hidden flex-col pr-1 lg:flex">
+          <span className="text-xs leading-[15px] font-semibold tracking-[0.48px] text-on-surface">{user.fullName}</span>
+          <span className="text-[10px] leading-[10px] text-outline">{roleLabel}</span>
+        </span>
+        <img src={icons.profileChevron} alt="" className="hidden lg:block" />
+      </button>
+
+      {open && (
+        <div role="menu" className="absolute right-0 z-30 mt-2 w-64 rounded-xl border border-outline-variant/60 bg-white p-2 text-xs shadow-lg">
+          <div className="border-b border-outline-variant/50 px-2 pt-1 pb-2">
+            <p className="font-semibold text-on-surface">{user.fullName}</p>
+            <p className="truncate text-outline">{user.email}</p>
+            {organisation && <p className="mt-1 text-on-surface-variant">{organisation.organisation.name}</p>}
+          </div>
+          <button type="button" role="menuitem" onClick={() => signOut()} className="mt-1 w-full rounded px-2 py-2 text-left font-medium text-on-surface hover:bg-surface-low">
+            Sign out
+          </button>
+          <button type="button" role="menuitem" onClick={signOutEverywhere} className="w-full rounded px-2 py-2 text-left font-medium text-danger hover:bg-red-50">
+            Sign out of all devices
+          </button>
+          {failure && (
+            <p role="alert" className="px-2 pt-1 text-rose-600">
+              {failure}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function IconButton({ label, children, ...props }) {
   return (
@@ -73,24 +158,7 @@ export default function WorkspaceHeader({ onMenuClick }) {
           <img src={icons.emergency} alt="" />
           Emergency Intake
         </button>
-        <button
-          type="button"
-          className="flex items-center gap-2.5 rounded-xl border border-outline-variant/50 bg-white py-[5px] pr-[9px] pl-[7px] text-left"
-        >
-          <span className="relative size-8 shrink-0">
-            <img
-              src={images.ownerAvatar}
-              alt=""
-              className="size-8 rounded-xl border border-outline-variant/80 object-cover"
-            />
-            <span className="absolute right-0 bottom-0 size-2.5 rounded-xl bg-emerald-500 ring-2 ring-white" />
-          </span>
-          <span className="hidden flex-col pr-1 lg:flex">
-            <span className="text-xs leading-[15px] font-semibold tracking-[0.48px] text-on-surface">{OWNER.name}</span>
-            <span className="text-[10px] leading-[10px] text-outline">{OWNER.role}</span>
-          </span>
-          <img src={icons.profileChevron} alt="" className="hidden lg:block" />
-        </button>
+        <ProfileMenu />
       </div>
     </header>
   )

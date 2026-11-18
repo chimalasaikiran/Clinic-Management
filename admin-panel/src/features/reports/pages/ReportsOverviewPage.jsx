@@ -4,26 +4,26 @@ import { Section } from '../../../components/workspace/RecordKit'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { ROUTES } from '../../../config/routes'
 import { formatINR } from '../../patients/format'
-import { usePatientRecords } from '../../patients/context/usePatientRecords'
 import { useBilling } from '../../billing/context/useBilling'
 import { allRefunds } from '../../billing/financeLogic'
 import ReportsFrame from '../components/ReportsFrame'
+import { DATE_RANGES } from '../../billing/constants'
 import { OPERATIONS, PHARMACY, REPORT_PERIOD } from '../data/sampleReports'
 import { financialFigures, operationsFigures, pharmacyFigures } from '../reportsLogic'
 
 export default function ReportsOverviewPage() {
-  const { records } = usePatientRecords()
-  const { refundRequests } = useBilling()
+  const { records, refundRequests } = useBilling()
+  const month = DATE_RANGES[1]
   const [query, setQuery] = useState('')
   const operations = operationsFigures(OPERATIONS)
-  const financial = financialFigures(records, allRefunds(records, refundRequests), REPORT_PERIOD)
+  const financial = financialFigures(records, allRefunds(records, refundRequests), month)
   const pharmacy = pharmacyFigures(PHARMACY)
   const show = (text) => !query.trim() || text.toLowerCase().includes(query.trim().toLowerCase())
   const cards = [
     { id: 'operations', title: 'Operations', tag: 'Closed sample cohort', text: 'Main Surgical Pavilion only. A separate reporting sample, not organization totals.', to: ROUTES.reportsOperations, link: 'View Operations → RPT-02',
       stats: [[String(operations.scheduled), 'scheduled records'], [String(operations.completed), 'completed'], [`${operations.meanWait} min`, `mean wait · ${OPERATIONS.waitPairs} valid timestamp pairs`]], note: `${REPORT_PERIOD.label.replace(' 2026', '')} appointment starts. No reconciliation with the conflicting 14 Oct Appointments snapshot.` },
-    { id: 'financial', title: 'Financial', tag: 'Independent source slices', text: `${financial.billed.invoices.length} invoice, ${financial.collected.payments.length} payment and selected refund requests. Branch mapping is incomplete.`, to: ROUTES.reportsFinancial, link: 'View Financial → RPT-03',
-      stats: [[formatINR(financial.billed.amount), 'billed invoice value · not recognized revenue'], [formatINR(financial.collected.amount), `collected · ${financial.collected.payments.length} payment`], [formatINR(financial.outstanding.amount), 'source outstanding']], note: 'Independent record sets. Do not add or subtract these amounts into a net value.' },
+    { id: 'financial', title: 'Financial', tag: `Live ledger · ${month.label}`, text: `${financial.billed.invoices.length} invoice${financial.billed.invoices.length === 1 ? '' : 's'} issued and ${financial.collected.payments.length} payment${financial.collected.payments.length === 1 ? '' : 's'} received this month.`, to: ROUTES.reportsFinancial, link: 'View Financial → RPT-03',
+      stats: [[formatINR(financial.billed.amount), 'billed invoice value · not recognized revenue'], [formatINR(financial.collected.amount), `collected · ${financial.collected.payments.length} payment`], [formatINR(financial.outstanding.amount), 'outstanding on those invoices']], note: 'Independent record sets. Do not add or subtract these amounts into a net value.' },
     { id: 'pharmacy', title: 'Pharmacy & Inventory', tag: 'Enabled — sample data', text: `Main Pharmacy at Main Surgical Pavilion: ${pharmacy.dispensed.toLocaleString('en-IN')} mixed base units dispensed, ${pharmacy.stockouts} stockout incidents, and ${formatINR(pharmacy.nearExpiryValue)} near-expiry stock value at cost.`, to: ROUTES.reportsPharmacy, link: 'View Pharmacy & Inventory → RPT-04',
       stats: [], note: `Purchases ${formatINR(pharmacy.purchases)} · Net sales ${formatINR(pharmacy.sales)} · COGS ${formatINR(pharmacy.cogs)} · Gross profit ${formatINR(pharmacy.grossProfit)} · Margin ${pharmacy.margin}%.` },
   ].filter((card) => show(`${card.title} ${card.text} ${card.tag}`))

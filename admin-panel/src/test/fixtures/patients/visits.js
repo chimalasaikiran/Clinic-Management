@@ -1,3 +1,4 @@
+// Test fixture: visit history for the sample patient.
 // Sample visit history for PT-000184 (Ananya Sharma): appointments, encounters, vitals and diagnoses.
 const PATIENT = 'pt-000184'
 const MAIN = { branch: 'Main Surgical Pavilion', campus: 'Kondapur Campus' }

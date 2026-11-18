@@ -46,11 +46,15 @@ export function SelectInput({ id, label, hint, required, error, placeholder, opt
               {placeholder}
             </option>
           )}
-          {options.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
+          {options.map((option) => {
+            // Plain strings, or { value, label } when the stored value differs from what is shown.
+            const { value, label } = typeof option === 'object' ? option : { value: option, label: option }
+            return (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            )
+          })}
         </select>
         <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-outline" aria-hidden="true" />
       </div>

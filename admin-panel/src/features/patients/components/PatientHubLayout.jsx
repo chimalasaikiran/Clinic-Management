@@ -7,7 +7,9 @@ import { formatINR } from '../format'
 import { ledgerSummary } from '../billing'
 import { isUpcoming } from '../selectors'
 import { usePatient } from '../context/usePatient'
+import { usePatientLedger } from '../../billing/usePatientLedger'
 import PatientHeader from './PatientHeader'
+import LoadingState from './LoadingState'
 import PatientNotFound from './PatientNotFound'
 
 function TabBadge({ children, tone = 'dark' }) {
@@ -20,8 +22,23 @@ function TabBadge({ children, tone = 'dark' }) {
 
 // Frame for every /patients/:patientId/<tab> page: identity banner, tab strip, then the active tab.
 export default function PatientHubLayout() {
-  const { patient, patientId, mine } = usePatient()
+  const { patient, patientId, mine, loading, loadError, refresh } = usePatient()
+  const ledger = usePatientLedger(patientId)
 
+  if (loading) {
+    return (
+      <WorkspacePage>
+        <LoadingState label="Loading patient record…" />
+      </WorkspacePage>
+    )
+  }
+  if (loadError) {
+    return (
+      <WorkspacePage>
+        <LoadingState error={loadError} onRetry={refresh} />
+      </WorkspacePage>
+    )
+  }
   if (!patient) {
     return (
       <WorkspacePage>
@@ -34,7 +51,7 @@ export default function PatientHubLayout() {
   const awaiting = orders.filter((order) => order.status === 'Awaiting Review').length
   const referrals = mine('referrals').filter((referral) => ['Pending Acceptance', 'Awaiting Review'].includes(referral.status)).length
   const activeMeds = mine('prescriptions').filter((rx) => rx.status === 'Active').reduce((count, rx) => count + rx.items.length, 0)
-  const summary = ledgerSummary({ invoices: mine('invoices'), payments: mine('payments'), refunds: mine('refunds') })
+  const summary = ledgerSummary(ledger)
   const encounters = mine('encounters').length
   const upcoming = mine('appointments').filter(isUpcoming).length
   const family = mine('family').length

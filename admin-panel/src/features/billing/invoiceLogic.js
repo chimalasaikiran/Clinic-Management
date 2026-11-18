@@ -1,7 +1,7 @@
 import { invoiceTotals } from '../patients/billing'
-import { nextId } from '../patients/format'
+import { PAYERS } from './constants'
 
-export const PAYERS = ['Patient Direct (Self)', 'Insurance / TPA', 'Corporate Account']
+export { PAYERS }
 
 // Unbilled charges are the only ones an invoice may draw from; invoiced ones are never offered again.
 export const eligibleCharges = (charges, patientId) => charges.filter((charge) => charge.patientId === patientId && charge.status === 'Unbilled')
@@ -20,19 +20,18 @@ export function validateInvoiceDraft(values, { review = false } = {}) {
   return errors
 }
 
-// The lines an invoice would carry, with the invoice-level discount applied to each.
+// The lines an invoice would carry. An invoice-level discount, when entered, replaces each charge's own discount.
 export function linesFor(charges, chargeIds, discount) {
-  const pct = Number(discount) || 0
-  return charges.filter((charge) => chargeIds.includes(charge.id)).flatMap((charge) => charge.lines.map((line) => ({ ...line, discountPct: pct })))
+  const pct = discount === '' || discount === undefined ? null : Number(discount) || 0
+  return charges.filter((charge) => chargeIds.includes(charge.id)).flatMap((charge) => charge.lines.map((line) => ({ ...line, discountPct: pct ?? line.discountPct })))
 }
 
 export const draftTotals = (charges, chargeIds, discount) => invoiceTotals(linesFor(charges, chargeIds, discount))
 
-export function buildInvoice(values, { charges, invoices, patient }) {
-  const lines = linesFor(charges, values.chargeIds, values.discount)
+// The request body for issuing an invoice from the selected charges.
+export function invoiceRequest(values, charges) {
   return {
-    id: nextId('INV-2026-', invoices.map((entry) => entry.id), 3), patientId: patient.id, date: values.date, time: values.time, title: lines.length > 1 ? `${lines[0].name} + ${lines.length - 1} more` : lines[0].name,
-    encounterId: '—', provider: 'Attending clinician', location: patient.branch, branch: patient.branch, payer: values.payer, kind: 'GST Invoice (B2C)', status: 'Issued', cashier: 'Billing desk',
-    publicNote: '', internalNote: `Billing model: ${values.model}`, dueDate: values.dueDate, lines,
+    patientId: values.patientId, payer: values.payer, model: values.model, invoiceDate: values.date, dueDate: values.dueDate,
+    discountPct: values.discount === '' ? null : Number(values.discount), chargeIds: charges.filter((charge) => values.chargeIds.includes(charge.id)).map((charge) => charge.uuid),
   }
 }

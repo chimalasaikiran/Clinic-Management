@@ -3,7 +3,6 @@ import ActionButton from '../../../components/workspace/ActionButton'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
 import { OptionSelect } from '../../patients/components/parts'
-import { usePatientRecords } from '../../patients/context/usePatientRecords'
 import { formatDate, formatTime } from '../../patients/format'
 import BillingFrame from '../components/BillingFrame'
 import { Banner, FilterField, GovernanceFooter, MetricStrip, Section, TextLink } from '../../../components/workspace/RecordKit'
@@ -23,8 +22,7 @@ const UNAVAILABLE = [
 const EFFECT_PATH = { payment: ROUTES.billingPayment, refund: ROUTES.billingRefund }
 
 export default function BalancesPage() {
-  const { records, patients, getPatient } = usePatientRecords()
-  const { refundRequests } = useBilling()
+  const { records, patients, getPatient, refundRequests, scopeText } = useBilling()
   const filters = useRegisterFilters({ range: DATE_RANGES[0].id, patient: patients[0]?.id ?? '' })
   const range = DATE_RANGES.find((entry) => entry.id === filters.get('range')) ?? DATE_RANGES[0]
   const patient = getPatient(filters.get('patient'))
@@ -39,11 +37,11 @@ export default function BalancesPage() {
   const link = (item) => (item.kind === 'allocation' ? pathFor(ROUTES.billingPayment, { paymentId: item.paymentId }) : pathFor(EFFECT_PATH[item.kind], item.kind === 'payment' ? { paymentId: item.id } : { refundId: item.id }))
 
   return (
-    <BillingFrame back={{ to: ROUTES.billing, label: 'Back to Finance Workspace' }} crumb="Billing & Finance / Advances, Credit & Wallet" code="BF-20 / Aura Health · Billing & Finance" title="Advances, Credit & Wallet Balances" description="Separate prepaid funds held for a patient from wallet balances, credit facilities and invoice amounts owed." scope={false}>
+    <BillingFrame back={{ to: ROUTES.billing, label: 'Back to Finance Workspace' }} crumb="Billing & Finance / Advances, Credit & Wallet" code="BF-20 / Billing & Finance" title="Advances, Credit & Wallet Balances" description="Separate prepaid funds held for a patient from wallet balances, credit facilities and invoice amounts owed." scope={false}>
       <p className="mb-5 border-b border-slate-200 pb-4 text-[11px] text-outline">Return to Finance Workspace with {range.label} · All locations (3) · Billing model: All models · Queue context retained.</p>
       <div className="mb-5 grid items-end gap-4 sm:grid-cols-3 lg:grid-cols-[1fr_1fr_1fr_1fr]">
         <FilterField label="Date range · Source records" value={range.id} onChange={(value) => filters.change('range', value, DATE_RANGES[0].id)} options={DATE_RANGES.map((entry) => [entry.id, entry.label])} />
-        <FilterField label="Organization / branch" value="" disabled options={[['', 'Aura Health · All locations (3)']]} />
+        <FilterField label="Organization / branch" value="" disabled options={[['', scopeText]]} />
         <FilterField label="Scope · Patient / family" value="patient" disabled options={[['patient', 'Patient']]} />
         <p className="text-right text-[11px] text-outline">Currency: INR (₹) · Time: IST<br />Finance Manager · Source-slice view</p>
       </div>

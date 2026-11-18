@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { AlertTriangle, ArrowRight, CalendarClock, Printer, ShieldCheck, Stethoscope } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import ActionButton from '../../../components/workspace/ActionButton'
@@ -8,13 +9,16 @@ import { cn } from '../../../lib/cn'
 import FlowFrame, { BackLink, FlowMissing } from '../components/FlowFrame'
 import { KeyValueRows, SideCard } from '../components/parts'
 import Timeline from '../components/Timeline'
+import { useAuth } from '../../auth/context/useAuth'
+import { TARIFF_NOTE } from '../adapters'
+import { appointmentsApi } from '../api'
 import { useAppointment } from '../context/useAppointment'
-import { formatDate, formatINR, formatLongDate, formatTime } from '../format'
-import { appointmentTone } from '../selectors'
+import { formatDate, formatLongDate, formatTime } from '../format'
+import { appointmentTone, isChangeable } from '../selectors'
 
-const STAGES = ['Scheduled', 'Confirmed', 'Arrived', 'In Progress', 'Completed']
+const STAGES = ['Pending Confirmation', 'Confirmed', 'Arrived', 'In Progress', 'Completed']
 const GATE_COPY = {
-  Scheduled: 'This is a tentative booking. Confirm it by reception or proceed to arrival when the patient reports.',
+  'Pending Confirmation': 'This is a tentative booking. Confirm it with the patient, or mark arrival when the patient reports.',
   Confirmed: 'Next standard action: mark arrival when the patient reports to reception. This will issue a queue token and alert the OPD triage desk for vitals recording.',
   Arrived: 'The patient is checked in and waiting. The consulting clinician can now start the encounter from the doctor workspace.',
   'In Progress': 'A clinical encounter is open for this appointment. Continue documentation in the encounter workspace.',
@@ -48,26 +52,44 @@ function Lifecycle({ status }) {
 }
 
 export default function AppointmentDetailPage() {
-  const { patient, patientId, appointment, mine } = useAppointment()
-  if (!appointment) return <FlowMissing patient={patient} />
+  const { patient, patientId, appointment, mine, records, loading, reload } = useAppointment()
+  const { can } = useAuth()
+  const [busy, setBusy] = useState(false)
+  const [actionError, setActionError] = useState('')
+  if (!appointment) return <FlowMissing patient={patient} loading={loading} />
 
   const route = (pattern) => pathFor(pattern, { patientId, appointmentId: appointment.id })
-  const open = ['Scheduled', 'Confirmed'].includes(appointment.status)
+  const open = isChangeable(appointment)
+  const pending = appointment.status === 'Pending Confirmation'
   const allergies = mine('allergies')
   const messages = mine('messages').slice(0, 2)
+  // Encounters are documented in the clinical workspace, which keeps them in this browser session for now.
+  const encounterId = records.encounters.find((encounter) => encounter.appointmentId === appointment.id)?.id
+  const run = async (action) => {
+    setBusy(true)
+    setActionError('')
+    try {
+      await action(appointment.id)
+      await reload()
+    } catch (error) {
+      setActionError(error.message)
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <FlowFrame
       title={`Consultation with ${appointment.doctorShort}`}
       badge={<StatusPill tone={appointmentTone(appointment.status)} dot>{appointment.status}</StatusPill>}
-      description={`${appointment.id} · ${formatLongDate(appointment.date)}, ${formatTime(appointment.time)} · ${appointment.minutes} min duration · Booked via ${appointment.channel ?? 'Reception'}`}
+      description={`${appointment.reference} · ${formatLongDate(appointment.date)}, ${formatTime(appointment.time)} · ${appointment.minutes} min duration · Booked via ${appointment.channel ?? 'Reception'}`}
       actions={
         <>
           <BackLink to={pathFor(ROUTES.patientAppointments, { patientId })}>Appointments</BackLink>
           {open && <ActionButton icon={CalendarClock} to={route(ROUTES.appointmentReschedule)}>Reschedule</ActionButton>}
           {open && <ActionButton variant="primary" to={route(ROUTES.appointmentCheckIn)}>Mark arrival</ActionButton>}
           {appointment.status === 'Arrived' && <ActionButton variant="primary" icon={Stethoscope} to={route(ROUTES.appointmentStartEncounter)}>Start encounter</ActionButton>}
-          {appointment.encounterId && <ActionButton variant="primary" to={pathFor(ROUTES.encounter, { patientId, encounterId: appointment.encounterId })}>Open encounter</ActionButton>}
+          {encounterId && <ActionButton variant="primary" to={pathFor(ROUTES.encounter, { patientId, encounterId })}>Open encounter</ActionButton>}
         </>
       }
     >
@@ -80,11 +102,14 @@ export default function AppointmentDetailPage() {
             <h2 className="mt-1 text-lg font-bold uppercase">{appointment.status} • {formatLongDate(appointment.date)} at {formatTime(appointment.time)}</h2>
             <p className="mt-2 text-sm text-on-surface-variant">{GATE_COPY[appointment.status]}</p>
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              {open && <ActionButton variant="primary" to={route(ROUTES.appointmentCheckIn)}>Mark arrival</ActionButton>}
+              {pending && can('bookings.create') && <ActionButton variant="primary" disabled={busy} onClick={() => run(appointmentsApi.confirm)}>Confirm appointment</ActionButton>}
+              {open && <ActionButton variant={pending ? 'secondary' : 'primary'} to={route(ROUTES.appointmentCheckIn)}>Mark arrival</ActionButton>}
+              {['Arrived', 'In Progress'].includes(appointment.status) && !encounterId && can('clinical.write') && <ActionButton variant="primary" disabled={busy} onClick={() => run(appointmentsApi.complete)}>Mark visit completed</ActionButton>}
               <ActionButton icon={Printer} onClick={() => window.print()}>Print appointment slip</ActionButton>
               {open && <ActionButton variant="danger" to={route(ROUTES.appointmentCancel)}>Cancel appointment</ActionButton>}
               {open && <ActionButton variant="danger" to={route(ROUTES.appointmentNoShow)}>Mark as no-show</ActionButton>}
             </div>
+            {actionError && <p role="alert" className="mt-3 text-xs text-rose-600">{actionError}</p>}
           </section>
 
           <section className="rounded-lg border border-slate-200 bg-white p-5">
@@ -112,14 +137,14 @@ export default function AppointmentDetailPage() {
             <h2 className="mb-4 text-base font-semibold">Appointment parameters</h2>
             <dl className="grid gap-x-8 gap-y-4 text-[13px] sm:grid-cols-2">
               {[
-                ['Service', appointment.service],
+                ['Visit', appointment.service],
                 ['Appointment type', `${appointment.type} (${appointment.mode})`],
                 ['Consulting doctor', appointment.doctor],
                 ['Department', appointment.department],
                 ['Branch & facility location', `${appointment.branch} · ${appointment.room}`],
                 ['Scheduled window', `${formatDate(appointment.date)}, ${formatTime(appointment.time)} (${appointment.minutes} min)`],
                 ['Booking channel & operator', `${appointment.channel ?? 'Reception'} · ${appointment.bookedBy ?? 'Reception desk'}`],
-                ['Slot allocation mode', 'Standard fixed block (guaranteed)'],
+                ['Slot allocation mode', appointment.waitingQueue ? 'Walk-in waiting queue' : 'Fixed slot (double booking blocked)'],
               ].map(([label, value]) => (
                 <div key={label}>
                   <dt className="text-[11px] text-outline">{label}</dt>
@@ -151,17 +176,17 @@ export default function AppointmentDetailPage() {
             </dl>
           </section>
 
-          <InfoNote tone={appointment.encounterId ? 'brand' : 'warning'} icon={Stethoscope}>
+          <InfoNote tone={encounterId ? 'brand' : 'warning'} icon={Stethoscope}>
             <strong>Clinical encounter boundary:</strong>{' '}
-            {appointment.encounterId
-              ? `Encounter #${appointment.encounterId} is linked to this appointment.`
+            {encounterId
+              ? `Encounter #${encounterId} is linked to this appointment.`
               : 'No encounter has been started for this appointment. Clinical charting is only permitted once the patient has arrived and the doctor starts the encounter.'}
           </InfoNote>
         </div>
 
         <div className="flex flex-col gap-5">
           <SideCard title="Financial governance & tariff">
-            <KeyValueRows rows={[['Configured service tariff', formatINR(appointment.tariff ?? 0, 2)], ['Payment commitment', appointment.status === 'Completed' ? 'Billed on encounter' : 'Pending (zero premature debit)']]} />
+            <KeyValueRows rows={[['Service tariff', TARIFF_NOTE], ['Payment commitment', appointment.status === 'Completed' ? 'Billed on encounter' : 'Pending (zero premature debit)']]} />
             <InfoNote className="mt-3"><strong>Strict rule:</strong> booking an appointment never automatically executes financial charges or generates taxable debits.</InfoNote>
             <ActionButton className="mt-3 w-full" to={pathFor(ROUTES.patientBilling, { patientId })}>Open billing ledger</ActionButton>
           </SideCard>

@@ -6,43 +6,79 @@ import { InfoNote } from '../../../components/workspace/controls'
 import { TextInput } from '../../../components/workspace/FormControls'
 import WorkspacePage from '../../../components/workspace/WorkspacePage'
 import { ROUTES } from '../../../config/routes'
-import { OWNER } from '../../../config/workspace'
+import { useApiResource } from '../../../hooks/useApiResource'
 import { cn } from '../../../lib/cn'
 import { useDraft } from '../../../lib/useDraft'
+import { useAuth } from '../../auth/context/useAuth'
+import { staffApi } from '../../staff/api'
 import { Check, FieldError, FlowSection, OptionSelect, TextArea } from '../../patients/components/parts'
-import { usePatientRecords } from '../../patients/context/usePatientRecords'
+import { branchesApi, incidentsApi, patientsApi } from '../../patients/api'
 import { TODAY } from '../../patients/format'
 import { clockTime } from '../../patients/selectors'
-import { CONTRIBUTING_FACTORS, FACILITY_BRANCHES, FACILITY_ZONES, INCIDENT_CATEGORIES, OCCURRED_PRESETS, OTHER_PERSONNEL, SEVERITY_LEVELS } from '../constants'
-import { buildIncident, validateIncident } from '../logic'
+import { CONTRIBUTING_FACTORS, FACILITY_ZONES, INCIDENT_CATEGORIES, OCCURRED_PRESETS, SEVERITY_LEVELS } from '../constants'
+import { validateIncident } from '../logic'
 
 const SEVERITY_STYLE = { 1: 'border-brand', 2: 'border-slate-400', 3: 'border-yellow-500', 4: 'border-orange-500', 5: 'border-red-500 bg-red-50' }
 
+// Any member of the clinic may report. The report is stored on the server; an anonymous one keeps no record of
+// who filed it, and a sentinel event (level 5) involving a patient also flags their chart.
 export default function ReportIncidentPage() {
-  const { records, patients, add, newId } = usePatientRecords()
+  const { user, can } = useAuth()
   const navigate = useNavigate()
   const draft = useDraft('incident-draft', {
-    category: '', severity: '', preset: 'now', date: TODAY, time: clockTime(), branch: FACILITY_BRANCHES[0], zone: FACILITY_ZONES[0], associate: false, patientId: '',
+    category: '', severity: '', preset: 'now', date: TODAY, time: clockTime(), branchId: '', zone: FACILITY_ZONES[0], associate: false, patientId: '',
     headline: '', chronology: '', factors: [], actions: '', anonymous: false, witnesses: [], notifyQuality: true, logRegister: true,
   })
   const values = draft.value
   const [attempted, setAttempted] = useState(false)
+  const [search, setSearch] = useState('')
+  const [serverError, setServerError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const branches = useApiResource(() => branchesApi.list(), 'branches').data ?? []
+  const staff = useApiResource(() => (can('staff.view') ? staffApi.list({ status: 'active', pageSize: 100 }) : Promise.resolve({ data: [] })), 'incident-staff').data?.data ?? []
+  const matches = useApiResource(() => (search.trim().length >= 2 && can('patients.view') ? patientsApi.list({ query: search.trim(), pageSize: 8 }) : Promise.resolve({ data: [] })), search).data?.data ?? []
   const errors = attempted ? validateIncident(values) : {}
-  const patient = patients.find((entry) => entry.id === values.patientId)
+  const branchId = values.branchId || branches[0]?.id || ''
+  const patient = matches.find((entry) => entry.id === values.patientId) ?? (values.patientId ? draft.value.patientSummary : null)
+  const personnel = staff.map((person) => `${person.fullName} (${person.designation})`)
   const set = (name, value) => draft.setValue((current) => ({ ...current, [name]: value }))
   const toggle = (name, entry) => set(name, values[name].includes(entry) ? values[name].filter((other) => other !== entry) : [...values[name], entry])
   const choosePreset = (id) => draft.setValue((current) => ({ ...current, preset: id, ...(id === 'now' ? { date: TODAY, time: clockTime() } : {}) }))
 
-  const submit = () => {
+  const choosePatient = (id) => {
+    const chosen = matches.find((entry) => entry.id === id)
+    draft.setValue((current) => ({ ...current, patientId: id, patientSummary: chosen ? { id: chosen.id, fullName: chosen.fullName, mrn: chosen.mrn, gender: chosen.gender } : null }))
+  }
+
+  const submit = async () => {
     setAttempted(true)
     if (Object.keys(validateIncident(values)).length) return
-    const incident = buildIncident(values, { incidents: records.incidents, patient, reporter: OWNER.name })
-    add('incidents', incident)
-    if (incident.severity === 5) {
-      add('alerts', { id: newId('ALT-', 'alerts', 5), patientId: incident.patientId, incidentId: incident.id, kind: 'SENTINEL EVENT', title: `Sentinel incident ${incident.id}: ${incident.headline}`, severity: 'Critical', status: 'Active', detail: 'Reported as a life-threatening or permanent-harm event. Immediate Director escalation is required.', statement: 'A sentinel clinical incident is open and under Clinical Governance review.', evidence: [], audit: [] })
+    setSaving(true)
+    setServerError('')
+    try {
+      const incident = await incidentsApi.report({
+        category: values.category,
+        severity: Number(values.severity),
+        date: values.date,
+        time: values.time,
+        branchId,
+        zone: values.zone,
+        ...(values.associate && values.patientId ? { patientId: values.patientId } : {}),
+        headline: values.headline.trim(),
+        chronology: values.chronology.trim(),
+        factors: values.factors,
+        actions: values.actions.trim(),
+        witnesses: values.witnesses,
+        anonymous: values.anonymous,
+        notifyQuality: values.notifyQuality,
+        logRegister: values.logRegister,
+      })
+      draft.clear()
+      navigate(ROUTES.clinical, { state: { incident: incident.reference } })
+    } catch (error) {
+      setServerError(error.message)
+      setSaving(false)
     }
-    draft.clear()
-    navigate(ROUTES.clinical, { state: { incident: incident.id } })
   }
 
   return (
@@ -93,7 +129,7 @@ export default function ReportIncidentPage() {
                 <div className="grid grid-cols-2 gap-3"><TextInput label="Date" type="date" max={TODAY} value={values.date} onChange={(event) => set('date', event.target.value)} error={errors.date} /><TextInput label="Time" type="time" value={values.time} onChange={(event) => set('time', event.target.value)} error={errors.time} /></div>
               </div>
               <div className="grid gap-3">
-                <OptionSelect label="Facility & specific clinical zone" value={values.branch} onChange={(event) => set('branch', event.target.value)} options={FACILITY_BRANCHES.map((entry) => ({ value: entry, label: entry }))} />
+                <OptionSelect label="Facility & specific clinical zone" value={branchId} onChange={(event) => set('branchId', event.target.value)} options={branches.map((entry) => ({ value: entry.id, label: entry.name }))} />
                 <OptionSelect label="Clinical zone" required value={values.zone} onChange={(event) => set('zone', event.target.value)} error={errors.zone} options={FACILITY_ZONES.map((entry) => ({ value: entry, label: entry }))} />
               </div>
             </div>
@@ -102,13 +138,14 @@ export default function ReportIncidentPage() {
           <FlowSection number="3" title="Patient & encounter association" aside={<Check checked={values.associate} onChange={(event) => set('associate', event.target.checked)} label="Associate with active patient" />}>
             {values.associate ? (
               <>
-                <OptionSelect label="Patient" required placeholder="Select the patient involved" value={values.patientId} onChange={(event) => set('patientId', event.target.value)} error={errors.patientId} options={patients.map((entry) => ({ value: entry.id, label: `${entry.name} · ${entry.mrn}` }))} />
-                {patient && <p className="mt-3 rounded-md bg-surface-lowest p-3 text-xs"><strong className="text-sm">{patient.name}</strong> <span className="text-outline">{patient.age}Y · {patient.gender}</span><br /><span className="font-mono text-on-surface-variant">UHID: {patient.mrn} · ABHA ID: {patient.abha}</span></p>}
+                <TextInput label="Find the patient" placeholder="Name, MRN or mobile (at least 2 characters)" value={search} onChange={(event) => setSearch(event.target.value)} />
+                <div className="mt-3"><OptionSelect label="Patient" required placeholder={matches.length ? 'Select the patient involved' : 'Search to list patients'} value={values.patientId} onChange={(event) => choosePatient(event.target.value)} error={errors.patientId} options={[...(patient && !matches.some((entry) => entry.id === patient.id) ? [patient] : []), ...matches].map((entry) => ({ value: entry.id, label: `${entry.fullName} · ${entry.mrn}` }))} /></div>
+                {patient && <p className="mt-3 rounded-md bg-surface-lowest p-3 text-xs"><strong className="text-sm">{patient.fullName}</strong> <span className="text-outline">{patient.gender}</span><br /><span className="font-mono text-on-surface-variant">UHID: {patient.mrn}</span></p>}
               </>
             ) : (
               <p className="text-xs text-on-surface-variant">De-linked / general incident. No patient record is attached.</p>
             )}
-            <p className="mt-3 text-[11px] text-outline">Cryptographic quality anchor: associating a patient links audit context without modifying the public medical record or insurance invoice.</p>
+            <p className="mt-3 text-[11px] text-outline">Associating a patient links the report to them without changing their medical record; a level 5 event also raises a safety alert on their chart.</p>
           </FlowSection>
 
           <FlowSection number="4" title="Narrative & clinical chronology" aside="Factual, objective description">
@@ -120,25 +157,25 @@ export default function ReportIncidentPage() {
 
           <FlowSection number="5" title="Witness & involved personnel" aside={<Check checked={values.anonymous} onChange={(event) => set('anonymous', event.target.checked)} label="Submit via anonymous safe harbor" />}>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div><p className="mb-1.5 text-[13px] font-semibold">Primary reporting clinician</p><p className="rounded-md border border-slate-200 bg-surface-lowest p-3 text-xs"><strong className="text-sm">{values.anonymous ? 'Anonymous (identity withheld)' : OWNER.name}</strong><br />{values.anonymous ? 'Recorded under safe-harbor protection' : OWNER.role}</p></div>
-              <fieldset><legend className="mb-1.5 text-[13px] font-semibold">Other personnel present / intercepting</legend><div className="flex flex-col gap-1.5">{OTHER_PERSONNEL.map((person) => <Check key={person} checked={values.witnesses.includes(person)} onChange={() => toggle('witnesses', person)} label={person} />)}</div></fieldset>
+              <div><p className="mb-1.5 text-[13px] font-semibold">Primary reporting clinician</p><p className="rounded-md border border-slate-200 bg-surface-lowest p-3 text-xs"><strong className="text-sm">{values.anonymous ? 'Anonymous (identity withheld)' : user.fullName}</strong><br />{values.anonymous ? 'No record of who filed it is kept' : 'Named as the reporter'}</p></div>
+              <fieldset><legend className="mb-1.5 text-[13px] font-semibold">Other personnel present / intercepting</legend><div className="flex flex-col gap-1.5">{personnel.length ? personnel.map((person) => <Check key={person} checked={values.witnesses.includes(person)} onChange={() => toggle('witnesses', person)} label={person} />) : <p className="text-xs text-on-surface-variant">No staff records to choose from.</p>}</div></fieldset>
             </div>
           </FlowSection>
 
           <FlowSection number="6" title="Governance notification pipeline">
             <div className="flex flex-col gap-3">
-              <Check checked={values.notifyQuality} onChange={(event) => set('notifyQuality', event.target.checked)} label={<><strong>Notify Clinical Quality Lead &amp; Head of Pharmacy:</strong> dispatch an encrypted instant audit notice for root-cause classification within 24 hours.</>} />
-              <Check checked={values.logRegister} onChange={(event) => set('logRegister', event.target.checked)} label={<><strong>Log in statutory incident register (NABH criterion PS-01.2):</strong> generate a tamper-proof ledger index in compliance with national accreditation board standards.</>} />
+              <Check checked={values.notifyQuality} onChange={(event) => set('notifyQuality', event.target.checked)} label={<><strong>Flag for the Clinical Quality Lead:</strong> marks the report for root-cause review.</>} />
+              <Check checked={values.logRegister} onChange={(event) => set('logRegister', event.target.checked)} label={<><strong>Include in the incident register:</strong> listed in the clinic's register of reported incidents.</>} />
             </div>
           </FlowSection>
         </div>
 
         <div className="sticky bottom-0 mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-surface-lowest py-4">
-          <p className="font-mono text-[10px] text-outline">SHA-256 seal stamp active · Node #BLR-METRO-04</p>
+          {serverError ? <p role="alert" className="text-xs text-danger">{serverError}</p> : <p className="text-[11px] text-outline">Saved to the clinic's incident register on submission.</p>}
           <div className="flex items-center gap-2">
             <ActionButton onClick={() => { draft.clear(); navigate(ROUTES.clinical) }} className="border-transparent">Discard Draft</ActionButton>
             <ActionButton onClick={() => draft.setValue((current) => ({ ...current }))}>Save Draft</ActionButton>
-            <ActionButton variant="primary" icon={Lock} onClick={submit}>Submit Confidential Incident Report</ActionButton>
+            <ActionButton variant="primary" icon={Lock} onClick={submit} disabled={saving}>Submit Confidential Incident Report</ActionButton>
           </div>
         </div>
       </div>

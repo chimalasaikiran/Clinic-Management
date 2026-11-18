@@ -1,5 +1,5 @@
 import { allocatedToInvoice, invoiceBalance, invoiceStatus, invoiceTotal, paymentUnallocated } from '../patients/billing'
-import { TODAY } from '../patients/format'
+import { localToday } from '../patients/format'
 
 const stamp = (item) => `${item.date} ${item.time ?? '00:00'}`
 const inRange = (item, range) => item.date >= range.from && item.date <= range.to
@@ -46,4 +46,4 @@ export function invoiceRows({ invoices, payments }, range, { query = '', status 
     .sort((a, b) => stamp(b.invoice).localeCompare(stamp(a.invoice)))
 }
 
-export const isOverdue = (invoice, payments) => Boolean(invoice.dueDate) && invoice.dueDate < TODAY && invoiceBalance(invoice, payments) > 0
+export const isOverdue = (invoice, payments) => Boolean(invoice.dueDate) && invoice.dueDate < localToday() && invoiceBalance(invoice, payments) > 0

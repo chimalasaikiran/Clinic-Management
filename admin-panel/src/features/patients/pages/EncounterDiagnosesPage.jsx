@@ -9,6 +9,7 @@ import { pathFor, ROUTES } from '../../../config/routes'
 import { cn } from '../../../lib/cn'
 import FlowFrame, { BackLink, FlowMissing } from '../components/FlowFrame'
 import { OptionSelect, SideCard, TextArea } from '../components/parts'
+import { clinicalApi } from '../api'
 import { usePatient } from '../context/usePatient'
 import { CONDITIONS } from '../data/catalog'
 import { TODAY, formatDate } from '../format'
@@ -20,14 +21,15 @@ const CHRONICITY = ['Acute (<4w)', 'Subacute', 'Chronic']
 const BLANK = { term: '', icd: '', designation: 'Secondary', verification: VERIFICATION[1], description: '', chronicity: CHRONICITY[0], onset: TODAY }
 
 export default function EncounterDiagnosesPage() {
-  const { patient, patientId, mine, find, add, update, newId } = usePatient()
+  const { patient, patientId, mine, find, refresh, loading } = usePatient()
   const { encounterId } = useParams()
   const navigate = useNavigate()
   const encounter = find('encounters', encounterId)
   const [values, setValues] = useState(BLANK)
   const [submitted, setSubmitted] = useState(false)
+  const [serverError, setServerError] = useState('')
 
-  if (!patient || !encounter || encounter.patientId !== patient.id) return <FlowMissing patient={patient} what="encounter" />
+  if (!patient || !encounter || encounter.patientId !== patient.id) return <FlowMissing patient={patient} loading={loading} what="encounter" />
 
   const backTo = pathFor(ROUTES.encounter, { patientId, encounterId })
   const all = mine('diagnoses')
@@ -44,28 +46,41 @@ export default function EncounterDiagnosesPage() {
   const update_ = (event) => set(event.target.name, event.target.value)
   const choose = (condition) => setValues((current) => ({ ...current, term: condition.name, icd: condition.icd }))
 
-  const attach = () => {
+  const attach = async () => {
     setSubmitted(true)
+    setServerError('')
     if (Object.keys(validateDiagnosis(values)).length || duplicate) return
-    add('diagnoses', {
-      id: newId('DX-', 'diagnoses', 3), patientId, encounterId: encounter.id, name: chosen.name, icd: chosen.icd, snomed: chosen.snomed, designation: values.designation,
-      verification: values.verification.startsWith('Confirmed') ? 'Confirmed' : 'Provisional', status: 'Active', description: values.description.trim(), chronicity: values.chronicity,
-      onset: values.onset, recorded: TODAY, recordedBy: encounter.doctor,
-    })
-    setValues(BLANK)
-    setSubmitted(false)
+    try {
+      await clinicalApi.addDiagnosis(patientId, {
+        encounterId: encounter.id, icd: chosen.icd, snomed: chosen.snomed, name: chosen.name, designation: values.designation.startsWith('Secondary') ? 'Secondary' : 'Primary',
+        verification: values.verification.startsWith('Confirmed') ? 'Confirmed' : 'Provisional', description: values.description.trim(),
+      })
+      await refresh()
+      setValues(BLANK)
+      setSubmitted(false)
+    } catch (error) {
+      setServerError(error.message)
+    }
   }
 
-  const remove = (entry) => update('diagnoses', entry.id, { status: 'Resolved' })
+  const remove = async (entry) => {
+    setServerError('')
+    try {
+      await clinicalApi.resolveDiagnosis(entry.id)
+      await refresh()
+    } catch (error) {
+      setServerError(error.message)
+    }
+  }
 
   return (
     <FlowFrame
       title="Encounter diagnosis & problem management"
-      badge={<StatusPill tone="warning" dot>In progress ({encounter.id})</StatusPill>}
+      badge={<StatusPill tone="warning" dot>In progress ({encounter.reference ?? encounter.id})</StatusPill>}
       description={`${patient.name} · ${patient.age}y / ${patient.gender} · Blood Group ${patient.bloodGroup} · Attending: ${encounter.doctor}`}
       actions={
         <>
-          <BackLink to={backTo}>Back to Encounter ({encounter.id})</BackLink>
+          <BackLink to={backTo}>Back to Encounter ({encounter.reference ?? encounter.id})</BackLink>
           <ActionButton variant="brand" onClick={() => navigate(backTo)}>Save &amp; Commit to Encounter</ActionButton>
         </>
       }
@@ -116,11 +131,11 @@ export default function EncounterDiagnosesPage() {
                 <div className="grid gap-4 sm:grid-cols-3">
                   <OptionSelect label="Chronicity pattern" name="chronicity" value={values.chronicity} onChange={update_} options={CHRONICITY.map((entry) => ({ value: entry, label: entry }))} />
                   <TextInput label="Recorded onset date" name="onset" type="date" value={values.onset} onChange={update_} />
-                  <TextInput label="Associated encounter" value={`${encounter.id} (current session)`} readOnly />
+                  <TextInput label="Associated encounter" value={`${encounter.reference ?? encounter.id} (current session)`} readOnly />
                 </div>
                 <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-4">
                   <p className="text-[11px] text-outline">Requires attending physician signature prior to billing</p>
-                  <div className="flex gap-2"><ActionButton onClick={() => { setValues(BLANK); setSubmitted(false) }}>Clear</ActionButton><ActionButton variant="primary" onClick={attach}>Attach Diagnosis to Encounter</ActionButton></div>
+                  <div className="flex gap-2"><ActionButton onClick={() => { setValues(BLANK); setSubmitted(false) }}>Clear</ActionButton>{serverError && <span role="alert" className="self-center text-xs text-rose-600">{serverError}</span>}<ActionButton variant="primary" onClick={attach}>Attach Diagnosis to Encounter</ActionButton></div>
                 </div>
               </div>
             </section>
@@ -141,7 +156,7 @@ export default function EncounterDiagnosesPage() {
             <Link to={pathFor(ROUTES.patientRecords, { patientId })} className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-brand hover:underline">Open full clinical records <ArrowRight className="size-3" aria-hidden="true" /></Link>
           </SideCard>
 
-          <SideCard title="Downstream workflow launchpad" tag={<span className="font-mono text-[10px] text-outline">{encounter.id}</span>}>
+          <SideCard title="Downstream workflow launchpad" tag={<span className="font-mono text-[10px] text-outline">{encounter.reference ?? encounter.id}</span>}>
             <div className="flex flex-col gap-2">
               {[['Create prescription (Rx)', 'rx', Pill], ['Order investigation', 'order', ClipboardList]].map(([label, open, Icon]) => (
                 <Link key={label} to={backTo} state={{ open }} className="flex items-center gap-3 rounded-md border border-slate-200 p-3 text-xs hover:bg-surface-lowest"><Icon className="size-4 text-brand" aria-hidden="true" /><span className="font-semibold">{label}</span><ArrowRight className="ml-auto size-3 text-outline" aria-hidden="true" /></Link>

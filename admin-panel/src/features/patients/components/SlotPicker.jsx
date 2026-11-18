@@ -2,7 +2,7 @@ import { cn } from '../../../lib/cn'
 import { SESSIONS } from '../data/catalog'
 import { formatTime } from '../format'
 
-// Session tabs plus a grid of 30-minute slots. `slots` come from selectors.slotsFor.
+// Session tabs plus a grid of the therapist's slots. `slots` come from selectors.slotsForPicker.
 export default function SlotPicker({ slots, session, onSessionChange, value, onChange, error }) {
   const visible = slots.filter((slot) => slot.session === session)
   const available = slots.filter((slot) => slot.state === 'available').length
@@ -26,6 +26,7 @@ export default function SlotPicker({ slots, session, onSessionChange, value, onC
       </div>
       <p className="mb-2 text-[11px] text-outline">{available} slots available across the day</p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+        {visible.length === 0 && <p className="col-span-full text-xs text-on-surface-variant">No consulting slots in this session.</p>}
         {visible.map((slot) => {
           const selected = value === slot.time
           return (
@@ -42,7 +43,7 @@ export default function SlotPicker({ slots, session, onSessionChange, value, onC
               )}
             >
               <span className="block text-sm font-semibold">{formatTime(slot.time)}</span>
-              <span className="block text-[10px]">{selected ? 'Selected' : slot.state === 'available' ? 'Available' : slot.state === 'rounds' ? 'Clinician rounds' : 'Booked'}</span>
+              <span className="block text-[10px]">{selected ? 'Selected' : slot.state === 'available' ? 'Available' : slot.state === 'rounds' ? 'Clinician rounds' : slot.state === 'past' ? 'Passed' : 'Booked'}</span>
             </button>
           )
         })}

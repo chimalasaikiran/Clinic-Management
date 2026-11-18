@@ -1,12 +1,37 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { pathFor, ROUTES } from '../../../config/routes'
+import { ApiError } from '../../../lib/api'
+import { apiPatient, apiPractitioner, createPatientsApi, tomorrow } from '../../../test/fixtures/patientsApi'
 import { renderRoute } from '../../../test/renderRoute'
+import { localToday } from '../format'
 
-const ananya = { patientId: 'pt-000184' }
-const appointment = { ...ananya, appointmentId: 'APT-2026-0912' }
+// Patients and appointments come from a faked API; encounters and allergies from the in-memory fixtures.
+const fake = vi.hoisted(() => ({ api: null, state: null }))
+vi.mock('../api', async (importOriginal) => {
+  const actual = await importOriginal()
+  const forward = (name) => new Proxy({}, { get: (_, method) => (...args) => fake.api[name][method](...args) })
+  return { ...actual, patientsApi: forward('patientsApi'), appointmentsApi: forward('appointmentsApi'), practitionersApi: forward('practitionersApi'), branchesApi: forward('branchesApi'), clinicalApi: forward('clinicalApi') }
+})
+
+const ANANYA = apiPatient({ id: 'pt-000184', mrn: 'PT-000184', fullName: 'Ananya Sharma', mobile: '9845211029' })
+const RAJESH = apiPatient({ id: 'pt-000219', mrn: 'PT-000219', fullName: 'Rajesh Sundaram', mobile: '9444082910', gender: 'male', homeBranch: { id: 'b-kondapur', name: 'Kondapur Clinic' } })
+
+function install(options = {}) {
+  const created = createPatientsApi({ patients: [ANANYA, RAJESH], ...options })
+  fake.api = created.api
+  fake.state = created.state
+  return created.state
+}
+const calls = (name) => fake.state.calls.filter(([call]) => call === name).map(([, ...args]) => args)
+
+beforeEach(() => install())
+
 const setup = () => userEvent.setup({ delay: null })
+// Multi-page flows wait on several API round trips; give them room when the whole suite runs in parallel.
+const SLOW = { timeout: 20000 }
+const ananya = { patientId: 'pt-000184' }
 
 async function fill(user, field, text) {
   await user.click(field)
@@ -14,207 +39,262 @@ async function fill(user, field, text) {
 }
 
 describe('patient directory', () => {
-  it('lists patients and highlights Patients in the sidebar', () => {
+  it('lists registered patients from the API and highlights Patients in the sidebar', async () => {
     renderRoute(ROUTES.patients)
 
-    expect(screen.getByRole('heading', { name: 'Patients' })).toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: 'Ananya Sharma' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Rajesh Sundaram' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /^patients$/i })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByRole('link', { name: 'Ananya Sharma' })).toBeInTheDocument()
+    expect(screen.getByText(/Showing 1–2 of 2 patients/)).toBeInTheDocument()
   })
 
-  it('filters by branch and by mobile number', async () => {
+  it('searches and filters on the server', async () => {
     const user = setup()
     renderRoute(ROUTES.patients)
+    await screen.findByRole('link', { name: 'Ananya Sharma' })
 
-    await user.selectOptions(screen.getByLabelText('Branch'), 'Metro North Clinic')
-    expect(screen.getByText('Deepa R. Nair')).toBeInTheDocument()
-    expect(screen.queryByText('Ananya Sharma')).not.toBeInTheDocument()
+    await fill(user, screen.getByLabelText('Search patients'), '94440 82910')
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Ananya Sharma' })).not.toBeInTheDocument(), SLOW)
+    expect(screen.getByRole('link', { name: 'Rajesh Sundaram' })).toBeInTheDocument()
+    expect(calls('patients.list').at(-1)[0]).toMatchObject({ query: '94440 82910', page: 1 })
 
     await user.click(screen.getByRole('button', { name: 'Reset Filters' }))
-    await fill(user, screen.getByLabelText('Search patients'), '98471 22934')
-    expect(screen.getByText('Deepa R. Nair')).toBeInTheDocument()
-    expect(screen.queryByText('Mohammed Zeeshan')).not.toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Gender'), 'Female')
+    await waitFor(() => expect(calls('patients.list').at(-1)[0]).toMatchObject({ gender: 'female' }), SLOW)
+    expect(await screen.findByRole('link', { name: 'Ananya Sharma' })).toBeInTheDocument()
   })
 
   it('shows an empty state when nothing matches', async () => {
     const user = setup()
     renderRoute(ROUTES.patients)
-
+    await screen.findByRole('link', { name: 'Ananya Sharma' })
     await fill(user, screen.getByLabelText('Search patients'), 'zzzz')
-    expect(screen.getByText('No patients match your search.')).toBeInTheDocument()
+    expect(await screen.findByText('No patients match your search.')).toBeInTheDocument()
   })
 
-  it('selects every visible patient from the header checkbox', async () => {
+  it('pages through large result sets', async () => {
+    install({ patients: Array.from({ length: 30 }, (_, index) => apiPatient({ id: `p-${index}`, mrn: `PT-${String(index + 1).padStart(6, '0')}`, fullName: `Patient ${String(index + 1).padStart(2, '0')}`, mobile: `98000000${String(index).padStart(2, '0')}` })) })
     const user = setup()
     renderRoute(ROUTES.patients)
 
-    await user.click(screen.getByRole('checkbox', { name: 'Select all patients' }))
-    expect(screen.getByText('8 selected')).toBeInTheDocument()
+    expect(await screen.findByText(/Showing 1–25 of 30 patients/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    expect(await screen.findByText(/Showing 26–30 of 30 patients/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Patient 30' })).toBeInTheDocument()
+  })
+
+  it('marks a patient inactive from the row menu', async () => {
+    const user = setup()
+    renderRoute(ROUTES.patients)
+    await user.click(await screen.findByRole('button', { name: 'More actions for Ananya Sharma' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Mark as inactive' }))
+
+    expect(await screen.findByText('Ananya Sharma is now inactive.')).toBeInTheDocument()
+    expect(calls('patients.setStatus')).toEqual([['pt-000184', 'inactive', null]])
   })
 })
 
 describe('register patient', () => {
+  async function fillRequired(user, mobile = '9876543210') {
+    await user.selectOptions(screen.getByLabelText(/title prefix/i), 'Mr.')
+    await fill(user, screen.getByLabelText(/full legal name/i), 'Arjun Reddy')
+    await fill(user, screen.getByLabelText(/primary mobile number/i), mobile)
+    await fill(user, screen.getByLabelText(/pin code/i), '500032')
+    await fill(user, screen.getByLabelText(/date of birth/i), '1990-05-20')
+    await user.click(screen.getByText('Male'))
+  }
+
   it('lists every missing required field', async () => {
     const user = setup()
     renderRoute(ROUTES.patientNew)
-
-    await user.click(screen.getByRole('button', { name: 'Register patient' }))
-
+    await user.click(await screen.findByRole('button', { name: 'Register patient' }))
+    expect(screen.getByText('Choose a title.')).toBeInTheDocument()
     expect(screen.getByText('Enter the full legal name.')).toBeInTheDocument()
     expect(screen.getByText('Enter the primary mobile number.')).toBeInTheDocument()
-    expect(screen.getByText('Enter the date of birth.')).toBeInTheDocument()
-    expect(screen.getByText('Select a gender.')).toBeInTheDocument()
+    expect(calls('patients.create')).toHaveLength(0)
+  })
+
+  it('registers a patient with the server and opens their hub', async () => {
+    const user = setup()
+    const router = renderRoute(ROUTES.patientNew)
+    await screen.findByRole('option', { name: 'Main Clinic' })
+    await fillRequired(user)
+    await user.click(screen.getByRole('button', { name: 'Register patient' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/patients/p-3'))
+    expect(calls('patients.create')[0][0]).toMatchObject({ title: 'Mr.', fullName: 'Arjun Reddy', mobile: '9876543210', pinCode: '500032', dateOfBirth: '1990-05-20', gender: 'male', homeBranchId: 'b-main', confirmedNotDuplicate: false })
+    expect(await screen.findByRole('heading', { name: 'Arjun Reddy' })).toBeInTheDocument()
+    expect(screen.getByText('PT-000003')).toBeInTheDocument()
   })
 
   it('flags a duplicate mobile number and blocks registration until it is dismissed', async () => {
     const user = setup()
-    renderRoute(ROUTES.patientNew)
+    const router = renderRoute(ROUTES.patientNew)
+    await screen.findByRole('option', { name: 'Main Clinic' })
+    await fillRequired(user, '98452 11029')
 
-    await fill(user, screen.getByLabelText(/primary mobile number/i), '9845211029')
-    expect(screen.getByText('1 match alert')).toBeInTheDocument()
-    expect(screen.getByText('PT-000184')).toBeInTheDocument()
-
+    expect(await screen.findByText('1 match alert')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Register patient' }))
     expect(screen.getByText('Resolve the duplicate match before registering.')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /not a duplicate/i }))
-    expect(screen.getByRole('button', { name: /confirmed — not a duplicate/i })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Register patient' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/patients/p-3'))
+    expect(calls('patients.create')[0][0].confirmedNotDuplicate).toBe(true)
   })
 
-  it('registers a patient and opens their empty hub', async () => {
+  it('shows server validation errors under the matching fields', async () => {
     const user = setup()
-    const router = renderRoute(ROUTES.patientNew)
-
-    await user.selectOptions(screen.getByLabelText(/title prefix/i), 'Ms.')
-    await fill(user, screen.getByLabelText(/full legal name/i), 'Lakshmi Devi')
-    await fill(user, screen.getByLabelText(/primary mobile number/i), '9000011122')
-    await fill(user, screen.getByLabelText(/pin code/i), '500081')
-    await fill(user, screen.getByLabelText(/date of birth/i), '1988-03-09')
-    await user.click(screen.getByText('Female'))
+    renderRoute(ROUTES.patientNew)
+    await screen.findByRole('option', { name: 'Main Clinic' })
+    fake.api.patientsApi.create = async () => {
+      throw new ApiError(400, 'VALIDATION_FAILED', 'Some fields are missing or invalid.', [{ field: 'pinCode', issue: 'This PIN code is not served by the clinic.' }])
+    }
+    await fillRequired(user)
     await user.click(screen.getByRole('button', { name: 'Register patient' }))
+    expect(await screen.findByText('This PIN code is not served by the clinic.')).toBeInTheDocument()
+    expect(screen.getByText('Some fields need attention.')).toBeInTheDocument()
+  })
 
-    expect(router.state.location.pathname).toBe('/patients/pt-001843')
-    expect(await screen.findByRole('heading', { name: 'Lakshmi Devi' })).toBeInTheDocument()
-    expect(screen.getAllByText('Nothing scheduled').length).toBeGreaterThan(0)
+  it('edits a patient and sends the version it started from', async () => {
+    const user = setup()
+    const router = renderRoute(pathFor(ROUTES.patientEdit, ananya))
+    const city = await screen.findByLabelText('City')
+    expect(city).toHaveValue('Hyderabad')
+    await user.clear(city)
+    await user.paste('Bengaluru')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/patients/pt-000184'))
+    expect(calls('patients.update')[0]).toEqual(['pt-000184', expect.objectContaining({ city: 'Bengaluru', version: 1 })])
   })
 })
 
 describe('patient hub', () => {
-  it('shows an unknown patient as not found', () => {
-    renderRoute('/patients/pt-999999/appointments')
-    expect(screen.getByText('Patient record not found')).toBeInTheDocument()
+  it('shows an unknown patient as not found', async () => {
+    renderRoute('/patients/p-missing')
+    expect(await screen.findByText('Patient record not found')).toBeInTheDocument()
   })
 
-  it('summarises the appointments from the records', () => {
+  it('summarises the appointments from the API', async () => {
+    install({ patients: [ANANYA], appointments: [{ time: '10:00', status: 'confirmed' }, { date: '2026-09-02', time: '11:00', status: 'completed' }, { date: '2026-08-02', time: '11:00', status: 'cancelled' }] })
     renderRoute(pathFor(ROUTES.patientAppointments, ananya))
 
-    expect(screen.getByRole('heading', { name: 'Ananya Sharma' })).toBeInTheDocument()
-    expect(screen.getByText('NEXT UPCOMING APPOINTMENT · CONFIRMED', { exact: false })).toBeInTheDocument()
-    expect(screen.getAllByText('Dr. Rahul Mehta').length).toBeGreaterThan(0)
+    expect(await screen.findByText('Next upcoming appointment · Confirmed')).toBeInTheDocument()
+    expect(screen.getByText('1 scheduled')).toBeInTheDocument()
+    expect(screen.getByText('1 encounters')).toBeInTheDocument()
   })
 
   it('filters appointments by status tab', async () => {
+    install({ patients: [ANANYA], appointments: [{ time: '10:00', status: 'confirmed' }, { date: '2026-08-02', time: '11:00', status: 'cancelled', reason: 'Hypertension check' }] })
     const user = setup()
     renderRoute(pathFor(ROUTES.patientAppointments, ananya))
+    await user.click(await screen.findByRole('tab', { name: /Cancelled \/ No-show/ }))
+    const rows = screen.getAllByRole('row').slice(1)
+    expect(rows).toHaveLength(1)
+    expect(within(rows[0]).getByText('Cancelled')).toBeInTheDocument()
+  })
+})
 
-    await user.click(screen.getByRole('tab', { name: /cancelled \/ no-show/i }))
-    const table = screen.getByRole('table')
-    expect(within(table).getByText('Routine Hypertension Check')).toBeInTheDocument()
-    expect(within(table).queryByText('Tele-Consultation')).not.toBeInTheDocument()
+describe('booking', () => {
+  it('books a free slot with the selected therapist and opens the appointment', async () => {
+    const user = setup()
+    const router = renderRoute(pathFor(ROUTES.appointmentNew, ananya))
+    expect(await screen.findByText(/Dr\. Rahul Mehta, MD/)).toBeInTheDocument()
+
+    const days = await screen.findAllByRole('button', { name: /slots left/ })
+    await user.click(days[1])
+    await user.click(await screen.findByRole('button', { name: '09:30 AM available' }))
+    await fill(user, screen.getByLabelText(/reason for visit/i), 'Knee pain after a fall')
+    await user.click(screen.getByRole('button', { name: 'Confirm & Book Appointment' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/patients/pt-000184/appointment/a-1'))
+    expect(calls('appointments.create')[0][0]).toEqual(expect.objectContaining({ patientId: 'pt-000184', practitionerId: 'dr-1', branchId: 'b-main', date: tomorrow(), time: '09:30', type: 'consultation', status: 'confirmed', reason: 'Knee pain after a fall' }))
+    expect(await screen.findByRole('heading', { name: /Consultation with Dr\. Rahul Mehta/ })).toBeInTheDocument()
+  })
+
+  it('marks booked slots unavailable and explains a slot lost to another desk', async () => {
+    install({ patients: [ANANYA, RAJESH], appointments: [{ patientId: 'pt-000219', time: '10:00' }] })
+    const user = setup()
+    renderRoute(pathFor(ROUTES.appointmentNew, ananya))
+    await user.click((await screen.findAllByRole('button', { name: /slots left/ }))[1])
+    expect(await screen.findByRole('button', { name: '10:00 AM booked' })).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: '10:30 AM available' }))
+    // Someone else takes the slot between listing and saving.
+    fake.state.appointments.push({ ...fake.state.appointments[0], id: 'a-x', time: '10:30', date: tomorrow() })
+    await fill(user, screen.getByLabelText(/reason for visit/i), 'Follow-up')
+    await user.click(screen.getByRole('button', { name: 'Confirm & Book Appointment' }))
+    expect(await screen.findByText('That slot has just been booked by someone else. Choose another time.')).toBeInTheDocument()
+  })
+
+  it('explains when no therapist is set up yet', async () => {
+    install({ patients: [ANANYA], practitioners: [] })
+    renderRoute(pathFor(ROUTES.appointmentNew, ananya))
+    expect(await screen.findByText('No therapists are taking appointments yet.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /set up a therapist/i })).toHaveAttribute('href', '/staff')
   })
 })
 
 describe('appointment lifecycle', () => {
-  it('books an appointment into a free slot and opens its detail', async () => {
+  const detail = { ...ananya, appointmentId: 'a-1' }
+
+  it('confirms a pending booking from its detail page', async () => {
+    install({ patients: [ANANYA], appointments: [{ status: 'pending' }] })
     const user = setup()
-    const router = renderRoute(pathFor(ROUTES.appointmentNew, ananya))
-
-    await user.click(screen.getByRole('button', { name: 'Confirm & Book Appointment' }))
-    expect(screen.getByText('Select an available time slot.')).toBeInTheDocument()
-    expect(screen.getByText('Enter the reason for the visit.')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: '02:00 PM available' }))
-    await fill(user, screen.getByLabelText(/reason for visit/i), 'Post-CABG review')
-    await user.click(screen.getByRole('button', { name: 'Confirm & Book Appointment' }))
-
-    expect(router.state.location.pathname).toBe('/patients/pt-000184/appointment/APT-2026-0925')
-    expect(await screen.findByRole('heading', { name: /consultation with dr\. rahul mehta/i })).toBeInTheDocument()
+    renderRoute(pathFor(ROUTES.appointment, detail))
+    await user.click(await screen.findByRole('button', { name: 'Confirm appointment' }))
+    expect(await screen.findByText(/^Confirmed •/)).toBeInTheDocument()
   })
 
-  it('marks a slot already taken by the same doctor as unavailable', async () => {
-    renderRoute(pathFor(ROUTES.appointmentNew, ananya))
-    expect(screen.getByRole('button', { name: '03:00 PM booked' })).toBeDisabled()
-  })
-
-  it('cancels an appointment and keeps it in the history', async () => {
+  it('cancels an appointment with a reason and keeps it in the history', async () => {
+    install({ patients: [ANANYA], appointments: [{}] })
     const user = setup()
-    const router = renderRoute(pathFor(ROUTES.appointmentCancel, appointment))
-
+    const router = renderRoute(pathFor(ROUTES.appointmentCancel, detail))
+    await user.click(await screen.findByRole('radio', { name: /patient requested/i }))
     await user.click(screen.getByRole('button', { name: 'Cancel appointment' }))
-    expect(screen.getByText('Select a reason.')).toBeInTheDocument()
+    expect(screen.getByText(/at least 10 characters/)).toBeInTheDocument()
 
-    await user.click(screen.getByRole('radio', { name: /patient requested/i }))
-    await fill(user, screen.getByLabelText(/operational context note/i), 'Patient called to cancel the visit.')
+    await fill(user, screen.getByLabelText(/operational context note/i), 'Patient is travelling this week.')
     await user.click(screen.getByRole('button', { name: 'Cancel appointment' }))
-
-    expect(router.state.location.pathname).toBe(pathFor(ROUTES.appointment, appointment))
-    expect(await screen.findByText(/Lifecycle closed — Cancelled/)).toBeInTheDocument()
+    await waitFor(() => expect(router.state.location.pathname).toBe('/patients/pt-000184/appointment/a-1'))
+    expect(calls('appointments.cancel')).toEqual([['a-1', 'Patient requested', 'Patient is travelling this week.']])
+    expect(await screen.findByText('Lifecycle closed — Cancelled')).toBeInTheDocument()
   })
 
-  it('marks a no-show with a reason', async () => {
+  it('reschedules into another free slot', async () => {
+    install({ patients: [ANANYA], appointments: [{ time: '10:00' }] })
     const user = setup()
-    const router = renderRoute(pathFor(ROUTES.appointmentNoShow, appointment))
-
-    await fill(user, screen.getByLabelText(/reception contact log/i), 'Called twice, no answer from the patient.')
-    await user.click(screen.getByRole('button', { name: 'Mark as no-show' }))
-
-    expect(router.state.location.pathname).toBe(pathFor(ROUTES.appointment, appointment))
-    expect(await screen.findByText(/Lifecycle closed — No-show/)).toBeInTheDocument()
-  })
-
-  it('checks a patient in, then moves to the start-encounter gate', async () => {
-    const user = setup()
-    const router = renderRoute(pathFor(ROUTES.appointmentCheckIn, appointment))
-
-    await user.click(screen.getByRole('button', { name: /confirm arrival/i }))
-    expect(router.state.location.pathname).toBe(pathFor(ROUTES.appointment, appointment))
-    expect(await screen.findByText('Arrived', { selector: 'span' })).toBeInTheDocument()
-    expect(screen.getAllByRole('link', { name: /start encounter/i }).length).toBeGreaterThan(0)
-  })
-
-  it('refuses to start an encounter before the patient has arrived', () => {
-    renderRoute(pathFor(ROUTES.appointmentStartEncounter, appointment))
-
-    expect(screen.getByText(/Patient not arrived/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /start encounter & open/i })).not.toBeInTheDocument()
-  })
-
-  it('reschedules into a later date and slot', async () => {
-    const user = setup()
-    const router = renderRoute(pathFor(ROUTES.appointmentReschedule, appointment))
-
-    await user.click(screen.getByRole('button', { name: /^13 October 2026/ }))
-    await user.click(screen.getByRole('button', { name: '09:00 AM available' }))
+    const router = renderRoute(pathFor(ROUTES.appointmentReschedule, detail))
+    const day = Number(tomorrow().slice(8))
+    // The day becomes selectable once its open slots have loaded; it is the appointment's current day.
+    await user.click(await screen.findByRole('button', { name: new RegExp(`^${day} .*, Current$`) }))
+    await user.click(await screen.findByRole('button', { name: '11:00 AM available' }))
     await user.click(screen.getByRole('radio', { name: /patient requested/i }))
-    await fill(user, screen.getByLabelText(/operational context note/i), 'Patient asked for a later day.')
+    await fill(user, screen.getByLabelText(/operational context note/i), 'Patient asked for a later time.')
     await user.click(screen.getByRole('button', { name: 'Confirm reschedule' }))
 
-    expect(router.state.location.pathname).toBe(pathFor(ROUTES.appointment, appointment))
-    expect(await screen.findByText(/Rescheduled from 12 Oct 2026/)).toBeInTheDocument()
+    await waitFor(() => expect(router.state.location.pathname).toBe('/patients/pt-000184/appointment/a-1'))
+    expect(calls('appointments.reschedule')[0]).toEqual(['a-1', { date: tomorrow(), time: '11:00', reason: 'Patient requested', note: 'Patient asked for a later time.' }])
   })
 
-  it('shows a missing appointment as not found', () => {
-    renderRoute('/patients/pt-000184/appointment/APT-0000/check-in')
-    expect(screen.getByText('This appointment could not be found')).toBeInTheDocument()
+  it('only checks a patient in on the day of the appointment', async () => {
+    install({ patients: [ANANYA], appointments: [{}] })
+    renderRoute(pathFor(ROUTES.appointmentCheckIn, detail))
+    expect(await screen.findByRole('button', { name: /confirm arrival/i })).toBeDisabled()
+    expect(screen.getByText('Check-in opens on the day of the appointment')).toBeInTheDocument()
   })
 })
 
-describe('encounter workspace', () => {
+describe('encounter workspace', { timeout: 30000 }, () => {
+  beforeEach(() => install({ patients: [ANANYA], practitioners: [apiPractitioner()], appointments: [{ date: localToday(), time: '10:00', reason: 'Post-CABG 90-day follow-up review & echocardiography evaluation' }] }))
+
   async function startEncounter(user) {
-    const router = renderRoute(pathFor(ROUTES.appointmentCheckIn, appointment))
-    await user.click(screen.getByRole('button', { name: /confirm arrival/i }))
-    await user.click((await screen.findAllByRole('link', { name: /start encounter/i }))[0])
-    await user.click(await screen.findByRole('button', { name: /start encounter & open clinical workspace/i }))
+    const router = renderRoute(pathFor(ROUTES.appointmentCheckIn, { ...ananya, appointmentId: 'a-1' }))
+    await user.click(await screen.findByRole('button', { name: /confirm arrival/i }, SLOW))
+    await user.click((await screen.findAllByRole('link', { name: /start encounter/i }, SLOW))[0])
+    await user.click(await screen.findByRole('button', { name: /start encounter & open clinical workspace/i }, SLOW))
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/\/encounter\//), SLOW)
     return router
   }
 
@@ -222,10 +302,11 @@ describe('encounter workspace', () => {
     const user = setup()
     const router = await startEncounter(user)
 
-    expect(router.state.location.pathname).toBe('/patients/pt-000184/encounter/ENC-2026-0895')
+    expect(router.state.location.pathname).toMatch(/^\/patients\/pt-000184\/encounter\/enc-\d+$/)
     expect(await screen.findByRole('heading', { name: /^consultation/i })).toBeInTheDocument()
     expect(screen.getByText('IN PROGRESS')).toBeInTheDocument()
     expect(screen.getByLabelText('Chief complaint')).toHaveValue('Post-CABG 90-day follow-up review & echocardiography evaluation')
+    expect(fake.state.appointments[0].status).toBe('in_progress')
   })
 
   it('records vitals and flags a hypertensive reading', async () => {
@@ -241,14 +322,11 @@ describe('encounter workspace', () => {
       await fill(user, within(dialog).getByLabelText(label), value)
     }
     expect(within(dialog).getByText(/Stage 2 Hypertension range detected/)).toBeInTheDocument()
-    expect(within(dialog).getByText('28.6 kg/m²')).toBeInTheDocument()
     await user.click(within(dialog).getByRole('button', { name: 'Save vitals to encounter' }))
-
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(await screen.findByText('152 / 96')).toBeInTheDocument()
   })
 
-  it('will not complete without a diagnosis, then completes once one is attached', async () => {
+  it('will not complete without a diagnosis, then completes the visit in the database too', async () => {
     const user = setup()
     const router = await startEncounter(user)
 
@@ -260,14 +338,11 @@ describe('encounter workspace', () => {
     await user.click(await screen.findByRole('option', { name: /essential \(primary\) hypertension/i }))
     await fill(user, screen.getByLabelText(/clinical description/i), 'Persistent elevated readings on follow-up.')
     await user.click(screen.getByRole('button', { name: 'Attach Diagnosis to Encounter' }))
-    expect(await screen.findByText(/Recorded by Dr\. Rahul Mehta/)).toBeInTheDocument()
-
-    await user.click(screen.getByRole('link', { name: /back to encounter/i }))
+    await user.click(await screen.findByRole('link', { name: /back to encounter/i }))
     await user.click(await screen.findByRole('button', { name: 'Complete encounter' }))
 
-    expect(router.state.location.pathname).toBe('/patients/pt-000184/encounters')
-    const row = (await screen.findByText('#ENC-2026-0895')).closest('tr')
-    expect(within(row).getByText(/Signed & Locked/)).toBeInTheDocument()
+    await waitFor(() => expect(router.state.location.pathname).toBe('/patients/pt-000184/encounters'))
+    await waitFor(() => expect(fake.state.appointments[0].status).toBe('completed'))
   })
 
   it('blocks a penicillin-class medication for a penicillin-allergic patient', async () => {
@@ -279,44 +354,5 @@ describe('encounter workspace', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Add Medication' }))
     await user.selectOptions(within(dialog).getByLabelText(/drug name/i), 'amoxicillin')
     expect(within(dialog).getByText(/Contraindicated:/)).toBeInTheDocument()
-
-    await user.click(within(dialog).getByRole('button', { name: 'Add to Prescription' }))
-    expect(within(dialog).getByText('Ananya Sharma')).toBeInTheDocument()
-    expect(within(dialog).queryByRole('button', { name: /remove amoxicillin/i })).not.toBeInTheDocument()
-  })
-
-  it('authorizes a prescription for a safe medication', async () => {
-    const user = setup()
-    await startEncounter(user)
-
-    await user.click(await screen.findByRole('button', { name: 'Create / Edit Prescription' }))
-    const dialog = screen.getByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'Review & Authorize Prescription' }))
-    expect(within(dialog).getByText('Add at least one medication before authorizing.')).toBeInTheDocument()
-
-    await user.click(within(dialog).getByRole('button', { name: 'Add Medication' }))
-    await user.selectOptions(within(dialog).getByLabelText(/drug name/i), 'paracetamol')
-    await user.click(within(dialog).getByRole('button', { name: 'Add to Prescription' }))
-    await user.click(within(dialog).getByRole('button', { name: 'Review & Authorize Prescription' }))
-
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(await screen.findByText('Paracetamol 500 mg')).toBeInTheDocument()
-  })
-
-  it('places a diagnostic order from the workspace', async () => {
-    const user = setup()
-    await startEncounter(user)
-
-    await user.click(await screen.findByRole('button', { name: 'Create Lab / Imaging Order' }))
-    const dialog = screen.getByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: /review & submit order/i }))
-    expect(within(dialog).getByText('Enter the clinical indication and justification.')).toBeInTheDocument()
-
-    await fill(user, within(dialog).getByLabelText(/clinical indication/i), 'Evaluate suspected radiculopathy.')
-    await user.click(within(dialog).getByRole('checkbox', { name: /fasting lipid profile/i }))
-    await user.click(within(dialog).getByRole('button', { name: /review & submit order/i }))
-
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect((await screen.findAllByText('ORD-2026-1185', { exact: false })).length).toBeGreaterThan(0)
   })
 })

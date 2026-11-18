@@ -9,174 +9,152 @@ import Panel from '../../../components/workspace/Panel'
 import StatusPill from '../../../components/workspace/StatusPill'
 import WorkspacePage from '../../../components/workspace/WorkspacePage'
 import { pathFor, ROUTES } from '../../../config/routes'
+import { useApiResource } from '../../../hooks/useApiResource'
 import { cn } from '../../../lib/cn'
+import { exportCsv } from '../../../lib/exportCsv'
+import { useAuth } from '../../auth/context/useAuth'
+import LoadingState from '../../patients/components/LoadingState'
+import { localToday } from '../../patients/format'
+import { toLedgerRow, toPersonView } from '../adapters'
+import { staffApi } from '../api'
 import { AttendanceDetailDrawer, EditAttendanceDrawer, RecordAttendanceDrawer } from '../components/AttendanceDrawers'
 import PersonBanner from '../components/PersonBanner'
 import StaffNotFound from '../components/StaffNotFound'
-import { ANANYA as ananya, ATTENDANCE_RECORDS, ATTENDANCE_SUMMARY } from '../data/ananya'
 import { attendanceTone } from '../statusTones'
+import { formatLedgerDate } from '../time'
 
-const FACILITIES = ['Main Surgical Pavilion', 'Kondapur Satellite Clinic']
-const SUMMARY_KEYS = { Present: 'Present', Late: 'Late', Absent: 'Absent' }
+const SUMMARY = [['Present', 'present', 'text-brand'], ['Late', 'late', 'text-amber-700'], ['Absent', 'absent', 'text-danger'], ['Leave', 'leave', 'text-brand'], ['Unavailable', 'unavailable', 'text-outline']]
+const rowTint = (record) => (record.status === 'Late' ? 'bg-amber-50/50' : record.status === 'Absent' ? 'bg-red-50/50' : '')
 
-const countByStatus = (records) =>
-  records.reduce((counts, record) => {
-    const key = record.status.startsWith('Leave') ? 'Leave' : SUMMARY_KEYS[record.status]
-    if (key) counts[key] = (counts[key] ?? 0) + 1
-    return counts
-  }, {})
-
-const SEED_COUNTS = countByStatus(ATTENDANCE_RECORDS)
-
-const rowTint = (record) => (record.status === 'Late' ? 'bg-amber-50/50' : record.status === 'Absent' ? 'bg-red-50/50' : record.today ? 'bg-teal-50/40' : '')
+function shiftMonth(month, delta) {
+  const [year, value] = month.split('-').map(Number)
+  const moved = new Date(year, value - 1 + delta, 1)
+  return `${moved.getFullYear()}-${String(moved.getMonth() + 1).padStart(2, '0')}`
+}
+const monthLabel = (month) => new Date(`${month}-01T00:00:00`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
 
 export default function AttendancePage() {
   const { staffId } = useParams()
-  const [records, setRecords] = useState(ATTENDANCE_RECORDS)
-  const [facility, setFacility] = useState(FACILITIES[0])
+  const person = useApiResource(() => staffApi.get(staffId), staffId)
+  if (person.loading && !person.data) return <WorkspacePage><LoadingState label="Loading attendance…" /></WorkspacePage>
+  if (!person.data) return <StaffNotFound title="Attendance & Work Records" />
+  return <Ledger record={person.data} />
+}
+
+function Ledger({ record }) {
+  const { can } = useAuth()
+  const person = toPersonView(record)
+  const branches = record.branches
+  const [month, setMonth] = useState(localToday().slice(0, 7))
+  const [branchId, setBranchId] = useState(branches.find((branch) => branch.isPrimary)?.id ?? branches[0]?.id ?? '')
   const [statusFilter, setStatusFilter] = useState('')
-  const [sourceFilter, setSourceFilter] = useState('')
-  // Only one overlay is open at a time: the record drawer, a record's detail, or its edit form.
   const [overlay, setOverlay] = useState(null)
+  const data = useApiResource(() => staffApi.attendance(record.id, month, branchId || undefined), `${record.id}:${month}:${branchId}`)
 
-  if (staffId !== ananya.id) return <StaffNotFound title="Attendance & Work Records" reason="Attendance data is connected for Dr. Ananya Rao only in this build." />
+  const memberPath = pathFor(ROUTES.staffMember, { staffId: record.id })
+  const rows = (data.data?.records ?? []).map(toLedgerRow)
+  const visible = rows.filter((row) => !statusFilter || row.status === statusFilter)
+  const counts = data.data?.counts ?? {}
+  const detail = overlay?.id ? rows.find((row) => row.id === overlay.id) : null
+  const branchName = branches.find((branch) => branch.id === branchId)?.name ?? 'this branch'
+  const close = () => setOverlay(null)
 
-  const memberPath = pathFor(ROUTES.staffMember, { staffId })
-  const closeOverlay = () => setOverlay(null)
-  const counts = countByStatus(records)
-  const summary = ATTENDANCE_SUMMARY.map((tile) => {
-    const delta = (counts[tile.label] ?? 0) - (SEED_COUNTS[tile.label] ?? 0)
-    return delta ? { ...tile, value: String(Number(tile.value) + delta) } : tile
-  })
-
-  const sources = [...new Set(ATTENDANCE_RECORDS.map((record) => record.source))]
-  const statuses = [...new Set(ATTENDANCE_RECORDS.map((record) => record.status))]
-  const visible = records.filter(
-    (record) =>
-      facility === FACILITIES[0] &&
-      (!statusFilter || record.status === statusFilter) &&
-      (!sourceFilter || record.source === sourceFilter),
-  )
-  const detailRecord = overlay?.type === 'detail' || overlay?.type === 'edit' ? records.find((record) => record.id === overlay.id) : null
-
-  const saveCorrection = (updated) => {
-    setRecords((current) => current.map((record) => (record.id === updated.id ? updated : record)))
-    setOverlay({ type: 'detail', id: updated.id })
+  const record_ = async (body) => {
+    await staffApi.recordAttendance(record.id, body)
+    data.reload()
   }
+  const correct = async (row, body) => {
+    await staffApi.correctAttendance(record.id, row.id, body)
+    data.reload()
+    setOverlay({ type: 'detail', id: row.id })
+  }
+  const download = () => exportCsv(`attendance-${record.staffCode}-${month}.csv`, [['Date', 'Branch', 'Status', 'Arrival', 'Recorded by', 'Corrections'], ...rows.map((row) => [row.isoDate, row.facility, row.status, row.time, row.by, row.corrections.length])])
 
   return (
     <WorkspacePage>
       <nav aria-label="Breadcrumb" className="mb-2 flex flex-wrap items-center gap-1.5 text-xs text-outline">
         <Link to={memberPath} className="inline-flex items-center gap-1 hover:text-on-surface"><ArrowLeft className="size-3" aria-hidden="true" />Back to Staff Details</Link>/
         <Link to={ROUTES.staffDirectory} className="hover:text-on-surface">Staff &amp; Doctors</Link>/
-        <Link to={memberPath} className="hover:text-on-surface">Dr. Ananya Rao ({ananya.staffCode})</Link>/
+        <Link to={memberPath} className="hover:text-on-surface">{person.name} ({person.staffCode})</Link>/
         <span className="font-medium text-on-surface">Attendance &amp; Work Records</span>
       </nav>
 
       <PageIntro
-        title={
-          <span className="flex flex-wrap items-center gap-3">
-            Attendance &amp; Work Records
-            <StatusPill tone="success" dot className="text-[11px]">Active Master Record</StatusPill>
-          </span>
-        }
-        description="View and manage this person's actual attendance and work events. Operating independently from planned OPD rosters and payroll ledgers."
+        title={<span className="flex flex-wrap items-center gap-3">Attendance &amp; Work Records<StatusPill tone={person.status === 'Active' ? 'success' : 'neutral'} dot className="text-[11px]">{person.status}</StatusPill></span>}
+        description="Actual attendance for this person, recorded per branch and day. Independent from OPD schedules and payroll."
         actions={
           <>
-            <ActionButton icon={CalendarDays} to={pathFor(ROUTES.staffSchedule, { staffId })}>View OPD Schedule</ActionButton>
-            <ActionButton to={pathFor(ROUTES.staffLeave, { staffId })}>View Leave &amp; Availability</ActionButton>
-            <ActionButton variant="primary" icon={Plus} onClick={() => setOverlay({ type: 'record' })}>Record Attendance</ActionButton>
+            <ActionButton icon={CalendarDays} to={pathFor(ROUTES.staffSchedule, { staffId: record.id })}>View OPD Schedule</ActionButton>
+            <ActionButton to={pathFor(ROUTES.staffLeave, { staffId: record.id })}>View Leave &amp; Availability</ActionButton>
+            {can('staff.attendance') && <ActionButton variant="primary" icon={Plus} disabled={branches.length === 0} title={branches.length ? undefined : 'Assign a branch first'} onClick={() => setOverlay({ type: 'record' })}>Record Attendance</ActionButton>}
           </>
         }
       />
 
-      <PersonBanner
-        person={{ ...ananya, shortName: ananya.name }}
-        subtitle="Interventional Cardiology"
-        facts={[
-          ['Primary dept.', ananya.department],
-          ['Current context', 'Main Surgical Pavilion (Flagship)'],
-          ['Secondary', 'Kondapur Satellite (8 hrs/wk)'],
-        ]}
-      />
+      <PersonBanner person={person} subtitle={person.role} facts={[['Primary dept.', person.department], ['Primary branch', person.primaryBranch ?? 'Not assigned'], ['Branches', String(branches.length)]]} />
 
-      <Panel title="Attendance operational summary" action={<span className="text-[11px] text-outline">OCTOBER 2026 MTD · Grace window 15m · FIPS-140 biometric sync</span>} className="mb-5">
+      {branches.length === 0 && <InfoNote tone="warning" className="mb-5">Assign this person to a branch before recording attendance. <Link to={pathFor(ROUTES.staffBranches, { staffId: record.id })} className="font-semibold text-brand hover:underline">Assign branches →</Link></InfoNote>}
+
+      <Panel title="Attendance summary" action={<span className="text-[11px] text-outline">{monthLabel(month).toUpperCase()} · {branchName}</span>} className="mb-5">
         <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {summary.map((tile) => (
-            <div key={tile.label} className="rounded-md border border-slate-200 bg-surface-lowest p-3">
-              <dt className="text-[10px] font-semibold tracking-wide text-outline uppercase">{tile.label}</dt>
-              <dd className="text-xl font-bold text-on-surface">{tile.value} <span className="text-xs font-normal text-on-surface-variant">{tile.value === '1' ? 'Day' : 'Days'}</span></dd>
-              <p className={cn('text-[11px] font-medium', tile.tone)}>{tile.hint}</p>
+          {SUMMARY.map(([label, key, tone]) => (
+            <div key={label} className="rounded-md border border-slate-200 bg-surface-lowest p-3">
+              <dt className="text-[10px] font-semibold tracking-wide text-outline uppercase">{label}</dt>
+              <dd className={cn('text-xl font-bold', tone)}>{counts[key] ?? 0} <span className="text-xs font-normal text-on-surface-variant">{counts[key] === 1 ? 'Day' : 'Days'}</span></dd>
             </div>
           ))}
         </dl>
-        <InfoNote className="mt-4">Summary reflects actual attendance logs recorded at Main Surgical Pavilion. Data does not alter recurring OPD schedules or prospective booking rules.</InfoNote>
       </Panel>
 
       <div className="mb-5 rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div role="tablist" aria-label="Facility" className="flex rounded-md border border-slate-200 bg-surface-low p-0.5">
-            {FACILITIES.map((name) => (
-              <button key={name} type="button" role="tab" aria-selected={facility === name} onClick={() => setFacility(name)} className={cn('rounded px-3 py-1.5 text-xs font-medium', facility === name ? 'bg-white text-on-surface shadow-sm' : 'text-on-surface-variant')}>
-                {name}
+            {branches.map((branch) => (
+              <button key={branch.id} type="button" role="tab" aria-selected={branchId === branch.id} onClick={() => setBranchId(branch.id)} className={cn('rounded px-3 py-1.5 text-xs font-medium', branchId === branch.id ? 'bg-white text-on-surface shadow-sm' : 'text-on-surface-variant')}>
+                {branch.name}
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-2 text-xs">
-            <span className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1.5 font-medium"><ChevronLeft className="size-3" aria-hidden="true" />October 2026<ChevronRight className="size-3" aria-hidden="true" /></span>
+          <div className="flex items-center gap-1 rounded-md border border-slate-200 px-1 py-1 text-xs font-medium">
+            <button type="button" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))} className="rounded p-1 hover:bg-surface-low"><ChevronLeft className="size-3" aria-hidden="true" /></button>
+            {monthLabel(month)}
+            <button type="button" aria-label="Next month" disabled={month >= localToday().slice(0, 7)} onClick={() => setMonth(shiftMonth(month, 1))} className="rounded p-1 hover:bg-surface-low disabled:opacity-40"><ChevronRight className="size-3" aria-hidden="true" /></button>
           </div>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-on-surface-variant">
-          Status: <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter} allLabel={`All Statuses (${records.length})`} options={statuses} />
-          Source: <FilterSelect label="Source" value={sourceFilter} onChange={setSourceFilter} allLabel="All Sources" options={sources} />
+          Status: <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter} allLabel={`All Statuses (${rows.length})`} options={SUMMARY.map(([label]) => label)} />
         </div>
-        <p className="mt-2 text-[11px] text-outline">Showing records for {facility} only. Multi-branch attendance is not combined.</p>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
-          <h2 className="flex items-center gap-2 text-base font-semibold text-on-surface">Recorded daily attendance ledger <StatusPill>{records.length} events logged</StatusPill></h2>
-          <ActionButton size="sm" icon={Download}>Export Audit CSV</ActionButton>
+          <h2 className="flex items-center gap-2 text-base font-semibold text-on-surface">Recorded daily attendance ledger <StatusPill>{rows.length} records</StatusPill></h2>
+          <ActionButton size="sm" icon={Download} onClick={download} disabled={rows.length === 0}>Export CSV</ActionButton>
         </div>
-        <Table headings={['Date', 'Facility', 'Scheduled context', 'Attendance status', 'Recorded time', 'Source', 'Recorded by', 'Actions']} minWidth={1060} empty={visible.length ? null : `No attendance records for ${facility} in the sample data.`}>
-          {visible.map((record) => (
-            <Row key={record.id}>
-              <Cell className={cn('font-mono font-semibold', rowTint(record))}>
-                {record.today && <span className="mr-1.5 text-brand">●</span>}
-                {record.date}
-                {record.today && <StatusPill tone="success" className="ml-2">Today</StatusPill>}
-              </Cell>
-              <Cell className={cn(record.facilityMuted && 'text-outline italic', rowTint(record))}>{record.facility}</Cell>
-              <Cell className={cn('text-xs', rowTint(record))}>{record.context}</Cell>
-              <Cell className={rowTint(record)}><StatusPill tone={attendanceTone(record.status)}>{record.status}</StatusPill></Cell>
-              <Cell className={cn('font-mono text-xs', rowTint(record))}>{record.time} {record.timeNote && <span className="text-amber-700">({record.timeNote})</span>}</Cell>
-              <Cell className={cn('text-xs', rowTint(record))}>{record.source}</Cell>
-              <Cell className={cn('text-xs text-on-surface-variant', rowTint(record))}>{record.by}</Cell>
-              <Cell className={rowTint(record)}>
+        <Table headings={['Date', 'Facility', 'Attendance status', 'Arrival', 'Source', 'Recorded by', 'Actions']} minWidth={960} empty={visible.length ? null : data.loading ? 'Loading…' : `No attendance recorded at ${branchName} in ${monthLabel(month)}.`}>
+          {visible.map((row) => (
+            <Row key={row.id}>
+              <Cell className={cn('font-mono font-semibold', rowTint(row))}>{formatLedgerDate(row.isoDate)}</Cell>
+              <Cell className={rowTint(row)}>{row.facility}</Cell>
+              <Cell className={rowTint(row)}><StatusPill tone={attendanceTone(row.status)}>{row.status}</StatusPill>{row.corrections.length > 0 && <span className="ml-2 text-[10px] text-outline">Corrected</span>}</Cell>
+              <Cell className={cn('font-mono text-xs', rowTint(row))}>{row.time}</Cell>
+              <Cell className={cn('text-xs', rowTint(row))}>{row.source}</Cell>
+              <Cell className={cn('text-xs text-on-surface-variant', rowTint(row))}>{row.by}</Cell>
+              <Cell className={rowTint(row)}>
                 <span className="flex items-center gap-3 text-xs font-semibold text-brand">
-                  <button type="button" onClick={() => setOverlay({ type: 'detail', id: record.id })} aria-label={`View detail for ${record.date}`} className="hover:underline">View Detail</button>
-                  <button type="button" onClick={() => setOverlay({ type: 'edit', id: record.id })} aria-label={`Correct ${record.date}`} className={cn('hover:underline', record.status === 'Absent' ? 'text-danger' : 'text-on-surface-variant')}>Correct</button>
+                  <button type="button" onClick={() => setOverlay({ type: 'detail', id: row.id })} aria-label={`View detail for ${row.isoDate}`} className="hover:underline">View Detail</button>
+                  {can('staff.attendance') && <button type="button" onClick={() => setOverlay({ type: 'edit', id: row.id })} aria-label={`Correct ${row.isoDate}`} className="text-on-surface hover:underline">Correct</button>}
                 </span>
               </Cell>
             </Row>
           ))}
         </Table>
-        <TableFooter summary={`Showing ${visible.length} events for October 2026`}>
-          <nav aria-label="Pagination" className="flex items-center gap-2">
-            <ActionButton size="sm" disabled>Previous</ActionButton>
-            <span className="text-xs">Page 1 of 1</span>
-            <ActionButton size="sm" disabled>Next</ActionButton>
-          </nav>
-        </TableFooter>
+        <TableFooter summary={`Showing ${visible.length} records for ${monthLabel(month)}`} />
       </div>
 
-      <RecordAttendanceDrawer open={overlay?.type === 'record'} onClose={closeOverlay} onSave={(record) => setRecords((current) => [record, ...current])} />
-      {overlay?.type === 'detail' && detailRecord && (
-        <AttendanceDetailDrawer record={detailRecord} onClose={closeOverlay} onCorrect={(record) => setOverlay({ type: 'edit', id: record.id })} />
-      )}
-      {overlay?.type === 'edit' && detailRecord && (
-        <EditAttendanceDrawer key={detailRecord.id} record={detailRecord} onClose={closeOverlay} onSave={saveCorrection} />
-      )}
+      {overlay?.type === 'record' && <RecordAttendanceDrawer open person={person} branches={branches.filter((branch) => !branchId || branch.id === branchId).concat(branches.filter((branch) => branchId && branch.id !== branchId))} onClose={close} onSave={record_} />}
+      {overlay?.type === 'detail' && detail && <AttendanceDetailDrawer record={detail} person={person} staffId={record.id} canCorrect={can('staff.attendance')} onClose={close} onCorrect={(row) => setOverlay({ type: 'edit', id: row.id })} />}
+      {overlay?.type === 'edit' && detail && <EditAttendanceDrawer key={detail.id} record={detail} person={person} onClose={close} onSave={correct} />}
     </WorkspacePage>
   )
 }

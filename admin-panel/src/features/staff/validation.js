@@ -22,12 +22,10 @@ export function validateBranchAssignment({ selectedIds }) {
   return selectedIds.length === 0 ? { branches: 'Select at least one facility to deploy to.' } : {}
 }
 
-export function validateAccountSetup({ email, mobile }) {
+export function validateAccountSetup({ email }) {
   const errors = {}
-  if (isBlank(email)) errors.email = 'Enter the institutional work email.'
+  if (isBlank(email)) errors.email = 'Enter the work email.'
   else if (!isEmail(email)) errors.email = 'Enter a valid email address.'
-  if (isBlank(mobile)) errors.mobile = 'Enter the mobile number for 2FA.'
-  else if (!isIndianMobile(mobile.replace(/^\+91/, ''))) errors.mobile = 'Enter a valid 10-digit mobile number.'
   return errors
 }
 

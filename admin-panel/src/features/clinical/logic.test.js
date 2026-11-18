@@ -1,15 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { SEED_APPOINTMENTS } from '../patients/data/seedVisits'
-import { SEED_ALERTS, SEED_CARE_PLANS, SEED_ORDERS } from '../patients/data/seedClinical'
-import { SEED_ENCOUNTERS } from '../patients/data/seedVisits'
-import { PATIENTS } from '../patients/data/patients'
-import { SEED_DAY_APPOINTMENTS } from '../appointments/data/seedDay'
-import { ROLE_SCOPES } from './constants'
+import { SEED_CARE_PLANS } from '../../test/fixtures/patients'
+import { WORKLIST } from '../../test/fixtures/worklist'
 import { hubSummary, safetyExceptions, workAction, workItems } from './hub'
-import { applyReview, buildCarePlan, buildIncident, defaultDates, duplicatePlans, goalsOf, validateCarePlan, validateIncident, validateReview } from './logic'
+import { defaultDates, duplicatePlans, goalsOf, validateCarePlan, validateIncident, validateReview } from './logic'
 
-const records = { patients: PATIENTS, appointments: [...SEED_APPOINTMENTS, ...SEED_DAY_APPOINTMENTS], encounters: SEED_ENCOUNTERS, alerts: SEED_ALERTS, orders: SEED_ORDERS, carePlans: SEED_CARE_PLANS, incidents: [] }
-const scope = (id) => ROLE_SCOPES.find((entry) => entry.id === id)
+// Building plans, applying reviews and numbering incidents happen on the server; see
+// backend/test/unit/clinical-records.test.ts and backend/test/integration/orders-referrals-care.test.ts.
+const CLINICIAN = { sign: true, triage: true }
+const DESK = { sign: false, triage: true }
+const VIEWER = { sign: false, triage: false }
 
 const validPlan = () => ({
   title: 'Post-CABG Secondary Prevention Plan', leadId: 'rahul-mehta', category: 'Secondary Prevention & Cardiac Rehab', diagnoses: [{ icd: 'I25.10', name: 'Atherosclerotic heart disease' }],
@@ -19,37 +18,37 @@ const validPlan = () => ({
 })
 
 describe('hub figures', () => {
-  it('counts what the records show', () => {
-    expect(hubSummary(records)).toEqual({ inConsultation: 0, pendingDocumentation: 0, awaitingReview: 1, mandatory: 2, followUpsDue: 0 })
+  it('counts the queue, open encounters, serious alerts, results to review and follow-ups from the worklist', () => {
+    expect(hubSummary(WORKLIST)).toEqual({ inConsultation: 1, pendingDocumentation: 1, awaitingReview: 0, mandatory: 1, followUpsDue: 0 })
+    expect(hubSummary({ ...WORKLIST, ordersAwaitingReview: 2, followUpsDue: 3 })).toMatchObject({ awaitingReview: 2, followUpsDue: 3 })
   })
 
-  it('lists only critical and high alerts as mandatory exceptions, with their patient', () => {
-    const exceptions = safetyExceptions(records)
-    expect(exceptions.map((entry) => entry.alert.id)).toEqual(['ALT-88102', 'ALT-88103'])
-    expect(exceptions[0].patient.name).toBe('Ananya Sharma')
+  it('lists serious alerts with their patient', () => {
+    const exceptions = safetyExceptions(WORKLIST)
+    expect(exceptions.map((entry) => entry.alert.id)).toEqual(['alt-1'])
+    expect(exceptions[0]).toMatchObject({ alert: { severity: 'Critical' }, patient: { name: 'Ananya Sharma', mrn: 'PT-000184' } })
   })
 
-  it("builds the work queue from today's chamber appointments in time order", () => {
-    const items = workItems(records)
-    expect(items.map((item) => item.appointment.time)).toEqual([...items.map((item) => item.appointment.time)].sort())
-    expect(items.some((item) => item.status === 'No-show')).toBe(false)
-    expect(items.find((item) => item.status === 'Arrived').dwell.label).toBe('Ready for Rooming')
+  it("builds the work queue from today's appointments, leaving out cancelled ones", () => {
+    const items = workItems(WORKLIST, '09:10')
+    expect(items.map((item) => item.status)).toEqual(['Arrived', 'In Progress'])
+    expect(items[0]).toMatchObject({ token: 'A-01', chamber: 'Chamber 104', alert: { id: 'alt-1' }, dwell: { label: 'Ready for Rooming', note: 'Checked in 20m ago' } })
+    expect(items[1].dwell).toMatchObject({ label: 'In Consultation', note: 'Encounter ENC-000009' })
   })
 })
 
-describe('access scopes', () => {
-  const arrived = workItems(records).find((item) => item.status === 'Arrived')
+describe('access', () => {
+  const [arrived, inRoom] = workItems(WORKLIST, '09:10')
 
-  it('lets a clinician call the next token and keeps the owner view read-only', () => {
-    expect(workAction(arrived, scope('attending'))?.kind).toBe('start')
-    expect(workAction(arrived, scope('owner'))).toBeNull()
+  it('lets clinicians call the next token and sign, and keeps view-only roles read-only', () => {
+    expect(workAction(arrived, CLINICIAN)?.kind).toBe('start')
+    expect(workAction(inRoom, CLINICIAN)?.kind).toBe('sign')
+    expect(workAction(arrived, VIEWER)).toBeNull()
   })
 
-  it('lets triage nurses call patients but not sign notes', () => {
-    const inRoom = { status: 'In Progress', appointment: { queueToken: 'A-1' }, encounter: { status: 'In Progress' } }
-    expect(workAction(arrived, scope('nurse'))?.kind).toBe('start')
-    expect(workAction(inRoom, scope('nurse'))?.kind).toBe('view')
-    expect(workAction(inRoom, scope('dual'))?.kind).toBe('sign')
+  it('lets the desk open visits but not sign notes', () => {
+    expect(workAction(arrived, DESK)).toBeNull()
+    expect(workAction(inRoom, DESK)?.kind).toBe('view')
   })
 })
 
@@ -63,13 +62,6 @@ describe('care plan', () => {
   it('flags an active plan in the same category as a possible duplicate', () => {
     expect(duplicatePlans([{ id: 'X', status: 'On Track', category: 'Secondary Prevention & Cardiac Rehab', title: 'Other' }], validPlan())).toHaveLength(1)
     expect(duplicatePlans([{ id: 'X', status: 'Draft', category: 'Secondary Prevention & Cardiac Rehab', title: 'Other' }], validPlan())).toHaveLength(0)
-  })
-
-  it('creates the plan with numbered goals and staged interventions', () => {
-    const plan = buildCarePlan(validPlan(), { patientId: 'pt-000184', plans: SEED_CARE_PLANS, leadName: 'Dr. Rahul Mehta' })
-    expect(plan).toMatchObject({ id: 'CP-2026-CABG'.replace('CABG', '001'), status: 'On Track', compliance: 0, nextReview: '2026-11-11' })
-    expect(plan.goals[0]).toMatchObject({ id: 'G1', status: 'Pending Baseline' })
-    expect(plan.interventions[0].state).toBe('Staged')
   })
 })
 
@@ -92,16 +84,6 @@ describe('progress review', () => {
     expect(validateReview(worsening, { complete: true }).escalate).toMatch(/escalated/)
     expect(validateReview({ ...worsening, escalate: true }, { complete: true }).escalate).toBeUndefined()
   })
-
-  it('derives compliance and plan status, and only moves the review date on completion', () => {
-    const saved = applyReview({ ...plan, goals: undefined }, { ...review(), goalStatus: { '01': 'Improving / On Target', '02': 'Unchanged', '03': 'Achieved' } }, { complete: false, by: 'Dr. Test' })
-    expect(saved).toMatchObject({ compliance: 67, status: 'On Track', nextReview: plan.nextReview })
-    expect(saved.progress[0].title).toBe('Progress saved')
-    const done = applyReview(plan, review(), { complete: true, by: 'Dr. Test' })
-    expect(done.nextReview).toBe('2026-12-14')
-    expect(done.interventions[2].state).toBe('Not Completed')
-    expect(applyReview(plan, review({ goalStatus: { '01': 'Worsening', '02': 'Unchanged', '03': 'Achieved' } }), { complete: false, by: 'x' }).status).toBe('At Risk')
-  })
 })
 
 describe('incident report', () => {
@@ -119,10 +101,5 @@ describe('incident report', () => {
   it('demands corrective actions for moderate harm or worse', () => {
     expect(validateIncident({ ...valid(), severity: '4' }).actions).toBeTruthy()
     expect(validateIncident({ ...valid(), severity: '4', actions: 'Patient observed for 24 hours.' }).actions).toBeUndefined()
-  })
-
-  it('numbers the report and hides the reporter when it is anonymous', () => {
-    expect(buildIncident(valid(), { incidents: [], patient: { id: 'pt-000184' }, reporter: 'Dr. Siddharth Verma' })).toMatchObject({ id: 'INC-2026-0001', patientId: 'pt-000184', reporter: 'Dr. Siddharth Verma' })
-    expect(buildIncident({ ...valid(), anonymous: true, associate: false }, { incidents: [{ id: 'INC-2026-0001' }], patient: null, reporter: 'x' })).toMatchObject({ id: 'INC-2026-0002', patientId: null, reporter: 'Anonymous (safe harbor)' })
   })
 })

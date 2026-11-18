@@ -1,56 +1,113 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Outlet } from 'react-router-dom'
-import { OWNER } from '../../../config/workspace'
-import { ROLES } from '../data/roles'
+import WorkspacePage from '../../../components/workspace/WorkspacePage'
+import { accessApi } from '../../auth/api'
+import { useAuth } from '../../auth/context/useAuth'
 import { RolesContext } from './rolesContext'
 
-const slugify = (text) =>
-  text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
+const STATUS_LABELS = { draft: 'Draft', active: 'Active', inactive: 'Inactive' }
+const STATUS_VALUES = { Draft: 'draft', Active: 'active', Inactive: 'inactive' }
 
-const stamp = () => ({
-  modifiedOn: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-  modifiedBy: OWNER.name,
+const formatDate = (iso) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+
+// The API's role, in the shape the role screens were built around.
+const fromApi = (role) => ({
+  id: role.id,
+  name: role.name,
+  category: role.category,
+  system: role.isSystem,
+  users: role.users,
+  scope: role.scope,
+  branchIds: role.branchIds,
+  status: STATUS_LABELS[role.status],
+  description: role.description,
+  permissions: role.permissions,
+  createdBy: role.createdBy ?? 'System',
+  modifiedOn: formatDate(role.updatedAt),
+  modifiedBy: role.updatedBy ?? 'System',
+  version: role.version,
 })
 
-// Holds roles in memory so a role created or edited on one screen shows up on the next.
-// It is replaced by API calls once the access-control backend exists.
-export default function RolesProvider({ children }) {
-  const [roles, setRoles] = useState(ROLES)
+const toApi = (values) => {
+  const body = {}
+  for (const key of ['name', 'category', 'scope', 'branchIds', 'description', 'permissions']) {
+    if (values[key] !== undefined) body[key] = typeof values[key] === 'string' ? values[key].trim() : values[key]
+  }
+  if (values.status) body.status = STATUS_VALUES[values.status]
+  return body
+}
 
-  const addRole = useCallback(
-    (values) => {
-      const baseId = slugify(values.name) || 'role'
-      const taken = roles.filter((entry) => entry.id.startsWith(baseId)).length
-      const role = {
-        id: taken ? `${baseId}-${taken + 1}` : baseId,
-        name: values.name.trim(),
-        category: values.category,
-        users: 0,
-        scope: values.scope,
-        branchIds: values.scope === 'branch' ? values.branchIds : [],
-        status: values.status,
-        description: values.description.trim(),
-        permissions: values.permissions,
-        createdBy: OWNER.name,
-        ...stamp(),
-      }
-      setRoles((current) => [...current, role])
-      return role
-    },
-    [roles],
+const fetchRoles = () =>
+  Promise.all([accessApi.roles(), accessApi.branches()]).then(
+    ([roles, branches]) => ({ status: 'ready', roles: roles.map(fromApi), branches, error: '' }),
+    (error) => ({ status: 'error', roles: [], branches: [], error: error.message }),
   )
 
-  const updateRole = useCallback((id, changes) => {
-    setRoles((current) => current.map((role) => (role.id === id ? { ...role, ...changes, ...stamp() } : role)))
+// Roles and branches for the signed-in organisation. Every change goes through the API, which applies
+// the same grant rules as the screens and records who changed what.
+export default function RolesProvider({ children }) {
+  const { orgId } = useAuth()
+  const [state, setState] = useState({ status: 'loading', roles: [], branches: [], error: '' })
+
+  const load = useCallback(() => {
+    setState((current) => ({ ...current, status: 'loading', error: '' }))
+    return fetchRoles().then(setState)
   }, [])
 
-  const value = useMemo(
-    () => ({ roles, getRole: (id) => roles.find((role) => role.id === id), addRole, updateRole }),
-    [roles, addRole, updateRole],
+  // Load on mount and whenever the active organisation changes; a late reply for an old one is ignored.
+  useEffect(() => {
+    let current = true
+    fetchRoles().then((next) => current && setState(next))
+    return () => {
+      current = false
+    }
+  }, [orgId])
+
+  const addRole = useCallback(async (values) => {
+    const role = fromApi(await accessApi.createRole(toApi(values)))
+    setState((current) => ({ ...current, roles: [...current.roles, role] }))
+    return role
+  }, [])
+
+  const updateRole = useCallback(
+    async (id, changes) => {
+      const current = state.roles.find((role) => role.id === id)
+      try {
+        const role = fromApi(await accessApi.updateRole(id, { ...toApi(changes), version: current.version }))
+        setState((existing) => ({ ...existing, roles: existing.roles.map((entry) => (entry.id === id ? role : entry)) }))
+        return role
+      } catch (error) {
+        // Someone else changed the role: show their version so the next attempt starts from it.
+        if (error.code === 'VERSION_CONFLICT') load()
+        throw error
+      }
+    },
+    [state.roles, load],
   )
+
+  const value = useMemo(
+    () => ({ roles: state.roles, branches: state.branches, getRole: (id) => state.roles.find((role) => role.id === id), addRole, updateRole, reload: load }),
+    [state.roles, state.branches, addRole, updateRole, load],
+  )
+
+  if (state.status !== 'ready') {
+    return (
+      <WorkspacePage>
+        <div role="status" className="mx-auto flex max-w-md flex-col items-center gap-3 py-24 text-center text-sm text-on-surface-variant">
+          {state.status === 'loading' ? (
+            'Loading roles…'
+          ) : (
+            <>
+              <p>{state.error}</p>
+              <button type="button" onClick={load} className="font-semibold text-brand hover:underline">
+                Try again
+              </button>
+            </>
+          )}
+        </div>
+      </WorkspacePage>
+    )
+  }
 
   return <RolesContext.Provider value={value}>{children ?? <Outlet />}</RolesContext.Provider>
 }

@@ -6,11 +6,11 @@ import { SearchBox } from '../../../components/workspace/controls'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
 import { cn } from '../../../lib/cn'
-import { usePatientRecords } from '../../patients/context/usePatientRecords'
+import { useBilling } from '../context/useBilling'
 import { formatDate } from '../../patients/format'
 import BillingFrame from '../components/BillingFrame'
 import { Banner, FilterField, GovernanceFooter, MetricStrip, Scope, Section, TextLink } from '../../../components/workspace/RecordKit'
-import { money, SCOPE_TEXT } from '../financeFormat'
+import { money } from '../financeFormat'
 import { DATE_RANGES } from '../constants'
 import { CHARGE_STATUSES, chargeInvoiceStatus, chargeRows, chargeStatus, chargeTotal, INVOICE_STATUSES } from '../financeLogic'
 import { useRegisterFilters } from '../../../hooks/useRegisterFilters'
@@ -19,7 +19,7 @@ const needsReview = (charge) => charge.lines.some((line) => !(line.price > 0))
 const CHARGE_TONE = { Draft: 'neutral', Finalized: 'neutral' }
 
 export default function ChargeRegisterPage() {
-  const { records, getPatient } = usePatientRecords()
+  const { records, getPatient, scopeText } = useBilling()
   const filters = useRegisterFilters({ range: DATE_RANGES[0].id })
   const [selectedId, setSelectedId] = useState(null)
   const range = DATE_RANGES.find((entry) => entry.id === filters.get('range')) ?? DATE_RANGES[0]
@@ -40,7 +40,7 @@ export default function ChargeRegisterPage() {
           {nameOf(draft.patientId)} · {draft.reference} · {draft.branch}. No charge confirmed and no invoice issued.
         </Banner>
       )}
-      <Scope left={`${SCOPE_TEXT} · Owner access`} />
+      <Scope left={scopeText} />
 
       <h2 className="mb-3 flex items-baseline justify-between text-[17px] font-semibold">Charge overview <span className="text-xs font-normal text-outline">Counts in this view · Not organization totals</span></h2>
       <MetricStrip
@@ -76,7 +76,7 @@ export default function ChargeRegisterPage() {
                 return (
                   <tr key={charge.id} onClick={() => setSelectedId(charge.id)} className={cn('cursor-pointer border-t border-slate-100 align-top hover:bg-surface-lowest', selected?.id === charge.id && 'bg-teal-50/50')}>
                     <td className="px-6 py-4"><TextLink to={chargePath(charge)} state={state}>{charge.id}</TextLink><br /><span className="text-outline">{formatDate(charge.date)}</span></td>
-                    <td className="px-6 py-4"><strong className="font-medium">{nameOf(charge.patientId)}</strong><br /><span className="text-outline">{getPatient(charge.patientId)?.mrn} · Self-pay</span></td>
+                    <td className="px-6 py-4"><strong className="font-medium">{nameOf(charge.patientId)}</strong><br /><span className="text-outline">{getPatient(charge.patientId)?.mrn} · {charge.payer}</span></td>
                     <td className="px-6 py-4">{charge.reference}<br /><span className="text-outline">{charge.branch}</span></td>
                     <td className="px-6 py-4">{charge.title}<br /><span className="text-outline">Qty {charge.lines.reduce((qty, line) => qty + line.qty, 0)}</span></td>
                     <td className="px-6 py-4">{review ? <>—<br /><span className="text-outline">Unavailable</span></> : <strong className="font-semibold">{money(chargeTotal(charge))}</strong>}</td>
@@ -96,7 +96,7 @@ export default function ChargeRegisterPage() {
         {selected ? (
           <Section title={`Selected · ${selected.id}`} aside={chargeStatus(selected)}>
             <p className="text-[13px] font-semibold">{nameOf(selected.patientId)} · {getPatient(selected.patientId)?.mrn}</p>
-            <p className="mt-2 text-xs leading-6 text-outline">{selected.reference} · {selected.branch}<br />{selected.title} · Self-pay</p>
+            <p className="mt-2 text-xs leading-6 text-outline">{selected.reference} · {selected.branch}<br />{selected.title} · {selected.payer}</p>
             <div className="mt-4 flex items-center justify-between gap-3">
               <p className={cn('text-xs', needsReview(selected) ? 'text-amber-700' : 'text-on-surface-variant')}>{needsReview(selected) ? 'Price and tax setup required' : `Total ${money(chargeTotal(selected))}`}</p>
               <ActionButton to={chargePath(selected)} state={state}>{chargeStatus(selected) === 'Draft' ? 'Continue draft →' : 'Review →'}</ActionButton>

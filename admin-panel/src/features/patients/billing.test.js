@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { allocationError, applyAllocation, autoAllocate, buildLedger, invoiceBalance, invoiceStatus, invoiceTotals, ledgerSummary, paymentUnallocated, refundCeiling, unlinkForRefund } from './billing'
-import { SEED_CHARGES, SEED_INVOICES, SEED_PAYMENTS, SEED_REFUNDS } from './data/seedAdmin'
+import { SEED_CHARGES, SEED_INVOICES, SEED_PAYMENTS, SEED_REFUNDS } from '../../test/fixtures/patients'
 
 const records = { invoices: SEED_INVOICES, payments: SEED_PAYMENTS, refunds: SEED_REFUNDS, charges: SEED_CHARGES }
 

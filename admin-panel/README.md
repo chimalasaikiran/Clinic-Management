@@ -1,9 +1,15 @@
 # ClinicOS Admin Panel
 
-Frontend for the ClinicOS workspace: account onboarding, clinic setup and the owner dashboard.
-Built with React 19, Vite, Tailwind CSS 4 and React Router.
+Frontend for the ClinicOS workspace. Built with React 19, Vite, Tailwind CSS 4 and React Router.
+It talks to the ClinicOS backend in `../backend` over versioned REST (`/v1`).
 
 ## Getting started
+
+Copy `.env.example` to `.env.local` and set `VITE_API_URL` (the backend URL, `http://localhost:4000` locally).
+That is the only setting: the app holds no secrets. Start the backend as described in `../backend/README.md`.
+
+Sign-in uses an HttpOnly session cookie set by the backend; the app never sees or stores a token.
+Requests are sent with `credentials: 'include'` (see `src/lib/api.js`).
 
 ```
 npm install
@@ -23,20 +29,22 @@ src/
     layout/            shared page chrome (top bar, form and photo panels)
     ui/                reusable inputs, buttons and cards
   config/routes.js     route paths
+  config/access.js     which permission opens each workspace section
   features/
-    auth/              create account and verify account
+    auth/              sign-in, sign-up, email verification, password reset, invitations, session provider, route guards
+    role-management/   roles and permissions (API-backed)
     onboarding/        setup intro, clinic details, operating model, specialties, setup complete
     dashboard/         owner dashboard (layout, sections, mock data)
   hooks/               shared hooks
-  lib/                 class-name helper and input validators
+  lib/                 API client, class-name helper and input validators
   test/                test setup and helpers
 ```
 
 ## Status
 
-This is a frontend-only build. There is no authentication, API or database yet:
-
-- Forms validate input on the client and then move to the next step; nothing is submitted anywhere.
-- The dashboard reads from `src/features/dashboard/data/mockDashboardData.js`. Replace those exports with
-  API calls when the backend exists; the section components take their data as props.
-- "Sign in", the resend-code link and the dashboard shortcut buttons are not wired up.
+- Authentication, sessions, route protection, role management and staff invitations run against the backend.
+  The sidebar and route guards hide sections a role cannot open; the backend enforces the same permissions.
+- The other modules (patients, billing, inventory, payroll, growth, configuration, dashboard) still use sample
+  data held in memory until their APIs are built.
+- Tests render pages with a signed-in Super Admin by default (`src/test/auth.js`); pass another session to
+  `renderRoute` to test other roles or a signed-out visitor.

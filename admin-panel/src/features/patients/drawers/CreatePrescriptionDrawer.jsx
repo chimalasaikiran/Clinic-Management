@@ -6,15 +6,13 @@ import Drawer from '../../../components/workspace/Drawer'
 import { OptionSelect, Check, PatientStrip, TextArea } from '../components/parts'
 import { TextInput } from '../../../components/workspace/FormControls'
 import { DURATIONS, FOOD_RELATIONS, FREQUENCIES, MEDICINES, ROUTES_OF_ADMIN } from '../data/catalog'
-import { TODAY } from '../format'
 import { bpStage, allergyConflicts, validateMedication, validatePrescription } from '../validation'
 import { cn } from '../../../lib/cn'
-import { clockTime } from '../selectors'
 
 const BLANK_MED = { medicineId: '', strength: '', dose: '1', route: 'Oral', frequencyId: 'od', food: 'After food', durationDays: 5, instructions: '' }
 
 // Composes a prescription: medication list, live allergy and condition checks, then authorization.
-// `onAuthorize` receives the prescription record; the caller adds it to the store.
+// `onAuthorize` receives { items, indication, precautionAcknowledged } and returns a promise (the API call).
 export default function CreatePrescriptionDrawer({ open, onClose, patient, encounter, allergies, diagnoses, latestVitals, onAuthorize }) {
   const [items, setItems] = useState([])
   const [adding, setAdding] = useState(false)
@@ -22,6 +20,8 @@ export default function CreatePrescriptionDrawer({ open, onClose, patient, encou
   const [medSubmitted, setMedSubmitted] = useState(false)
   const [precautionAck, setPrecautionAck] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [serverError, setServerError] = useState('')
 
   const medicine = MEDICINES.find((entry) => entry.id === med.medicineId)
   const medErrors = medSubmitted ? validateMedication(med) : {}
@@ -38,6 +38,7 @@ export default function CreatePrescriptionDrawer({ open, onClose, patient, encou
     setMedSubmitted(false)
     setPrecautionAck(false)
     setSubmitted(false)
+    setServerError('')
   }
   const finish = () => {
     reset()
@@ -57,9 +58,9 @@ export default function CreatePrescriptionDrawer({ open, onClose, patient, encou
     setItems((current) => [
       ...current,
       {
-        id: `i${current.length + 1}`, name: medicine.name, strength: med.strength, form: medicine.form, route: med.route, drugClass: medicine.drugClass,
-        dose: `${med.dose} ${medicine.form}`, frequency: frequency.label, frequencyNote: med.food, durationDays: days, quantity: Number(med.dose) * frequency.perDay * days, refills: 0,
-        instructions: med.instructions.trim(), indication: diagnoses[0]?.name ?? 'Clinician indication', dispensing: { state: 'Awaiting', note: 'Pending pharmacy acknowledgement' },
+        id: `i${current.length + 1}`, medicineCode: medicine.id, name: medicine.name, strength: med.strength, form: medicine.form, route: med.route, drugClass: medicine.drugClass,
+        doseCount: Number(med.dose), dose: `${med.dose} ${medicine.form}`, frequency: frequency.label, frequencyPerDay: frequency.perDay, frequencyNote: med.food, durationDays: days,
+        quantity: Number(med.dose) * frequency.perDay * days, instructions: med.instructions.trim(), indication: diagnoses[0]?.name ?? 'Clinician indication',
       },
     ])
     setMed(BLANK_MED)
@@ -67,11 +68,20 @@ export default function CreatePrescriptionDrawer({ open, onClose, patient, encou
     setAdding(false)
   }
 
-  const authorize = () => {
+  // The server signs it and repeats the safety checks; a refusal (for example an allergy conflict) keeps the drawer open.
+  const authorize = async () => {
     setSubmitted(true)
     if (Object.keys(validatePrescription({ items })).length || (needsPrecautionAck && !precautionAck)) return
-    onAuthorize({ date: TODAY, time: clockTime(), items, indication: diagnoses.map((entry) => entry.name).join('; ') || 'Clinician indication', precautionAcknowledged: precautionAck })
-    finish()
+    setSaving(true)
+    setServerError('')
+    try {
+      await onAuthorize({ items, indication: diagnoses.map((entry) => entry.name).join('; ') || 'Clinician indication', precautionAcknowledged: precautionAck })
+      finish()
+    } catch (error) {
+      setServerError(error.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const duplicates = items.filter((item, index) => items.findIndex((other) => other.name === item.name) !== index)
@@ -80,19 +90,20 @@ export default function CreatePrescriptionDrawer({ open, onClose, patient, encou
     <Drawer
       open={open}
       onClose={finish}
-      eyebrow={encounter ? `Encounter ${encounter.id}` : 'Standalone prescription'}
+      eyebrow={encounter ? `Encounter ${encounter.reference ?? encounter.id}` : 'Standalone prescription'}
       title="Create Prescription (Rx)"
       description="Draft v1.0 (Unsigned) · Authoritative medication order and e-prescription."
       width="max-w-3xl"
       footer={
         <div className="flex items-center justify-between gap-3">
           <ActionButton onClick={finish}>Cancel</ActionButton>
-          <ActionButton variant="primary" onClick={authorize}>Review &amp; Authorize Prescription</ActionButton>
+          <ActionButton variant="primary" onClick={authorize} disabled={saving}>{saving ? 'Signing…' : 'Review & Authorize Prescription'}</ActionButton>
         </div>
       }
     >
       <div className="flex flex-col gap-5 p-5">
         <PatientStrip patient={patient} />
+        {serverError && <InfoNote tone="danger" icon={AlertTriangle}><span role="alert">{serverError}</span></InfoNote>}
 
         <section>
           <h3 className="mb-2 text-sm font-semibold">1. Patient clinical &amp; safety context</h3>

@@ -1,5 +1,5 @@
 import { isBlank, isEmail, isIndianMobile } from '../../lib/validators'
-import { TODAY } from './format'
+import { localToday } from './format'
 
 const MIN_NOTE_LENGTH = 10
 const PIN_PATTERN = /^\d{6}$/
@@ -7,7 +7,7 @@ const PIN_PATTERN = /^\d{6}$/
 const needsNote = (value, message) => (isBlank(value) || value.trim().length < MIN_NOTE_LENGTH ? message : undefined)
 const inRange = (value, min, max) => value !== '' && Number.isFinite(Number(value)) && Number(value) >= min && Number(value) <= max
 
-export function validatePatient(values, { duplicateResolved = true } = {}) {
+export function validatePatient(values, { duplicateResolved = true, today = localToday() } = {}) {
   const errors = {}
   if (isBlank(values.title)) errors.title = 'Choose a title.'
   if (isBlank(values.fullName)) errors.fullName = 'Enter the full legal name.'
@@ -19,18 +19,17 @@ export function validatePatient(values, { duplicateResolved = true } = {}) {
   if (isBlank(values.pin)) errors.pin = 'Enter the PIN code.'
   else if (!PIN_PATTERN.test(values.pin.trim())) errors.pin = 'PIN code must be 6 digits.'
   if (isBlank(values.dob)) errors.dob = 'Enter the date of birth.'
-  else if (values.dob > TODAY) errors.dob = 'Date of birth cannot be in the future.'
+  else if (values.dob > today) errors.dob = 'Date of birth cannot be in the future.'
   if (isBlank(values.gender)) errors.gender = 'Select a gender.'
   if (!isBlank(values.emergencyPhone) && !isIndianMobile(values.emergencyPhone.replace(/^\+91/, ''))) errors.emergencyPhone = 'Enter a valid 10-digit number.'
   if (!duplicateResolved) errors.duplicate = 'Resolve the duplicate match before registering.'
   return errors
 }
 
-export function validateBooking({ department, doctorId, serviceCode, slot, reason }) {
+export function validateBooking({ branchId, doctorId, slot, reason }) {
   const errors = {}
-  if (isBlank(department)) errors.department = 'Choose a department.'
-  if (isBlank(doctorId)) errors.doctorId = 'Choose a consulting doctor.'
-  if (isBlank(serviceCode)) errors.serviceCode = 'Choose a service.'
+  if (isBlank(branchId)) errors.branchId = 'Choose a branch.'
+  if (isBlank(doctorId)) errors.doctorId = 'Choose a consulting therapist.'
   if (isBlank(slot)) errors.slot = 'Select an available time slot.'
   if (isBlank(reason)) errors.reason = 'Enter the reason for the visit.'
   return errors

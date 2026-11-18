@@ -6,26 +6,29 @@ import { Toggle } from '../../../components/workspace/controls'
 import { TextInput } from '../../../components/workspace/FormControls'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
+import { useApiResource } from '../../../hooks/useApiResource'
 import { useDraft } from '../../../lib/useDraft'
+import { clinicalApi, practitionersApi } from '../../patients/api'
 import FlowFrame, { BackLink, FlowMissing } from '../../patients/components/FlowFrame'
 import { FieldError, FlowSection, KeyValueRows, OptionSelect, SideCard, TextArea } from '../../patients/components/parts'
 import { usePatient } from '../../patients/context/usePatient'
-import { CONDITIONS, DOCTORS } from '../../patients/data/catalog'
+import { CONDITIONS } from '../../patients/data/catalog'
 import { formatDate } from '../../patients/format'
 import { CARE_CATEGORIES, DEFAULT_RED_FLAGS, GOAL_CADENCES, INTERVENTION_TYPES } from '../constants'
-import { buildCarePlan, defaultDates, duplicatePlans, validateCarePlan, validateGoal, validateIntervention } from '../logic'
+import { defaultDates, duplicatePlans, validateCarePlan, validateGoal, validateIntervention } from '../logic'
 
 const BLANK_GOAL = { title: '', target: '', protocol: '', cadence: GOAL_CADENCES[0] }
 const BLANK_INTERVENTION = { type: INTERVENTION_TYPES[0].id, title: '', due: '' }
 
-// Writes a structured care plan for a patient. The form is kept as a draft until the plan is activated.
+// Writes a structured care plan for a patient. The form is kept as a draft (in this browser) until the plan is
+// activated, which saves it to the patient's record.
 export default function CreateCarePlanPage() {
-  const { patient, patientId, mine, add, records } = usePatient()
+  const { patient, patientId, mine, refresh, loading } = usePatient()
   const navigate = useNavigate()
   const diagnoses = mine('diagnoses').filter((entry) => entry.status === 'Active').filter((entry, index, all) => all.findIndex((other) => other.icd === entry.icd) === index)
   const plans = mine('carePlans')
   const draft = useDraft(`care-plan-draft:${patientId}`, {
-    title: '', category: CARE_CATEGORIES[0], leadId: 'rahul-mehta', rationale: '', ...defaultDates(),
+    title: '', category: CARE_CATEGORIES[0], leadId: '', rationale: '', ...defaultDates(),
     diagnoses: diagnoses.map((entry) => ({ icd: entry.icd, name: entry.name })), goals: [], interventions: [], redFlags: DEFAULT_RED_FLAGS, whatsapp: true,
   })
   const values = draft.value
@@ -35,11 +38,15 @@ export default function CreateCarePlanPage() {
   const [interventionErrors, setInterventionErrors] = useState({})
   const [attempted, setAttempted] = useState(false)
   const [icdChoice, setIcdChoice] = useState('')
+  const [serverError, setServerError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const leads = useApiResource(() => practitionersApi.list({ status: 'active' }), 'care-plan-leads')
+  const therapists = leads.data ?? []
 
-  if (!patient) return <FlowMissing patient={null} />
+  if (!patient) return <FlowMissing patient={null} loading={loading} />
 
   const errors = attempted ? validateCarePlan(values) : {}
-  const lead = DOCTORS.find((entry) => entry.id === values.leadId)
+  const lead = therapists.find((entry) => entry.id === values.leadId)
   const duplicates = duplicatePlans(plans, values)
   const set = (name, value) => draft.setValue((current) => ({ ...current, [name]: value }))
   const backTo = pathFor(ROUTES.patientRecords, { patientId })
@@ -64,12 +71,33 @@ export default function CreateCarePlanPage() {
     setIcdChoice('')
   }
 
-  const activate = () => {
+  const activate = async () => {
     setAttempted(true)
     if (Object.keys(validateCarePlan(values)).length) return
-    add('carePlans', buildCarePlan(values, { patientId, plans: records.carePlans, leadName: lead.short }))
-    draft.clear()
-    navigate(backTo)
+    setSaving(true)
+    setServerError('')
+    try {
+      await clinicalApi.createCarePlan(patientId, {
+        title: values.title.trim(),
+        category: values.category,
+        leadPractitionerId: values.leadId,
+        rationale: values.rationale.trim(),
+        startDate: values.start,
+        nextReview: values.interim,
+        targetDate: values.target,
+        diagnoses: values.diagnoses,
+        goals: values.goals.map((goal) => ({ title: goal.title.trim(), target: goal.target.trim(), protocol: goal.protocol.trim(), cadence: goal.cadence })),
+        interventions: values.interventions.map((entry) => ({ type: entry.type, title: entry.title.trim(), due: entry.due.trim() })),
+        education: values.redFlags.split('\n').map((line) => line.trim()).filter(Boolean),
+        whatsapp: values.whatsapp,
+      })
+      await refresh()
+      draft.clear()
+      navigate(backTo)
+    } catch (error) {
+      setServerError(error.message)
+      setSaving(false)
+    }
   }
 
   return (
@@ -87,7 +115,7 @@ export default function CreateCarePlanPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2"><TextInput label="Care plan title" required value={values.title} onChange={(event) => set('title', event.target.value)} error={errors.title} placeholder="Post-CABG Secondary Cardiovascular Prevention Plan" /></div>
               <OptionSelect label="Clinical category / care scope" required value={values.category} onChange={(event) => set('category', event.target.value)} error={errors.category} options={CARE_CATEGORIES.map((entry) => ({ value: entry, label: entry }))} />
-              <OptionSelect label="Responsible attending clinician" required value={values.leadId} onChange={(event) => set('leadId', event.target.value)} error={errors.leadId} options={DOCTORS.map((entry) => ({ value: entry.id, label: entry.name }))} />
+              <OptionSelect label="Responsible attending clinician" required placeholder={therapists.length ? 'Choose a therapist' : 'No therapists set up yet'} value={values.leadId} onChange={(event) => set('leadId', event.target.value)} error={errors.leadId} options={therapists.map((entry) => ({ value: entry.id, label: `${entry.displayName} — ${entry.specialty}` }))} />
             </div>
             <div className="mt-4">
               <p className="mb-1.5 flex items-center justify-between text-[13px] font-semibold">Linked diagnoses / health concerns<span className="text-[11px] font-normal text-outline">Pulled from the patient’s active problem list</span></p>
@@ -162,13 +190,13 @@ export default function CreateCarePlanPage() {
 
         <div className="flex flex-col gap-5 self-start">
           <SideCard title="Activation command">
-            <KeyValueRows rows={[['Overall status', <StatusPill key="s" tone="warning">Draft (Pending Activation)</StatusPill>], ['Total goals', `${values.goals.length} defined targets`], ['Total interventions', `${values.interventions.length} staged`], ['Responsible care lead', lead?.short ?? '—'], ['Primary chamber', lead?.suite ?? '—']]} />
+            <KeyValueRows rows={[['Overall status', <StatusPill key="s" tone="warning">Draft (Pending Activation)</StatusPill>], ['Total goals', `${values.goals.length} defined targets`], ['Total interventions', `${values.interventions.length} staged`], ['Responsible care lead', lead?.displayName ?? '—'], ['Primary chamber', lead?.room ?? '—']]} />
             <div className={`mt-4 rounded-md border p-3 text-xs ${duplicates.length ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-surface-lowest'}`}>
               <p className="mb-1 flex items-center gap-1.5 font-semibold"><ShieldCheck className="size-3.5 text-brand" aria-hidden="true" />Clinical decision support: {duplicates.length ? 'REVIEW' : 'PASS'}</p>
-              <p className="text-on-surface-variant">{duplicates.length ? `${duplicates.length} active care plan${duplicates.length === 1 ? '' : 's'} already cover this category (${duplicates.map((plan) => plan.id).join(', ')}). Confirm this plan adds to, rather than duplicates, the existing one.` : `No conflicting duplicate care plans were found for ${patient.name}.`}</p>
-              <p className="mt-2 text-outline">{patient.consent} · ABDM care context linked to this patient record.</p>
+              <p className="text-on-surface-variant">{duplicates.length ? `${duplicates.length} active care plan${duplicates.length === 1 ? '' : 's'} already cover this category (${duplicates.map((plan) => plan.reference).join(', ')}). Confirm this plan adds to, rather than duplicates, the existing one.` : `No conflicting duplicate care plans were found for ${patient.name}.`}</p>
             </div>
-            <ActionButton variant="primary" icon={CheckCircle2} className="mt-4 w-full justify-center" onClick={activate}>Activate &amp; Link to Patient Record</ActionButton>
+            {serverError && <p role="alert" className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-danger">{serverError}</p>}
+            <ActionButton variant="primary" icon={CheckCircle2} className="mt-4 w-full justify-center" onClick={activate} disabled={saving}>Activate &amp; Link to Patient Record</ActionButton>
             <div className="mt-2 grid grid-cols-2 gap-2"><ActionButton onClick={() => draft.setValue((current) => ({ ...current }))}>Save Draft</ActionButton><ActionButton variant="danger" onClick={() => { draft.clear(); navigate(backTo) }}>Discard</ActionButton></div>
             <p className="mt-3 text-[11px] text-outline">{draft.restored ? 'Restored from your saved draft.' : 'Changes are saved as a draft automatically until the plan is activated.'}</p>
           </SideCard>

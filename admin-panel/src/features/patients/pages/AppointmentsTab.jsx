@@ -10,7 +10,7 @@ import { cn } from '../../../lib/cn'
 import EmptyState from '../components/EmptyState'
 import { usePatient } from '../context/usePatient'
 import { formatDate, formatLongDate, formatTime, formatWeekday } from '../format'
-import { appointmentTone, byNewest, daysLabel, isUpcoming, nextAppointment, upcomingAppointments } from '../selectors'
+import { appointmentTone, byNewest, daysLabel, isChangeable, isUpcoming, nextAppointment, upcomingAppointments } from '../selectors'
 
 const TABS = [
   { id: 'all', label: 'All appointments' },
@@ -24,13 +24,13 @@ const matchesTab = (appointment, tab) =>
 
 function NextAppointmentCard({ appointment, patientId }) {
   const detail = pathFor(ROUTES.appointment, { patientId, appointmentId: appointment.id })
-  const canMoveForward = ['Scheduled', 'Confirmed'].includes(appointment.status)
+  const canMoveForward = isChangeable(appointment)
   return (
     <section className="mb-6 overflow-hidden rounded-lg border border-slate-200 border-l-4 border-l-brand bg-white p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <StatusPill tone="brand" dot className="uppercase">Next upcoming appointment · {appointment.status}</StatusPill>
-          {appointment.token && <p className="mt-3"><span className="rounded border border-slate-200 bg-surface-low px-1.5 py-0.5 font-mono text-[11px]">{appointment.token} ({appointment.tokenLabel})</span></p>}
+          <p className="mt-3"><span className="rounded border border-slate-200 bg-surface-low px-1.5 py-0.5 font-mono text-[11px]">{appointment.reference}{appointment.queueToken && ` · Token ${appointment.queueToken}`}</span></p>
         </div>
         <div className="flex flex-wrap gap-2">
           <ActionButton variant="brand" to={detail}>View appointment details →</ActionButton>
@@ -74,6 +74,8 @@ function NextAppointmentCard({ appointment, patientId }) {
 export default function AppointmentsTab() {
   const { patient, patientId, mine } = usePatient()
   const appointments = mine('appointments')
+  // Encounters are kept by the clinical workspace in this browser for now.
+  const encounterFor = (appointmentId) => mine('encounters').find((encounter) => encounter.appointmentId === appointmentId)?.id
   const [tab, setTab] = useState('all')
   const [query, setQuery] = useState('')
   const [doctor, setDoctor] = useState('')
@@ -108,7 +110,7 @@ export default function AppointmentsTab() {
           <p className="text-sm text-on-surface-variant">View and manage this patient&apos;s upcoming schedule and historical clinical encounters.</p>
         </div>
         <div className="flex items-center gap-2">
-          <FilterSelect label="Branch" value={branch} onChange={setBranch} allLabel="All Branches (3)" options={unique('branch')} />
+          <FilterSelect label="Branch" value={branch} onChange={setBranch} allLabel="All Branches" options={unique('branch')} />
           <ActionButton variant="primary" icon={Plus} to={pathFor(ROUTES.appointmentNew, { patientId })}>Book appointment</ActionButton>
         </div>
       </div>
@@ -163,7 +165,7 @@ export default function AppointmentsTab() {
                         {appointment.service}
                       </p>
                       <p className="text-[11px] text-on-surface-variant">
-                        {appointment.token && <span className="mr-1 rounded bg-surface-low px-1 font-mono">Token {appointment.token}</span>}
+                        <span className="mr-1 rounded bg-surface-low px-1 font-mono">{appointment.reference}{appointment.queueToken && ` · ${appointment.queueToken}`}</span>
                         {appointment.serviceNote ?? `Duration: ${appointment.minutes}m`}
                       </p>
                     </Cell>
@@ -174,9 +176,9 @@ export default function AppointmentsTab() {
                     <Cell>
                       <span className="flex flex-wrap items-center gap-1.5">
                         <ActionButton size="sm" to={detail}>{isUpcoming(appointment) ? 'View details' : cancelledRow || appointment.status === 'No-show' ? 'View log' : 'View appointment'}</ActionButton>
-                        {['Scheduled', 'Confirmed'].includes(appointment.status) && <ActionButton size="sm" to={pathFor(ROUTES.appointmentReschedule, { patientId, appointmentId: appointment.id })}>Reschedule</ActionButton>}
-                        {appointment.encounterId && (
-                          <Link to={pathFor(ROUTES.encounter, { patientId, encounterId: appointment.encounterId })} className="text-xs font-semibold text-brand hover:underline">#{appointment.encounterId} →</Link>
+                        {isChangeable(appointment) && <ActionButton size="sm" to={pathFor(ROUTES.appointmentReschedule, { patientId, appointmentId: appointment.id })}>Reschedule</ActionButton>}
+                        {encounterFor(appointment.id) && (
+                          <Link to={pathFor(ROUTES.encounter, { patientId, encounterId: encounterFor(appointment.id) })} className="text-xs font-semibold text-brand hover:underline">#{encounterFor(appointment.id)} →</Link>
                         )}
                       </span>
                     </Cell>
@@ -185,12 +187,12 @@ export default function AppointmentsTab() {
               })}
             </Table>
             <TableFooter summary={`Showing ${rows.length} of ${appointments.length} records`}>
-              <span className="flex items-center gap-1 text-brand"><MapPin className="size-3" aria-hidden="true" />Appointments automatically synced to ABDM Milestone 2 Slot Registry</span>
+              <span className="flex items-center gap-1 text-brand"><MapPin className="size-3" aria-hidden="true" />Times shown in clinic local time</span>
             </TableFooter>
           </div>
 
           <InfoNote tone="brand" className="mt-5">
-            <strong className="text-on-surface">Real-time SMS &amp; WhatsApp alerts active:</strong> {next ? `Patient confirmed for automated SMS reminder 24h and 2h prior to ${formatLongDate(next.date)} consultation.` : 'Reminders are dispatched 24h and 2h before each booked consultation.'}
+            <strong className="text-on-surface">Reminders:</strong> notification preferences are saved with each booking. SMS and WhatsApp reminders are sent once a messaging provider is connected.
           </InfoNote>
         </>
       )}

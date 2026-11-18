@@ -1,9 +1,10 @@
 import { Link } from 'react-router-dom'
 import WorkspacePage from '../../../components/workspace/WorkspacePage'
-import { ORG } from '../constants'
+import { useBilling } from '../context/useBilling'
 
 // Page frame for the billing screens: back link and trail, workflow code, title, and the organisation scope line.
 export default function BillingFrame({ back, crumb, code, title, badge, description, actions, scope = true, children }) {
+  const { orgName, locationText } = useBilling()
   return (
     <WorkspacePage>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -20,7 +21,7 @@ export default function BillingFrame({ back, crumb, code, title, badge, descript
       </div>
       {scope && (
         <p className="mb-5 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3 text-xs">
-          <span><strong>{ORG.name}</strong> · {ORG.scope}</span>
+          <span><strong>{orgName}</strong> · {locationText}</span>
           <span className="text-outline">Currency: INR (₹) · Time: IST</span>
         </p>
       )}

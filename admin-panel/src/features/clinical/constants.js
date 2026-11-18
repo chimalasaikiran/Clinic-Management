@@ -1,14 +1,3 @@
-// The attending clinician whose queue "My Clinical Work" shows in this prototype.
-export const ATTENDING = { id: 'rahul-mehta', name: 'Dr. Rahul Mehta, MD, DM' }
-
-// What each simulated access scope may do. Owner access alone never grants clinical sign-off.
-export const ROLE_SCOPES = [
-  { id: 'dual', label: 'Doctor + Owner (Dual Scope)', sign: true, triage: true },
-  { id: 'owner', label: 'Owner Only (Management Scope)', sign: false, triage: false },
-  { id: 'attending', label: 'Attending Clinician', sign: true, triage: true },
-  { id: 'nurse', label: 'Clinical Nurse / Triage', sign: false, triage: true },
-]
-
 export const CARE_CATEGORIES = ['Secondary Prevention & Cardiac Rehab', 'Chronic Disease Management', 'Post-Operative Recovery', 'Maternal & Child Health']
 export const GOAL_CADENCES = ['Every 30 Days', 'Quarterly (90 Days)', 'Weekly Telemetry Aggregation']
 export const INTERVENTION_TYPES = [
@@ -46,6 +35,4 @@ export const SEVERITY_LEVELS = [
 ]
 export const OCCURRED_PRESETS = [{ id: 'now', label: 'Just Now (<15m)' }, { id: 'today', label: 'Earlier Today' }, { id: 'shift', label: 'Past Shift / Date' }]
 export const FACILITY_ZONES = ['Chamber 101 (Cardiology OPD)', 'Chamber 102 (Cardiology OPD)', 'Chamber 103 (General Medicine)', 'Reception & Waiting Lounge', 'Pharmacy Dispensary', 'Central Stores', 'Diagnostics & Imaging']
-export const FACILITY_BRANCHES = ['Downtown Metro Branch (#BLR-METRO-04)', 'Kondapur Satellite Clinic', 'Metro North Clinic']
 export const CONTRIBUTING_FACTORS = ['High Clinical Volume / Fatigue', 'UI / Alert Fatigue / Warning Bypass', 'Incomplete Triage Handover', 'Verbal Order Miscommunication', 'Pharmacy Packaging Similarity (LASA)', 'System Integration Latency']
-export const OTHER_PERSONNEL = ['Nurse Priya Nair (Staff #ST-402)', 'Dr. Sahil Roy (Cardiology Intern)', 'Ramesh Pillai, B.Pharm', 'Priya Nair (Reception)']

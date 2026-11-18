@@ -37,7 +37,7 @@ export default function EncountersTab() {
   const rows = encounters.filter(
     (encounter) =>
       selectedTab.test(encounter) &&
-      (!needle || `${encounter.id} ${encounter.type} ${encounter.reason} ${encounter.doctor}`.toLowerCase().includes(needle)) &&
+      (!needle || `${encounter.reference ?? encounter.id} ${encounter.type} ${encounter.reason} ${encounter.doctor}`.toLowerCase().includes(needle)) &&
       (!clinician || encounter.doctor === clinician) &&
       (!department || encounter.department === department),
   )
@@ -108,7 +108,7 @@ export default function EncountersTab() {
         <Table headings={['Date & encounter ID', 'Encounter type & clinical reason', 'Attending clinician', 'Dept & chamber', 'Facility / branch', 'Clinical artifacts', 'Status', 'Actions']} minWidth={1180} empty={rows.length ? null : 'No encounters match the current filters.'}>
           {rows.map((encounter) => (
             <Row key={encounter.id}>
-              <Cell><p className="font-semibold">{formatDate(encounter.date)}</p><p className="font-mono text-[11px] font-semibold text-brand">#{encounter.id}</p><p className="text-[10px] text-outline">{formatTime(encounter.time)}{encounter.minutes ? ` · ${encounter.minutes} mins` : ''}</p></Cell>
+              <Cell><p className="font-semibold">{formatDate(encounter.date)}</p><p className="font-mono text-[11px] font-semibold text-brand">#{encounter.reference ?? encounter.id}</p><p className="text-[10px] text-outline">{formatTime(encounter.time)}{encounter.minutes ? ` · ${encounter.minutes} mins` : ''}</p></Cell>
               <Cell><p className="font-semibold">{encounter.type}</p><p className="text-[11px] text-on-surface-variant">{encounter.reason}</p>{encounter.icd && <p className="font-mono text-[10px] text-brand">{encounter.icd}</p>}</Cell>
               <Cell><p className="font-semibold">{encounter.doctor}</p><p className="text-[11px] text-on-surface-variant">{encounter.credentials}</p></Cell>
               <Cell><p>{encounter.department}</p><p className="text-[11px] text-on-surface-variant">{encounter.chamber}</p></Cell>

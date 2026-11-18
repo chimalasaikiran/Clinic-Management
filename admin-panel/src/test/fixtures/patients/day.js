@@ -1,3 +1,4 @@
+// Test fixture: one working day of OPD bookings across sample chambers.
 // Sample OPD bookings for the working day (2026-10-12) across the consulting chambers. Ananya Sharma's own
 // 10:30 appointment lives with her visit history and appears in the same grid.
 const DAY = '2026-10-12'

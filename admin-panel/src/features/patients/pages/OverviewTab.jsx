@@ -8,8 +8,9 @@ import EmptyState from '../components/EmptyState'
 import { KeyValueRows } from '../components/parts'
 import Timeline from '../components/Timeline'
 import { usePatient } from '../context/usePatient'
+import { usePatientLedger } from '../../billing/usePatientLedger'
 import { formatDate, formatINR, formatLongDate, formatTime } from '../format'
-import { activeAlerts, activityFeed, byNewest, daysLabel, nextAppointment } from '../selectors'
+import { activeAlerts, activityFeed, byNewest, daysLabel, isChangeable, nextAppointment } from '../selectors'
 
 function Card({ title, tag, children, className }) {
   return (
@@ -25,13 +26,14 @@ function Card({ title, tag, children, className }) {
 
 export default function OverviewTab() {
   const { patient, patientId, mine } = usePatient()
+  const ledger = usePatientLedger(patientId)
   const appointments = mine('appointments')
   const encounters = mine('encounters').sort(byNewest)
   const orders = mine('orders')
   const consents = mine('consents')
   const family = mine('family')
-  const payments = mine('payments').sort(byNewest)
-  const summary = ledgerSummary({ invoices: mine('invoices'), payments, refunds: mine('refunds') })
+  const payments = [...ledger.payments].sort(byNewest)
+  const summary = ledgerSummary(ledger)
   const next = nextAppointment(appointments)
   const recent = encounters.find((encounter) => encounter.status !== 'In Progress') ?? encounters[0]
   const active = encounters.find((encounter) => encounter.status === 'In Progress')
@@ -86,7 +88,7 @@ export default function OverviewTab() {
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex gap-2">
                     <ActionButton variant="primary" to={pathFor(ROUTES.appointment, { patientId, appointmentId: next.id })}>View appointment →</ActionButton>
-                    {['Scheduled', 'Confirmed'].includes(next.status) && <ActionButton to={pathFor(ROUTES.appointmentReschedule, { patientId, appointmentId: next.id })}>Reschedule</ActionButton>}
+                    {isChangeable(next) && <ActionButton to={pathFor(ROUTES.appointmentReschedule, { patientId, appointmentId: next.id })}>Reschedule</ActionButton>}
                   </div>
                   <Link to={pathFor(ROUTES.appointmentNew, { patientId })} className="text-xs font-semibold text-brand hover:underline">+ Book another appointment</Link>
                 </div>
@@ -152,7 +154,7 @@ export default function OverviewTab() {
                 ['Sex & blood', `${patient.gender} · ${patient.bloodGroup}`],
                 ['Residential address', patient.address || '—'],
                 ['Emergency / alternate contact', patient.emergencyName ? `${patient.emergencyName} (${patient.emergencyRelation}) · ${patient.emergencyPhone}` : '—'],
-                ['National health address (ABDM)', patient.abhaAddress ?? patient.abha],
+                ['ABHA number', patient.abha],
               ].map(([label, value]) => (
                 <div key={label}><dt className="text-[10px] font-semibold tracking-wide text-outline uppercase">{label}</dt><dd className="font-medium">{value}</dd></div>
               ))}

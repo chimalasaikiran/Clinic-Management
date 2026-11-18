@@ -4,18 +4,18 @@ import ActionButton from '../../../components/workspace/ActionButton'
 import { TextInput } from '../../../components/workspace/FormControls'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
-import { allocatedFromPayment, allocationError, applyAllocation, invoiceBalance, invoiceStatus, invoiceTotal, paymentUnallocated } from '../../patients/billing'
+import { allocatedFromPayment, allocationError, invoiceBalance, invoiceStatus, invoiceTotal } from '../../patients/billing'
 import { OptionSelect } from '../../patients/components/parts'
-import { usePatientRecords } from '../../patients/context/usePatientRecords'
+import { useBilling } from '../context/useBilling'
 import { formatDate, formatTime } from '../../patients/format'
 import BillingFrame from '../components/BillingFrame'
 import { Banner, GovernanceFooter, Scope, Section } from '../../../components/workspace/RecordKit'
 import { money } from '../financeFormat'
-import { allocationRef } from '../financeLogic'
+import { allRefunds, allocationRef, refundBalance } from '../financeLogic'
 
 export default function PaymentAllocationPage() {
   const { paymentId } = useParams()
-  const { records } = usePatientRecords()
+  const { records } = useBilling()
   const payment = records.payments.find((entry) => entry.id === paymentId)
   if (!payment) {
     return (
@@ -28,11 +28,14 @@ export default function PaymentAllocationPage() {
 }
 
 function AllocationForm({ payment }) {
-  const { records, getPatient, update } = usePatientRecords()
+  const { records, refundRequests, getPatient, orgName, allocate } = useBilling()
   const navigate = useNavigate()
   const { state } = useLocation()
   const patient = getPatient(payment.patientId)
-  const available = paymentUnallocated(payment, records.refunds)
+  // Credit held for a pending or approved refund is not available, as the API enforces.
+  const available = Math.max(refundBalance(payment, allRefunds(records, refundRequests)).remaining, 0)
+  const [saving, setSaving] = useState(false)
+  const [serverError, setServerError] = useState('')
   const open = records.invoices.filter((invoice) => invoice.patientId === payment.patientId && invoiceBalance(invoice, records.payments) > 0)
   const [invoiceId, setInvoiceId] = useState(open[0]?.id ?? '')
   const invoice = open.find((entry) => entry.id === invoiceId)
@@ -43,14 +46,21 @@ function AllocationForm({ payment }) {
   const error = invoice ? allocationError({ amount: numeric, available, balance }) : 'Select an invoice with a balance due.'
   const ceiling = Math.min(available, balance)
 
-  const confirm = () => {
-    update('payments', payment.id, (current) => applyAllocation(current, invoice.id, numeric))
-    navigate(detailPath, { state })
+  const confirm = async () => {
+    setSaving(true)
+    setServerError('')
+    try {
+      await allocate(payment.uuid, { invoiceId: invoice.uuid, amount: numeric })
+      navigate(detailPath, { state })
+    } catch (failure) {
+      setServerError(failure.message)
+      setSaving(false)
+    }
   }
 
   return (
     <BillingFrame back={{ to: detailPath, label: `Payment Details · ${payment.id}` }} crumb={`Billing & Finance / Payments / ${payment.id} / Allocation`} code="BF-12 / Payments & receipts" title="Payment Allocation" badge={<StatusPill tone="warning">Unsaved allocation preview</StatusPill>} description={`${payment.id} · Preview a partial allocation without changing the settled payment or existing allocation.`} scope={false}>
-      <Scope left={`Aura Health · ${payment.desk} / ${patient?.name} · ${patient?.mrn}`} />
+      <Scope left={`${orgName} · ${payment.desk} / ${patient?.name} · ${patient?.mrn}`} />
 
       <dl className="mb-6 grid gap-4 sm:grid-cols-3">
         {[['Settled payment', money(payment.amount), `${payment.id} · Read-only`], ['Already allocated', money(allocatedFromPayment(payment)), payment.allocations.map((allocation) => allocationRef(payment, allocation)).join(', ') || 'None · preserved unchanged'], ['Currently available', money(available), 'Actual unallocated payment funds']].map(([label, value, hint]) => (
@@ -91,7 +101,7 @@ function AllocationForm({ payment }) {
 
           <Section title="Preserved allocation">
             {payment.allocations.length ? payment.allocations.map((allocation) => (
-              <p key={allocation.invoiceId} className="flex items-center justify-between text-[13px] font-semibold">{allocationRef(payment, allocation)} → {allocation.invoiceId} · {money(allocation.amount)}<StatusPill>Existing · unchanged</StatusPill></p>
+              <p key={allocation.id} className="flex items-center justify-between text-[13px] font-semibold">{allocationRef(payment, allocation)} → {allocation.invoiceId} · {money(allocation.amount)}<StatusPill>Existing · unchanged</StatusPill></p>
             )) : <p className="text-xs text-outline">No existing allocation on this payment.</p>}
             <p className="mt-3 text-xs text-outline">Existing allocations are historical records and are not edited by a new allocation.</p>
           </Section>
@@ -105,7 +115,8 @@ function AllocationForm({ payment }) {
             <div><dt className="text-on-surface-variant">Invoice outstanding remaining</dt><dd className="mt-1 text-[13px] font-semibold">{money(Math.max(balance - numeric, 0))}</dd><p className="text-[11px] text-outline">{money(balance)} due − {money(numeric || 0)} preview</p></div>
           </dl>
           {error && amount && <Banner tone="warning" title="Confirmation blocked" className="mt-5">{error}</Banner>}
-          <ActionButton variant="primary" className="mt-5" disabled={Boolean(error)} onClick={confirm}>Confirm allocation</ActionButton>
+          {serverError && <Banner tone="danger" title="Allocation not saved" className="mt-5">{serverError}</Banner>}
+          <ActionButton variant="primary" className="mt-5" disabled={Boolean(error) || saving} onClick={confirm}>Confirm allocation</ActionButton>
           <p className="mt-3 text-[11px] leading-4 text-outline">The payment remains Settled & Recorded. Only a separately confirmed allocation may change allocation status.</p>
         </Section>
       </div>
@@ -113,7 +124,7 @@ function AllocationForm({ payment }) {
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-white px-5 py-4">
         <p className="min-w-60 flex-1 text-xs text-outline">Unsaved preview only · Cancel discards the {money(numeric || 0)} preview and returns to Payment Details with actual balances intact.</p>
         <ActionButton onClick={() => navigate(detailPath, { state })}>Cancel preview</ActionButton>
-        <ActionButton variant="soft" disabled={Boolean(error)} onClick={confirm}>Confirm allocation</ActionButton>
+        <ActionButton variant="soft" disabled={Boolean(error) || saving} onClick={confirm}>Confirm allocation</ActionButton>
       </div>
       <GovernanceFooter code="BF-12">Allocation is a distinct record. No funds are applied until eligibility is verified and a new allocation is explicitly confirmed.</GovernanceFooter>
     </BillingFrame>

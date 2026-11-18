@@ -10,6 +10,9 @@ import TextLink from '../../../components/ui/TextLink'
 import { ROUTES } from '../../../config/routes'
 import { useFormFields } from '../../../hooks/useFormFields'
 import { cn } from '../../../lib/cn'
+import { authApi } from '../../auth/api'
+import FormMessage from '../../auth/components/FormMessage'
+import { useAuth } from '../../auth/context/useAuth'
 import OnboardingLayout from '../components/OnboardingLayout'
 import { FACILITY_TYPES } from '../data/clinicOptions'
 import { INDIAN_REGIONS } from '../data/indianRegions'
@@ -32,6 +35,7 @@ function MonoHint({ children, accent = false }) {
 
 export default function ClinicProfilePage() {
   const navigate = useNavigate()
+  const { refresh } = useAuth()
   const [values, handleChange, setValues] = useFormFields({
     clinicName: '',
     location: '',
@@ -40,13 +44,33 @@ export default function ClinicProfilePage() {
     facilityType: '',
   })
   const [submitted, setSubmitted] = useState(false)
+  const [pending, setPending] = useState(false)
+  const [failure, setFailure] = useState('')
   const errors = submitted ? validateClinicProfile(values) : {}
 
-  const handleSubmit = (event) => {
+  // Creates the organisation, its first branch and default roles; the signed-in user becomes Super Admin.
+  const handleSubmit = async (event) => {
     event.preventDefault()
     setSubmitted(true)
+    setFailure('')
     if (Object.keys(validateClinicProfile(values)).length > 0) return
-    navigate(ROUTES.contact)
+
+    setPending(true)
+    try {
+      const membership = await authApi.createOrganisation({
+        clinicName: values.clinicName.trim(),
+        location: values.location.trim(),
+        city: values.city.trim(),
+        state: values.state,
+        facilityType: values.facilityType,
+      })
+      await refresh(membership.organisation.id)
+      navigate(ROUTES.contact)
+    } catch (error) {
+      setFailure(error.message)
+    } finally {
+      setPending(false)
+    }
   }
 
   return (
@@ -58,6 +82,7 @@ export default function ClinicProfilePage() {
       />
 
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-[27px] pt-6">
+        <FormMessage>{failure}</FormMessage>
         <TextField
           label="Clinic / Organization Name"
           hint={<MonoHint>Legal or trade name</MonoHint>}
@@ -123,8 +148,8 @@ export default function ClinicProfilePage() {
           )}
         </fieldset>
 
-        <Button type="submit" size="lg" fullWidth trailing={<img src={icons.arrowLong} alt="" />}>
-          Verify & continue
+        <Button type="submit" size="lg" fullWidth disabled={pending} trailing={<img src={icons.arrowLong} alt="" />}>
+          {pending ? 'Creating clinic…' : 'Verify & continue'}
         </Button>
 
         <div className="flex justify-center">

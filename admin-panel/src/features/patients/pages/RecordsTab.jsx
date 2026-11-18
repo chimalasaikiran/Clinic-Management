@@ -7,8 +7,8 @@ import { pathFor, ROUTES } from '../../../config/routes'
 import { cn } from '../../../lib/cn'
 import { formatDate, formatTime } from '../format'
 import CareProgressDrawer from '../../clinical/drawers/CareProgressDrawer'
-import { applyReview } from '../../clinical/logic'
 import { AllergyDrawer, CarePlanDrawer, NoteDrawer, SafetyAlertDrawer, VitalDetailDrawer } from '../drawers/RecordDrawers'
+import { clinicalApi } from '../api'
 import { usePatient } from '../context/usePatient'
 import { activeAlerts, byNewest, startEncounterPath } from '../selectors'
 import { bmiOf, bpStage } from '../validation'
@@ -28,7 +28,7 @@ function Card({ icon: Icon, title, aside, children, className }) {
 const SEVERITY_BG = { Severe: 'border-red-200 bg-red-50', Moderate: 'border-amber-200 bg-amber-50' }
 
 export default function RecordsTab() {
-  const { patient, patientId, mine, update, add, newId } = usePatient()
+  const { patient, patientId, mine, refresh } = usePatient()
   const [drawer, setDrawer] = useState(null)
   const alerts = mine('alerts')
   const active = activeAlerts(alerts)
@@ -47,19 +47,29 @@ export default function RecordsTab() {
   const close = () => setDrawer(null)
   const route = (pattern) => pathFor(pattern, { patientId })
 
-  const acknowledge = (id, { dispositionId, justification }) =>
-    update('alerts', id, (alert) => ({ status: 'Acknowledged', disposition: dispositionId, justification: justification.trim(), audit: [{ time: 'Just now', text: 'Acknowledged with mitigation', by: justification.trim() }, ...alert.audit] }))
-  const addAddendum = (id, text) => update('notes', id, (note) => ({ addenda: [...note.addenda, { id: `${id}-${note.addenda.length + 1}`, time: 'Addendum · just now', text }] }))
-  const saveReview = (id, values, { complete, escalate }) => {
+  const acknowledge = async (id, { dispositionId, justification }) => {
+    await clinicalApi.acknowledgeAlert(id, dispositionId, justification.trim())
+    await refresh()
+  }
+  const addAddendum = async (id, text) => {
+    await clinicalApi.addAddendum(id, text)
+    await refresh()
+  }
+  // The server applies the review (and, when escalated, raises the alert for the lead) in one step.
+  const saveReview = async (id, values, { mode }) => {
     const current = plans.find((entry) => entry.id === id)
-    update('carePlans', id, applyReview(current, values, { complete, by: current.lead }))
-    if (escalate) {
-      add('alerts', {
-        id: newId('ALT-', 'alerts', 5), patientId, kind: 'CLINICAL FLAG: CARE PLAN ESCALATION', title: `Care plan escalated for attending review — ${current.title}`, severity: 'High', status: 'Active',
-        detail: values.observation.trim(), statement: 'The care plan review was escalated. The attending clinician reviews the plan before the next scheduled follow-up.', evidence: [{ label: 'Care plan', detail: `${current.id} · ${current.title}` }],
-        audit: [{ time: 'Just now', text: 'Escalated from a care plan progress review', by: current.lead }],
-      })
-    }
+    await clinicalApi.reviewCarePlan(id, {
+      mode,
+      observation: values.observation.trim(),
+      goalStatus: values.goalStatus,
+      goalNote: values.goalNote,
+      adherence: values.adherence,
+      barriers: values.barriers,
+      escalate: values.escalate,
+      ...(mode === 'complete' ? { nextReview: values.nextReview } : {}),
+      version: current.version,
+    })
+    await refresh()
   }
 
   return (
@@ -96,7 +106,7 @@ export default function RecordsTab() {
           <Card icon={Stethoscope} title="Current care context" aside={encounter && <StatusPill tone="brand" dot>In consultation</StatusPill>}>
             {encounter ? (
               <>
-                <p className="text-sm font-semibold">Today&apos;s encounter <span className="font-mono text-xs text-brand">#{encounter.id}</span></p>
+                <p className="text-sm font-semibold">Today&apos;s encounter <span className="font-mono text-xs text-brand">#{encounter.reference ?? encounter.id}</span></p>
                 <p className="text-xs text-on-surface-variant">{encounter.doctor} · {encounter.chamber}, {encounter.campus} · Started {formatTime(encounter.time)}</p>
                 <div className="mt-4"><ActionButton variant="brand" to={pathFor(ROUTES.encounter, { patientId, encounterId: encounter.id })}>Open encounter &amp; document care →</ActionButton></div>
               </>

@@ -7,19 +7,23 @@ import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
 import FlowFrame, { BackLink, FlowMissing } from '../components/FlowFrame'
 import { ChecklistItem, FlowSection, KeyValueRows, SideCard, TextArea } from '../components/parts'
+import { TARIFF_NOTE } from '../adapters'
+import { appointmentsApi } from '../api'
 import { useAppointment } from '../context/useAppointment'
 import { NO_SHOW_REASONS } from '../data/catalog'
-import { TODAY, formatDate, formatINR, formatTime } from '../format'
-import { appointmentTone, auditEntry } from '../selectors'
+import { formatDate, formatTime, localClock, localToday } from '../format'
+import { appointmentTone, isChangeable } from '../selectors'
 import { validateWorkflowReason } from '../validation'
 
 export default function NoShowPage() {
-  const { patient, patientId, appointment, update } = useAppointment()
+  const { patient, patientId, appointment, loading, reload } = useAppointment()
   const navigate = useNavigate()
   const [values, setValues] = useState({ reasonId: 'no-arrive', note: '', notify: true })
   const [submitted, setSubmitted] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [serverError, setServerError] = useState('')
 
-  if (!appointment) return <FlowMissing patient={patient} />
+  if (!appointment) return <FlowMissing patient={patient} loading={loading} />
 
   const backTo = pathFor(ROUTES.appointment, { patientId, appointmentId: appointment.id })
   const errors = submitted ? validateWorkflowReason(values) : {}
@@ -29,35 +33,39 @@ export default function NoShowPage() {
   // Each guard mirrors a rule from the lifecycle: a no-show is only valid for a booked slot nobody has used.
   const checks = [
     { ok: !['Arrived', 'In Progress'].includes(appointment.status), text: 'Arrival status verified (not present in facility)' },
-    { ok: !appointment.encounterId, text: 'Zero active clinical encounters detected' },
+    { ok: !['In Progress', 'Completed'].includes(appointment.status), text: 'Zero active clinical encounters detected' },
     { ok: !appointment.queueToken, text: 'No active queue tokens found in lounge' },
-    { ok: appointment.date <= TODAY, text: 'Slot date reached — grace period applies' },
+    { ok: `${appointment.date} ${appointment.time}` <= `${localToday()} ${localClock()}`, text: 'Appointment time has passed' },
   ]
-  const markable = ['Scheduled', 'Confirmed'].includes(appointment.status)
+  const markable = isChangeable(appointment)
   const passed = checks.filter((check) => check.ok).length
 
-  const confirm = () => {
+  const confirm = async () => {
     setSubmitted(true)
+    setServerError('')
     if (Object.keys(validateWorkflowReason(values)).length || passed < checks.length) return
-    update('appointments', appointment.id, (current) => ({
-      status: 'No-show',
-      serviceNote: reason.title,
-      audit: [auditEntry(`Marked as no-show — ${reason.title}`, values.note.trim()), ...(current.audit ?? [])],
-    }))
-    navigate(backTo)
+    setSaving(true)
+    try {
+      await appointmentsApi.noShow(appointment.id, reason.title, values.note.trim())
+      await reload()
+      navigate(backTo)
+    } catch (error) {
+      setSaving(false)
+      setServerError(error.message)
+    }
   }
 
   return (
     <FlowFrame
       title="Mark as no-show"
       description="Record that the patient did not attend the scheduled consultation without prior cancellation notice. The appointment is preserved in audit history and releases the clinician time slot."
-      actions={<BackLink to={backTo}>Back to {appointment.id}</BackLink>}
+      actions={<BackLink to={backTo}>Back to {appointment.reference}</BackLink>}
     >
       <section className="mb-5 grid gap-4 rounded-lg border border-slate-200 bg-white p-4 text-xs sm:grid-cols-2 lg:grid-cols-4">
         <p><span className="text-[10px] font-semibold tracking-wide text-outline uppercase">Patient</span><br /><strong className="text-sm">{patient.name}</strong><br />{patient.age}y · {patient.gender} · {patient.mobile}</p>
         <p><span className="text-[10px] font-semibold tracking-wide text-outline uppercase">Scheduled slot</span><br /><strong className="text-sm">{formatDate(appointment.date)}</strong><br />{formatTime(appointment.time)} ({appointment.minutes} min)</p>
         <p><span className="text-[10px] font-semibold tracking-wide text-outline uppercase">Consulting clinician</span><br /><strong className="text-sm">{appointment.doctorShort}</strong><br />{appointment.department} · {appointment.room}</p>
-        <p><span className="text-[10px] font-semibold tracking-wide text-outline uppercase">Tariff & current state</span><br /><strong className="text-sm">{formatINR(appointment.tariff ?? 0, 2)}</strong><br /><StatusPill tone={appointmentTone(appointment.status)}>{appointment.status}</StatusPill></p>
+        <p><span className="text-[10px] font-semibold tracking-wide text-outline uppercase">Tariff & current state</span><br /><strong className="text-sm">{TARIFF_NOTE}</strong><br /><StatusPill tone={appointmentTone(appointment.status)}>{appointment.status}</StatusPill></p>
       </section>
 
       {!markable && (
@@ -105,11 +113,12 @@ export default function NoShowPage() {
           </FlowSection>
         </div>
 
-        <SideCard title="Confirm no-show record?" tag={<span className="font-mono text-[10px] text-outline">{appointment.id}</span>}>
+        <SideCard title="Confirm no-show record?" tag={<span className="font-mono text-[10px] text-outline">{appointment.reference}</span>}>
           <p className="mb-3 text-xs font-semibold text-brand">Pre-flight checklist · {passed} / {checks.length} passed</p>
           <KeyValueRows rows={[['Patient', `${patient.name} (${patient.mrn})`], ['Clinician', appointment.doctorShort], ['Slot schedule', `${formatDate(appointment.date)} · ${formatTime(appointment.time)}`], ['Target state change', 'SCHEDULED → NO-SHOW']]} />
           <div className="mt-5 flex flex-col gap-2">
-            <ActionButton variant="primary" className="w-full" onClick={confirm} disabled={!markable}>Mark as no-show</ActionButton>
+            {serverError && <p role="alert" className="text-xs text-rose-600">{serverError}</p>}
+            <ActionButton variant="primary" className="w-full" onClick={confirm} disabled={!markable || saving}>{saving ? 'Saving…' : 'Mark as no-show'}</ActionButton>
             <ActionButton className="w-full" to={backTo}>Keep appointment / Cancel</ActionButton>
           </div>
           <p className="mt-4 text-[11px] leading-4 text-on-surface-variant">The appointment will be permanently marked as No-show, the slot released for registry reallocation, and retained in the patient longitudinal history.</p>

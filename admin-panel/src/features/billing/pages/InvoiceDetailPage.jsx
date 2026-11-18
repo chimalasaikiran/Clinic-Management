@@ -5,7 +5,7 @@ import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
 import { exportCsv } from '../../../lib/exportCsv'
 import { allocatedToInvoice, invoiceBalance, invoiceStatus, invoiceTotals, lineAmounts, paymentUnallocated } from '../../patients/billing'
-import { usePatientRecords } from '../../patients/context/usePatientRecords'
+import { useBilling } from '../context/useBilling'
 import { MissingRecord } from '../../inventory/components/DetailFrame'
 import { formatDate, formatINR, formatTime } from '../../patients/format'
 import BillingFrame, { Card, Note } from '../components/BillingFrame'
@@ -16,7 +16,7 @@ const Fact = ({ label, value }) => <div className="flex justify-between gap-4 bo
 
 export default function InvoiceDetailPage() {
   const { invoiceId } = useParams()
-  const { records, getPatient } = usePatientRecords()
+  const { records, getPatient, orgName } = useBilling()
   const location = useLocation()
   const invoice = records.invoices.find((entry) => entry.id === invoiceId)
   if (!invoice) return <MissingRecord what="invoice" backTo={ROUTES.billingInvoices} backLabel="Back to the invoice register" />
@@ -36,13 +36,13 @@ export default function InvoiceDetailPage() {
   const download = () => exportCsv(`${invoice.id}.csv`, [['Code', 'Service', 'Qty', 'Unit price', 'Discount %', 'GST %', 'Amount'], ...invoice.lines.map((line) => [line.code, line.name, line.qty, line.price, line.discountPct, line.gstPct, lineAmounts(line).total]), ['', 'Total', '', '', '', '', totals.total]])
 
   return (
-    <BillingFrame back={{ to: back, label: 'Invoice Register' }} crumb={`Billing & Finance / Invoices / ${invoice.id}`} code={`BF-08 / ${patient ? 'Aura Health' : ''}`} title={invoice.id} description={`${invoice.title} · ${formatDate(invoice.date)}, ${formatTime(invoice.time)} IST`} scope={false}
+    <BillingFrame back={{ to: back, label: 'Invoice Register' }} crumb={`Billing & Finance / Invoices / ${invoice.id}`} code="BF-08 / Billing & Finance" title={invoice.id} description={`${invoice.title} · ${formatDate(invoice.date)}, ${formatTime(invoice.time)} IST`} scope={false}
       actions={<><ActionButton icon={Download} onClick={download}>Download</ActionButton><ActionButton icon={Printer} onClick={() => window.print()}>Print</ActionButton>{balance > 0 && <ActionButton variant="primary" to={billingTab} state={{ recordPayment: true }}>Record Payment</ActionButton>}</>}>
       <p className="mb-5 flex flex-wrap items-center gap-2 text-xs"><StatusPill tone={TONE[status]}>{status}</StatusPill><StatusPill>Protected financial record</StatusPill><span className="text-outline">Record Payment requires payment-create permission · payment and allocation remain separate records.</span></p>
 
       <div className="grid gap-5 lg:grid-cols-[1.9fr_1fr]">
         <div className="flex flex-col gap-5">
-          <Card title="Invoice context" aside="Aura Health · INR (₹)">
+          <Card title="Invoice context" aside={`${orgName} · INR (₹)`}>
             <div className="grid gap-x-8 sm:grid-cols-2"><dl><Fact label="Patient" value={<Link to={pathFor(ROUTES.patientHub, { patientId: invoice.patientId })} className="text-brand hover:underline">{patient?.name} · {patient?.mrn}</Link>} /><Fact label="Invoice payer" value={invoice.payer ?? 'Not recorded'} /><Fact label="Due date" value={invoice.dueDate ? formatDate(invoice.dueDate) : 'Not recorded'} /></dl><dl><Fact label="Branch" value={invoice.branch ?? invoice.location} /><Fact label="Encounter" value={invoice.encounterId && invoice.encounterId !== '—' ? <Link to={pathFor(ROUTES.encounter, { patientId: invoice.patientId, encounterId: invoice.encounterId })} className="text-brand hover:underline">{invoice.encounterId}</Link> : 'Not linked'} /><Fact label="Document" value={invoice.kind ?? 'Invoice'} /></dl></div>
           </Card>
 

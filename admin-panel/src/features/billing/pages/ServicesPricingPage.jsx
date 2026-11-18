@@ -6,13 +6,13 @@ import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
 import { formatINR } from '../../patients/format'
 import BillingFrame, { Note } from '../components/BillingFrame'
-import { BRANCHES, SERVICE_CATEGORIES, SERVICE_DEPARTMENTS, SERVICE_PAGE_SIZE, TAX_TREATMENTS } from '../constants'
+import { SERVICE_CATEGORIES, SERVICE_DEPARTMENTS, SERVICE_PAGE_SIZE, TAX_TREATMENTS } from '../constants'
 import { useBilling } from '../context/useBilling'
 import { branchSummary } from '../serviceLogic'
 
 // Filters and page live in the address, so opening a service and coming back restores the catalogue as it was.
 export default function ServicesPricingPage() {
-  const { services } = useBilling()
+  const { services, branches } = useBilling()
   const saved = useLocation().state?.saved
   const [params, setParams] = useSearchParams()
   const get = (key) => params.get(key) ?? ''
@@ -42,9 +42,9 @@ export default function ServicesPricingPage() {
       <div className="mb-2 grid gap-3 sm:grid-cols-5">
         {select('category', 'Category', 'All categories', SERVICE_CATEGORIES.map((entry) => [entry, entry]))}
         {select('department', 'Department / specialty', 'All departments', SERVICE_DEPARTMENTS.map((entry) => [entry, entry]))}
-        {select('branch', 'Branch', 'All locations (3)', BRANCHES.map((entry) => [entry.id, entry.name]))}
+        {select('branch', 'Branch', `All locations (${branches.length})`, branches.map((entry) => [entry.id, entry.name]))}
         {select('status', 'Status', 'All statuses', [['Active', 'Active'], ['Inactive', 'Inactive']])}
-        {select('tax', 'Tax configuration', 'All treatments', TAX_TREATMENTS.map((entry) => [entry, entry]))}
+        {select('tax', 'Tax configuration', 'All treatments', TAX_TREATMENTS.map(([, label]) => [label, label]))}
       </div>
       <p className="mb-4 flex justify-between text-[11px] text-outline"><span>Branch filter narrows availability; it does not change the organization context.</span>{filtered && <button type="button" onClick={() => setParams({}, { replace: true })} className="font-semibold text-brand hover:underline">Clear filters</button>}</p>
 
@@ -55,7 +55,7 @@ export default function ServicesPricingPage() {
           <thead className="bg-surface-lowest text-[10px] font-semibold tracking-wide text-on-surface-variant uppercase"><tr>{['Service name', 'Unique code', 'Category', 'Department / specialty', 'Default price', 'Branch availability / price', 'Tax treatment', 'Status', 'Last updated', 'Actions'].map((heading) => <th key={heading} scope="col" className="px-4 py-3">{heading}</th>)}</tr></thead>
           <tbody>
             {shown.map((service) => {
-              const [where, how] = branchSummary(service)
+              const [where, how] = branchSummary(service, branches)
               return (
                 <tr key={service.id} className="border-t border-slate-100 align-top hover:bg-surface-lowest">
                   <td className="px-4 py-4 text-[13px] font-semibold">{service.name}</td>
@@ -74,7 +74,7 @@ export default function ServicesPricingPage() {
           </tbody>
         </table>
         {shown.length === 0 && (
-          <div className="flex flex-col items-center px-6 py-14 text-center"><span className="mb-3 flex size-9 items-center justify-center rounded bg-surface-low text-brand">+</span><h2 className="text-lg font-semibold">{services.length ? 'No services match' : 'No services yet'}</h2><p className="mt-1 max-w-md text-xs text-on-surface-variant">{services.length ? 'Try a different search or clear the filters.' : 'Create your first service definition for Aura Health. Add a required default price, then choose availability and any optional branch overrides.'}</p>{!services.length && <ActionButton variant="primary" icon={Plus} to={ROUTES.billingServiceNew} className="mt-4">Add Service</ActionButton>}</div>
+          <div className="flex flex-col items-center px-6 py-14 text-center"><span className="mb-3 flex size-9 items-center justify-center rounded bg-surface-low text-brand">+</span><h2 className="text-lg font-semibold">{services.length ? 'No services match' : 'No services yet'}</h2><p className="mt-1 max-w-md text-xs text-on-surface-variant">{services.length ? 'Try a different search or clear the filters.' : 'Create your first service definition. Add a required default price, then choose availability and any optional branch overrides.'}</p>{!services.length && <ActionButton variant="primary" icon={Plus} to={ROUTES.billingServiceNew} className="mt-4">Add Service</ActionButton>}</div>
         )}</div>
         <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-surface-lowest px-5 py-3 text-xs text-on-surface-variant">
           <span>{rows.length ? `Showing ${(current - 1) * SERVICE_PAGE_SIZE + 1}–${(current - 1) * SERVICE_PAGE_SIZE + shown.length} of ${rows.length} services · ${SERVICE_PAGE_SIZE} per page` : 'No services in this view'}</span>

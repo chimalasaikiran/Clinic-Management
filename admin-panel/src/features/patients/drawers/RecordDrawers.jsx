@@ -9,7 +9,7 @@ import { cn } from '../../../lib/cn'
 import { usePatient } from '../context/usePatient'
 import { TextArea } from '../components/parts'
 import Timeline from '../components/Timeline'
-import { ALERT_DISPOSITIONS } from '../data/seedClinical'
+import { ALERT_DISPOSITIONS } from '../data/catalog'
 import { formatDate, formatTime } from '../format'
 import { byNewest } from '../selectors'
 import { bpStage, validateMitigation } from '../validation'
@@ -188,7 +188,7 @@ export function CarePlanDrawer({ plan, onClose, onUpdateProgress }) {
     <Drawer
       open
       onClose={onClose}
-      eyebrow={`${plan.id} · Active care plan detail`}
+      eyebrow={`${plan.reference ?? plan.id} · Active care plan detail`}
       title={plan.title}
       description={`Lead: ${plan.lead} · ${plan.timeline}`}
       width="max-w-2xl"

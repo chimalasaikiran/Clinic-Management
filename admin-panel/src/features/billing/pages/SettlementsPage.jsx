@@ -5,21 +5,23 @@ import { ROUTES } from '../../../config/routes'
 import BillingFrame from '../components/BillingFrame'
 import { Banner, FilterField, GovernanceFooter, MetricStrip, Section } from '../../../components/workspace/RecordKit'
 import { DATE_RANGES } from '../constants'
+import { useBilling } from '../context/useBilling'
 import { useRegisterFilters } from '../../../hooks/useRegisterFilters'
 
 const PAYEE_TYPES = ['Doctor', 'Staff', 'Branch']
 
 // Settlement rules and records have no source yet, so the page reports that plainly instead of showing zeros.
 export default function SettlementsPage() {
+  const { scopeText } = useBilling()
   const filters = useRegisterFilters({ range: DATE_RANGES[0].id })
   const range = DATE_RANGES.find((entry) => entry.id === filters.get('range')) ?? DATE_RANGES[0]
 
   return (
-    <BillingFrame back={{ to: ROUTES.billing, label: 'Back to Finance Workspace' }} crumb="Billing & Finance / Settlements" code="BF-21 / Aura Health · Billing & Finance" title="Settlements" description="Review doctor, staff or branch settlements only where configuration and authorized source records exist." actions={<ActionButton disabled>Export settlements</ActionButton>} scope={false}>
-      <p className="mb-5 border-b border-slate-200 pb-4 text-[11px] text-outline">Return to Finance Workspace with {range.label} · All locations (3) · Billing model: All models · Queue context retained.</p>
+    <BillingFrame back={{ to: ROUTES.billing, label: 'Back to Finance Workspace' }} crumb="Billing & Finance / Settlements" code="BF-21 / Billing & Finance" title="Settlements" description="Review doctor, staff or branch settlements only where configuration and authorized source records exist." actions={<ActionButton disabled>Export settlements</ActionButton>} scope={false}>
+      <p className="mb-5 border-b border-slate-200 pb-4 text-[11px] text-outline">Return to Finance Workspace with {range.label} · {scopeText} · Billing model: All models · Queue context retained.</p>
       <div className="mb-6 grid items-end gap-4 sm:grid-cols-3 lg:grid-cols-[1fr_1fr_1fr_1fr]">
         <FilterField label="Requested period filter" value={range.id} onChange={(value) => filters.change('range', value, DATE_RANGES[0].id)} options={DATE_RANGES.map((entry) => [entry.id, entry.label])} />
-        <FilterField label="Organization / branch" value="" disabled options={[['', 'Aura Health · All locations (3)']]} />
+        <FilterField label="Organization / branch" value="" disabled options={[['', scopeText]]} />
         <FilterField label="Settlement type" value={filters.get('type')} onChange={(value) => filters.change('type', value)} options={[['', 'All payee types'], ...PAYEE_TYPES]} />
         <p className="text-right text-[11px] text-outline">Currency: INR (₹) · Time: IST<br />Finance Manager · Settlement authority unverified</p>
       </div>

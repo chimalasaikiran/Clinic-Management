@@ -5,6 +5,8 @@ import { FilterSelect, FilterTabs, InfoNote, SearchBox } from '../../../componen
 import { Cell, Row, StatTiles, Table, TableFooter } from '../../../components/workspace/DataTable'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { cn } from '../../../lib/cn'
+import { clinicalApi } from '../api'
+import { toPrescriptionRequest } from '../clinicalAdapters'
 import EmptyState from '../components/EmptyState'
 import { usePatient } from '../context/usePatient'
 import CreatePrescriptionDrawer from '../drawers/CreatePrescriptionDrawer'
@@ -22,7 +24,7 @@ const TABS = [
 const rxTone = (status) => (status === 'Active' ? 'success' : status.startsWith('Discontinued') ? 'danger' : 'neutral')
 
 export default function PrescriptionsTab() {
-  const { patient, mine, add, newId } = usePatient()
+  const { patient, mine, refresh } = usePatient()
   const [drawer, setDrawer] = useState(null)
   const [tab, setTab] = useState('active')
   const [query, setQuery] = useState('')
@@ -39,15 +41,19 @@ export default function PrescriptionsTab() {
   const exhausted = activeItems.filter((item) => item.refills === 0)
   const selected = TABS.find((entry) => entry.id === tab)
   const needle = query.trim().toLowerCase()
-  const rows = prescriptions.filter((rx) => selected.test(rx) && (!doctor || rx.prescriber === doctor) && (!needle || `${rx.id} ${rx.items.map((item) => item.name).join(' ')}`.toLowerCase().includes(needle)))
+  const rows = prescriptions.filter((rx) => selected.test(rx) && (!doctor || rx.prescriber === doctor) && (!needle || `${rx.reference} ${rx.items.map((item) => item.name).join(' ')}`.toLowerCase().includes(needle)))
   const cards = activeItems.filter((item) => !needle || item.name.toLowerCase().includes(needle))
 
-  const authorize = (rx) => {
-    const created = add('prescriptions', {
-      ...rx, id: newId('RX-2026-S', 'prescriptions', 3), patientId: patient.id, encounterId: encounter?.id ?? null, prescriber: encounter?.doctor ?? 'Attending clinician', department: encounter?.department ?? 'OPD', registration: 'NMC #61820',
-      branch: encounter?.branch ?? patient.branch, status: 'Active', dispensing: 'Awaiting pharmacy acknowledgement', hash: 'sha256:pending', events: [{ time: 'Just now', title: 'Prescription authorized & digitally signed', actor: encounter?.doctor ?? 'Attending clinician', note: '' }],
-    })
-    setNotice(`Prescription ${created.id} authorized and sent to the dispensing pharmacy.`)
+  // Signed on the server (which repeats the allergy and precaution checks); errors are shown in the drawer.
+  const authorize = async (draft) => {
+    const created = await clinicalApi.prescribe(patient.id, toPrescriptionRequest(draft, { encounterId: encounter?.id, branchId: patient.branchId }))
+    await refresh()
+    setNotice(`Prescription ${created.reference} signed and queued for the pharmacy.`)
+  }
+
+  const discontinue = async (id, reason) => {
+    await clinicalApi.discontinuePrescription(id, reason)
+    await refresh()
   }
 
   const current = drawer ? prescriptions.find((rx) => rx.id === drawer.id) : null
@@ -84,7 +90,7 @@ export default function PrescriptionsTab() {
               { label: 'Latest Rx order', value: prescriptions[0] ? formatDate(prescriptions[0].date) : '—', hint: prescriptions[0] ? `Prescribed by ${prescriptions[0].prescriber}` : '' },
               { label: 'Dispensing status', value: `${activeItems.length - pending.length} / ${activeItems.length}`, hint: pending.length ? `${pending.length} Pending` : 'All dispensed' },
               { label: 'Refills tracked', value: activeItems.length - exhausted.length, hint: exhausted.length ? `${exhausted.length} medication at 0 refills` : 'All with refills remaining' },
-              { label: 'Cryptographic sign-off', value: '100%', hint: 'DSC e-Sign PKI validated' },
+              { label: 'Content hash', value: '100%', hint: 'SHA-256 recorded at signing' },
             ]}
           />
 
@@ -104,7 +110,7 @@ export default function PrescriptionsTab() {
                   </dl>
                   <p className="mt-2 text-xs text-on-surface-variant"><span className="text-outline">Indication:</span> {item.indication}</p>
                   <p className={cn('mt-3 rounded-md p-2 text-[11px]', item.dispensing.state === 'Dispensed' ? 'bg-surface-low' : 'bg-amber-100 text-amber-900')}><strong>Dispensing status: {item.dispensing.state}</strong><br />{item.dispensing.note}</p>
-                  <footer className="mt-3 flex items-center justify-between text-[11px] text-outline"><span>By: {item.rx.prescriber} · {item.rx.id}</span><span className="flex gap-3"><button type="button" onClick={() => setDrawer({ type: 'detail', id: item.rx.id })} className="font-semibold text-brand hover:underline" aria-label={`View Rx details for ${item.name}`}>View Rx details</button></span></footer>
+                  <footer className="mt-3 flex items-center justify-between text-[11px] text-outline"><span>By: {item.rx.prescriber} · {item.rx.reference}</span><span className="flex gap-3"><button type="button" onClick={() => setDrawer({ type: 'detail', id: item.rx.id })} className="font-semibold text-brand hover:underline" aria-label={`View Rx details for ${item.name}`}>View Rx details</button></span></footer>
                 </article>
               )
             })}
@@ -116,14 +122,14 @@ export default function PrescriptionsTab() {
             <Table headings={['Date & Rx ID', 'Medications & regimen', 'Prescriber & dept', 'Linked encounter', 'Branch', 'Prescription status', 'Dispensing status', 'Actions']} minWidth={1100} empty={rows.length ? null : 'No prescriptions match the current filters.'}>
               {rows.map((rx) => (
                 <Row key={rx.id}>
-                  <Cell><p className="font-semibold">{formatDate(rx.date)}</p><p className="font-mono text-[11px] text-brand">#{rx.id}</p></Cell>
+                  <Cell><p className="font-semibold">{formatDate(rx.date)}</p><p className="font-mono text-[11px] text-brand">#{rx.reference}</p></Cell>
                   <Cell><p className={cn('font-semibold', rx.status.startsWith('Discontinued') && 'line-through')}>{rx.items.map((item) => `${item.name} ${item.strength}`).join(' + ')}</p><p className="text-[11px] text-on-surface-variant">{rx.items.length} items · {rx.indication}</p></Cell>
                   <Cell><p className="font-medium">{rx.prescriber}</p><p className="text-[11px] text-on-surface-variant">{rx.department}</p></Cell>
-                  <Cell className="font-mono text-[11px] text-brand">{rx.encounterId ? `#${rx.encounterId}` : '—'}</Cell>
+                  <Cell className="font-mono text-[11px] text-brand">{rx.encounterReference ? `#${rx.encounterReference}` : '—'}</Cell>
                   <Cell>{rx.branch}</Cell>
                   <Cell><StatusPill tone={rxTone(rx.status)}>{rx.status}</StatusPill></Cell>
                   <Cell className="text-xs">{rx.dispensing}</Cell>
-                  <Cell><span className="flex gap-2 text-xs font-semibold text-brand"><button type="button" onClick={() => setDrawer({ type: 'detail', id: rx.id })} className="hover:underline" aria-label={`Open ${rx.id}`}>Details</button><button type="button" onClick={() => setDrawer({ type: 'activity', id: rx.id })} className="hover:underline" aria-label={`Activity for ${rx.id}`}>Activity</button></span></Cell>
+                  <Cell><span className="flex gap-2 text-xs font-semibold text-brand"><button type="button" onClick={() => setDrawer({ type: 'detail', id: rx.id })} className="hover:underline" aria-label={`Open ${rx.reference}`}>Details</button><button type="button" onClick={() => setDrawer({ type: 'activity', id: rx.id })} className="hover:underline" aria-label={`Activity for ${rx.reference}`}>Activity</button></span></Cell>
                 </Row>
               ))}
             </Table>
@@ -134,7 +140,7 @@ export default function PrescriptionsTab() {
         </>
       )}
 
-      {drawer?.type === 'detail' && <PrescriptionDetailDrawer key={drawer.id} rx={current} patient={patient} onClose={() => setDrawer(null)} onOpenActivity={() => setDrawer({ type: 'activity', id: drawer.id })} />}
+      {drawer?.type === 'detail' && <PrescriptionDetailDrawer key={drawer.id} rx={current} patient={patient} onClose={() => setDrawer(null)} onOpenActivity={() => setDrawer({ type: 'activity', id: drawer.id })} onDiscontinue={discontinue} />}
       {drawer?.type === 'activity' && <PrescriptionActivityDrawer key={drawer.id} rx={current} patient={patient} onClose={() => setDrawer(null)} />}
       <CreatePrescriptionDrawer open={drawer?.type === 'create'} onClose={() => setDrawer(null)} patient={patient} encounter={encounter} allergies={allergies} diagnoses={diagnoses} latestVitals={latestVitals} onAuthorize={authorize} />
     </div>

@@ -40,10 +40,10 @@ describe('validateBranchAssignment', () => {
 })
 
 describe('validateAccountSetup', () => {
-  it('requires a valid email and mobile', () => {
-    expect(Object.keys(validateAccountSetup({ email: '', mobile: '' }))).toEqual(['email', 'mobile'])
-    expect(validateAccountSetup({ email: 'a@b.co', mobile: '+91 9845277102' }).mobile).toBeUndefined()
-    expect(validateAccountSetup({ email: 'a@b.co', mobile: '98452' }).mobile).toMatch(/10-digit/)
+  it('requires a valid sign-in email', () => {
+    expect(Object.keys(validateAccountSetup({ email: '' }))).toEqual(['email'])
+    expect(validateAccountSetup({ email: 'nope' }).email).toMatch(/valid email/)
+    expect(validateAccountSetup({ email: 'a@b.co' })).toEqual({})
   })
 })
 

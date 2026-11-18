@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom'
 import ActionButton from '../../../components/workspace/ActionButton'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
-import { usePatientRecords } from '../../patients/context/usePatientRecords'
 import { formatDate, formatINR, formatTime } from '../../patients/format'
 import BillingFrame, { Card, Note } from '../components/BillingFrame'
 import { BILLING_MODELS, DATE_RANGES } from '../constants'
@@ -19,14 +18,13 @@ const SECTIONS = [
 const TONE = { 'Partially Paid': 'warning', 'Partially allocated': 'brand', Settled: 'success', 'Paid in Full': 'success', Refunded: 'neutral', Issued: 'info' }
 
 export default function BillingHubPage() {
-  const { records, getPatient } = usePatientRecords()
-  const { config, refundRequests } = useBilling()
+  const { records, getPatient, config, refundRequests, orgName, scopeText } = useBilling()
   const [rangeId, setRangeId] = useState(DATE_RANGES[0].id)
   const [branch, setBranch] = useState('')
   const [model, setModel] = useState('')
   const range = DATE_RANGES.find((entry) => entry.id === rangeId)
   const branches = [...new Set(records.invoices.map((invoice) => invoice.branch ?? invoice.location))]
-  const scoped = { ...records, invoices: records.invoices.filter((invoice) => !branch || (invoice.branch ?? invoice.location) === branch) }
+  const scoped = { ...records, invoices: records.invoices.filter((invoice) => (!branch || (invoice.branch ?? invoice.location) === branch) && (!model || invoice.model === model)) }
   const nameOf = (id) => getPatient(id)?.name ?? 'Unknown patient'
   const overview = billingOverview(scoped, range)
   const queue = priorityQueue(scoped, range, nameOf)
@@ -35,13 +33,13 @@ export default function BillingHubPage() {
   const paymentPath = (row) => pathFor(ROUTES.patientBilling, { patientId: row.patientId })
 
   return (
-    <BillingFrame back={{ to: ROUTES.dashboard, label: 'Back to Owner Panel' }} crumb="Owner Panel / Billing & Finance" code="BF-01 / Organization workspace" title="Billing & Finance" description="Review financial work across Aura Health. Open linked records without changing settled history." actions={<ActionButton variant="primary" icon={Plus} to={ROUTES.billingPaymentNew}>Record payment</ActionButton>} scope={false}>
+    <BillingFrame back={{ to: ROUTES.dashboard, label: 'Back to Owner Panel' }} crumb="Owner Panel / Billing & Finance" code="BF-01 / Organization workspace" title="Billing & Finance" description={`Review financial work across ${orgName}. Open linked records without changing settled history.`} actions={<ActionButton variant="primary" icon={Plus} to={ROUTES.billingPaymentNew}>Record payment</ActionButton>} scope={false}>
       <div className="mb-3 grid gap-4 sm:grid-cols-3">
-        <label className="text-xs text-outline">Organization / branch<select aria-label="Branch" value={branch} onChange={(event) => setBranch(event.target.value)} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-on-surface outline-none focus:border-brand"><option value="">Aura Health · All locations (3)</option>{branches.map((entry) => <option key={entry}>{entry}</option>)}</select></label>
+        <label className="text-xs text-outline">Organization / branch<select aria-label="Branch" value={branch} onChange={(event) => setBranch(event.target.value)} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-on-surface outline-none focus:border-brand"><option value="">{scopeText}</option>{branches.map((entry) => <option key={entry}>{entry}</option>)}</select></label>
         <label className="text-xs text-outline">Date range · Custom<select aria-label="Date range" value={rangeId} onChange={(event) => setRangeId(event.target.value)} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-on-surface outline-none focus:border-brand">{DATE_RANGES.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}</select></label>
         <label className="text-xs text-outline">Billing model<select aria-label="Billing model" value={model} onChange={(event) => setModel(event.target.value)} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-on-surface outline-none focus:border-brand"><option value="">All models</option>{BILLING_MODELS.map((entry) => <option key={entry}>{entry}</option>)}</select></label>
       </div>
-      <p className="mb-5 flex flex-wrap justify-between gap-2 text-[11px] text-outline"><span>Organization default model: {config.model}. Records are not tagged with a billing model, so this filter does not narrow them.</span><span>Currency: INR (₹) · Time: IST</span></p>
+      <p className="mb-5 flex flex-wrap justify-between gap-2 text-[11px] text-outline"><span>Organization default model: {config.model}. The model filter narrows invoices to those issued under it.</span><span>Currency: INR (₹) · Time: IST</span></p>
 
       <nav aria-label="Billing sections" className="mb-6 rounded-lg border border-slate-200 bg-white p-4 text-xs">
         {SECTIONS.map(([label, links]) => (
@@ -49,17 +47,17 @@ export default function BillingHubPage() {
         ))}
       </nav>
 
-      <Card title="Financial overview" aside={`Aura Health · ${branch || 'All locations'}`} className="mb-6">
+      <Card title="Financial overview" aside={`${orgName} · ${branch || 'All locations'}`} className="mb-6">
         <dl className="grid gap-4 sm:grid-cols-4">
           {[['Collections', formatINR(overview.collections), 'Net of refunds, selected period'], ['Outstanding balances', formatINR(overview.outstanding), `${overview.invoiceCount} invoices in scope`], ['Unallocated payments', formatINR(overview.unallocated), 'Credit not applied to an invoice'], ['Refunds awaiting review', String(refundRequests.filter((refund) => refund.status === 'Pending').length), 'Pending review']].map(([label, value, hint]) => (
             <div key={label}><dt className="text-xs font-semibold">{label}</dt><dd className="mt-1 text-2xl font-semibold">{value}</dd><p className="text-[11px] text-outline">{hint}</p></div>
           ))}
         </dl>
-        <p className="mt-4 rounded-md bg-surface-lowest px-3 py-2 text-[11px] text-on-surface-variant">Figures come from the invoices, payments and refunds held in this workspace; they are not an organization-wide ledger.</p>
+        <p className="mt-4 rounded-md bg-surface-lowest px-3 py-2 text-[11px] text-on-surface-variant">Figures come from the invoices, payments and refunds recorded for {orgName}. Refunds count once the money has gone back.</p>
       </Card>
 
       <section className="mb-6 overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <header className="px-6 pt-5"><h2 className="text-base font-semibold">Priority queue</h2><p className="text-xs text-outline">Available source records · not an exhaustive queue for your organization</p></header>
+        <header className="px-6 pt-5"><h2 className="text-base font-semibold">Priority queue</h2><p className="text-xs text-outline">Invoices with a balance and payments with credit still to apply</p></header>
         <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
           {queue.length === 0 && <li className="px-6 py-6 text-sm text-on-surface-variant">Nothing is waiting on a person in this scope.</li>}
           {queue.map((row) => (

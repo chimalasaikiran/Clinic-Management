@@ -6,17 +6,17 @@ import Drawer from '../../../components/workspace/Drawer'
 import { cn } from '../../../lib/cn'
 import { OptionSelect, PatientStrip, TextArea } from '../components/parts'
 import { ORDER_BUNDLES, ORDER_CATALOG, ORDER_CATEGORIES, ORDER_PRIORITIES } from '../data/catalog'
-import { TODAY } from '../format'
-import { clockTime } from '../selectors'
 import { validateOrder } from '../validation'
 
-// Orders laboratory, imaging and special investigations. `onSubmit` receives the order record to store.
+// Orders laboratory, imaging and special investigations. `onSubmit` receives { indication, items } and returns the API call.
 export default function CreateOrderDrawer({ open, onClose, patient, encounter, diagnoses, onSubmit }) {
   const [indication, setIndication] = useState('')
   const [category, setCategory] = useState('All Enabled')
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState([])
   const [submitted, setSubmitted] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [serverError, setServerError] = useState('')
   const errors = submitted ? validateOrder({ indication, items: selected }) : {}
 
   const needle = query.trim().toLowerCase()
@@ -29,6 +29,7 @@ export default function CreateOrderDrawer({ open, onClose, patient, encounter, d
     setQuery('')
     setSelected([])
     setSubmitted(false)
+    setServerError('')
     onClose()
   }
   const toggle = (code) =>
@@ -36,42 +37,47 @@ export default function CreateOrderDrawer({ open, onClose, patient, encounter, d
   const applyBundle = (bundle) => setSelected(bundle.codes.map((code) => selected.find((item) => item.code === code) ?? { code, priority: ORDER_PRIORITIES[0] }))
   const setPriority = (code, priority) => setSelected((current) => current.map((item) => (item.code === code ? { ...item, priority } : item)))
 
-  const submit = () => {
+  const submit = async () => {
     setSubmitted(true)
     if (Object.keys(validateOrder({ indication, items: selected })).length) return
     const entries = selected.map((item) => ({ ...ORDER_CATALOG.find((entry) => entry.code === item.code), priority: item.priority }))
-    const imaging = entries.every((entry) => entry.category === 'Imaging' || entry.category === 'Special Diagnostics')
-    onSubmit({
-      date: TODAY, time: clockTime(), title: entries.map((entry) => entry.name).join(' + '), category: [...new Set(entries.map((entry) => entry.category))].join(' · '), kind: imaging ? 'imaging' : 'lab',
-      status: 'Ordered', stage: 0, indication: indication.trim(), items: entries, performing: entries[0].destination, urgent: entries.some((entry) => entry.priority !== ORDER_PRIORITIES[0]),
-    })
-    finish()
+    setSaving(true)
+    setServerError('')
+    try {
+      await onSubmit({ indication: indication.trim(), items: entries })
+      finish()
+    } catch (error) {
+      setServerError(error.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
     <Drawer
       open={open}
       onClose={finish}
-      eyebrow={encounter ? `Encounter ${encounter.id}` : 'Standalone order'}
+      eyebrow={encounter ? `Encounter ${encounter.reference ?? encounter.id}` : 'Standalone order'}
       title="Create Order"
       description="Draft v1.0 (Unsubmitted) · Request diagnostic laboratory investigations & radiology imaging services."
       width="max-w-3xl"
       footer={
         <div className="flex items-center justify-between gap-3">
           <ActionButton onClick={finish}>Cancel / Discard</ActionButton>
-          <ActionButton variant="primary" onClick={submit}>Review &amp; Submit Order ({selected.length} {selected.length === 1 ? 'Item' : 'Items'})</ActionButton>
+          <ActionButton variant="primary" onClick={submit} disabled={saving}>Review &amp; Submit Order ({selected.length} {selected.length === 1 ? 'Item' : 'Items'})</ActionButton>
         </div>
       }
     >
       <div className="flex flex-col gap-5 p-5">
         <PatientStrip patient={patient} />
+        {serverError && <InfoNote tone="danger"><span role="alert">{serverError}</span></InfoNote>}
 
         <section>
           <h3 className="mb-2 text-xs font-semibold tracking-wide text-brand uppercase">Clinical context &amp; indication</h3>
           {diagnoses.length > 0 && (
             <div className="mb-3 rounded-md border border-slate-200 p-3 text-xs"><p className="font-semibold">{diagnoses[0].name} <span className="ml-1 rounded bg-brand px-1.5 py-0.5 text-[10px] text-white">Primary Reason</span></p><p className="font-mono text-[11px] text-on-surface-variant">ICD-10: {diagnoses[0].icd} · SNOMED CT: {diagnoses[0].snomed}</p></div>
           )}
-          <TextArea label="Ordering physician clinical indication & justification" required rows={3} value={indication} onChange={(event) => setIndication(event.target.value)} error={errors.indication} hint="Transmitted via FHIR R4 ServiceRequest.reasonCode" />
+          <TextArea label="Ordering physician clinical indication & justification" required rows={3} value={indication} onChange={(event) => setIndication(event.target.value)} error={errors.indication} />
         </section>
 
         <section>
@@ -130,7 +136,7 @@ export default function CreateOrderDrawer({ open, onClose, patient, encounter, d
         </section>
 
         <InfoNote tone="brand">
-          <strong>Clinical safety &amp; duplicate guardrails:</strong> active duplicate-check engine verified across the last 180 days of longitudinal records — no overlapping orders found. Order status routes to the lab or imaging queue upon clinician authorization.
+          <strong>Routing:</strong> the order goes to the lab or imaging queue once submitted. Laboratory orders wait for specimen collection; imaging results can be entered directly.
         </InfoNote>
       </div>
     </Drawer>

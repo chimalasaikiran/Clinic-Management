@@ -1,5 +1,16 @@
-// "Today" for the sample data. Real builds read the clock; the seeded records are dated around this day.
+// "Today" for the modules that still run on sample data (billing, clinical, reports); their records are dated
+// around this day. Patients and appointments come from the API and use localToday() instead.
 export const TODAY = '2026-10-12'
+
+const pad = (value) => String(value).padStart(2, '0')
+
+// The real calendar date on this device, as YYYY-MM-DD.
+export function localToday(now = new Date()) {
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+}
+
+// The real wall-clock time on this device, as HH:MM.
+export const localClock = (now = new Date()) => `${pad(now.getHours())}:${pad(now.getMinutes())}`
 
 const parts = (iso) => iso.split('-').map(Number)
 

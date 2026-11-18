@@ -5,6 +5,7 @@ import ActionButton from '../../../components/workspace/ActionButton'
 import { FilterSelect, FilterTabs, SearchBox } from '../../../components/workspace/controls'
 import { Cell, Table, TableFooter } from '../../../components/workspace/DataTable'
 import PageIntro from '../../../components/workspace/PageIntro'
+import { Banner } from '../../../components/workspace/RecordKit'
 import StatusPill from '../../../components/workspace/StatusPill'
 import WorkspacePage from '../../../components/workspace/WorkspacePage'
 import { ROUTES } from '../../../config/routes'
@@ -13,7 +14,6 @@ import { exportCsv } from '../../../lib/exportCsv'
 import RoleInspector from '../components/RoleInspector'
 import { CATEGORY_ICONS, STATUS_TONES } from '../components/roleIcons'
 import { useRoles } from '../context/useRoles'
-import { BRANCHES } from '../../configuration/data/organisation'
 import { PERMISSION_GROUPS, SCOPES, STAFF_CATEGORIES } from '../data/roles'
 import { scopeLabel } from '../rolePermissions'
 import { validateRole } from '../validation'
@@ -62,7 +62,7 @@ function IconAction({ label, icon: Icon, onClick, disabled, active }) {
 export default function RolesPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { roles, updateRole } = useRoles()
+  const { roles, branches, updateRole } = useRoles()
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('')
   const [scope, setScope] = useState('')
@@ -70,6 +70,7 @@ export default function RolesPage() {
   const [view, setView] = useState('table')
   const [selectedId, setSelectedId] = useState(location.state?.roleId ?? roles.find((role) => !role.system)?.id)
   const [editing, setEditing] = useState(false)
+  const [failure, setFailure] = useState('')
 
   const search = query.trim().toLowerCase()
   const rows = roles.filter(
@@ -101,7 +102,14 @@ export default function RolesPage() {
 
   const duplicate = (id) => navigate(ROUTES.roleNew, { state: { duplicateOf: id } })
 
-  const toggleStatus = (role) => updateRole(role.id, { status: role.status === 'Active' ? 'Inactive' : 'Active' })
+  const toggleStatus = async (role) => {
+    setFailure('')
+    try {
+      await updateRole(role.id, { status: role.status === 'Active' ? 'Inactive' : 'Active' })
+    } catch (error) {
+      setFailure(error.message)
+    }
+  }
 
   const download = () =>
     exportCsv('roles.csv', [
@@ -132,6 +140,12 @@ export default function RolesPage() {
         }
       />
 
+      {failure && (
+        <Banner tone="danger" className="mb-5">
+          {failure}
+        </Banner>
+      )}
+
       <dl className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           label="Total defined roles"
@@ -145,7 +159,7 @@ export default function RolesPage() {
           icon={Users}
           value={`${totalUsers} users`}
           badge={<StatusPill tone="info">{totalUsers ? Math.round((activeUsers / totalUsers) * 100) : 0}% active</StatusPill>}
-          hint={`Across all ${BRANCHES.length} clinic branches`}
+          hint={`Across all ${branches.length} clinic branches`}
         />
         <MetricCard
           label="Org-wide master roles"
@@ -274,8 +288,8 @@ export default function RolesPage() {
             editing={editing}
             onEdit={() => setEditing(true)}
             onCancel={() => setEditing(false)}
-            onSave={(changes) => {
-              updateRole(selected.id, changes)
+            onSave={async (changes) => {
+              await updateRole(selected.id, changes)
               setEditing(false)
             }}
             onDuplicate={() => duplicate(selected.id)}

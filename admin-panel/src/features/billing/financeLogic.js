@@ -1,5 +1,4 @@
 import { allocatedFromPayment, invoiceBalance, invoiceTotals, lineAmounts, paymentUnallocated } from '../patients/billing'
-import { OTHER_PAYMENTS, RECON_LINES, RECON_PAYMENTS, RECEIPT_CONFLICTS, ALLOCATION_REFS } from './data/financeSeed'
 
 const round2 = (value) => Math.round((value + Number.EPSILON) * 100) / 100
 const sum = (rows, pick) => round2(rows.reduce((total, row) => total + pick(row), 0))
@@ -36,23 +35,23 @@ export function chargeSetupIssues(service) {
 export function validateCharge(values) {
   const errors = {}
   if (!values.patientId) errors.patientId = 'Select a patient.'
-  if (!values.serviceCode) errors.serviceCode = 'Select a service or item.'
+  if (!values.serviceId) errors.serviceId = 'Select a service or item.'
   if (!(Number(values.qty) > 0)) errors.qty = 'Quantity must be greater than 0.'
   return errors
 }
 
-export function buildCharge(values, { id, service, patient, time, date }) {
-  const taxable = service.tax === 'Taxable'
-  return {
-    id, patientId: patient.id, date, time, title: service.name, reference: `${service.code} · ${values.model}`,
-    status: values.confirmed ? 'Unbilled' : 'Draft', invoiceId: null, note: values.note.trim(), location: service.department, branch: values.branch,
-    lines: [{ code: service.code, name: service.name, note: service.category, qty: Number(values.qty), price: service.price ?? 0, discountPct: Number(values.discountPct) || 0, gstPct: taxable ? 18 : 0 }],
-  }
-}
+// The request body for saving a charge; the API prices it from the catalogue at the patient's branch.
+export const chargeRequest = (values, confirm) => ({
+  serviceId: values.serviceId, encounterId: values.encounterId || null, payer: values.payer, model: values.model, quantity: Number(values.qty), discountPct: Number(values.discountPct) || 0, note: values.note.trim(), confirm,
+})
 
-export const draftBreakdown = (service, qty, discountPct) => {
-  if (!(service?.price > 0)) return null
-  return invoiceTotals([{ qty: Number(qty) || 0, price: service.price, discountPct: Number(discountPct) || 0, gstPct: service.tax === 'Taxable' ? 18 : 0 }])
+// What a branch charges for a service: its override, or the default price.
+export const branchPrice = (service, branchId) => service?.branches[branchId]?.price ?? service?.price ?? null
+
+export const draftBreakdown = (service, qty, discountPct, branchId) => {
+  const price = branchPrice(service, branchId)
+  if (!(price > 0)) return null
+  return invoiceTotals([{ qty: Number(qty) || 0, price, discountPct: Number(discountPct) || 0, gstPct: service.gstRate ?? 0 }])
 }
 
 // ---- Payments and receipts --------------------------------------------------------------------------------
@@ -68,7 +67,8 @@ export function paymentRows(records, { query = '', method = '', status = '', ran
     .sort((a, b) => newest(a.payment, b.payment))
 }
 
-export const allocationRef = (payment, allocation) => ALLOCATION_REFS[`${payment.id}|${allocation.invoiceId}`] ?? `ALC-${payment.id.slice(-3)}-${allocation.invoiceId.slice(-3)}`
+// Allocations carry their own number (ALC-000001).
+export const allocationRef = (_payment, allocation) => allocation.id
 
 export function validatePayment(values) {
   const errors = {}
@@ -77,15 +77,17 @@ export function validatePayment(values) {
   if (!(amount > 0)) errors.amount = 'Enter an amount greater than ₹0.'
   if (!values.channel) errors.channel = 'Choose a payment method.'
   if (values.channel && values.channel !== 'Cash Desk' && !values.reference.trim()) errors.reference = 'Enter the transaction reference for this method.'
-  if (values.purpose === 'charges' && values.invoiceId && amount > Number(values.outstanding)) errors.amount = 'Amount exceeds the verified outstanding balance.'
+  if (values.channel && values.enabled && !values.enabled(values.channel)) errors.channel = 'This payment method is switched off in the billing configuration.'
+  if (values.purpose === 'charges' && values.invoiceId && amount > Number(values.outstanding)) errors.amount = 'Amount exceeds the outstanding balance.'
+  else if (values.purpose === 'charges' && values.invoiceId && values.fullPayment && amount > 0 && amount < Number(values.outstanding)) errors.amount = 'The billing configuration requires the full outstanding balance.'
   return errors
 }
 
 export const receiptRows = (records, { query = '', status = '', patientName }) =>
   records.payments
     .filter((payment) => payment.receiptId)
-    .map((payment) => ({ payment, receiptId: payment.receiptId, name: patientName(payment.patientId), conflict: RECEIPT_CONFLICTS.includes(payment.receiptId) }))
-    .filter((row) => (!status || (status === 'conflict') === row.conflict) && matches(`${row.receiptId} ${row.name} ${row.payment.id}`, query))
+    .map((payment) => ({ payment, receiptId: payment.receiptId, name: patientName(payment.patientId) }))
+    .filter((row) => (!status || status === 'issued') && matches(`${row.receiptId} ${row.name} ${row.payment.id}`, query))
     .sort((a, b) => newest(a.payment, b.payment))
 
 // ---- Refunds ----------------------------------------------------------------------------------------------
@@ -95,8 +97,10 @@ export const REFUND_STATUSES = ['Pending', 'Approved', 'Processed', 'Failed', 'R
 // Refunds already processed with the patient records have no workflow state of their own.
 export const allRefunds = (records, requests) => [...requests, ...records.refunds.map((refund) => ({ ...refund, status: 'Processed' }))]
 
-export const allPayments = (records) => [...records.payments, ...OTHER_PAYMENTS]
+export const allPayments = (records) => records.payments
 
+// The same position the API checks a refund against. `refundable` also counts money already applied to
+// invoices, which a refund may take back when it is allowed to release allocations.
 export function refundBalance(payment, refunds) {
   const linked = refunds.filter((refund) => refund.paymentId === payment.id)
   const total = (...states) => sum(linked.filter((refund) => states.includes(refund.status)), (refund) => refund.amount)
@@ -104,7 +108,7 @@ export function refundBalance(payment, refunds) {
   const processed = total('Processed')
   const reserved = total('Pending', 'Approved')
   const eligible = round2(payment.amount - allocated - processed)
-  return { received: payment.amount, allocated, processed, reserved, eligible, remaining: round2(eligible - reserved) }
+  return { received: payment.amount, allocated, processed, reserved, eligible, remaining: round2(eligible - reserved), refundable: round2(payment.amount - processed - reserved) }
 }
 
 export function validateRefund(values, remaining) {
@@ -124,13 +128,13 @@ export function refundSummary(refunds) {
 
 // ---- Reconciliation ---------------------------------------------------------------------------------------
 
-export function reconRows(exceptions, { source = '', state = '', range } = {}) {
-  return RECON_LINES
+// Statement lines beside the payments they point at. `payment` is the recorded payment, when there is one.
+export function reconRows({ lines, exceptions, payments }, { source = '', state = '', range } = {}) {
+  return lines
     .map((line) => {
-      const payment = line.paymentId ? RECON_PAYMENTS[line.paymentId] : null
-      const exception = exceptions.find((entry) => entry.lineId === line.id)
-      const resolved = exception?.status === 'Resolved'
-      return { line, payment, exception, clinicos: payment?.amount ?? null, difference: round2(line.amount - (payment?.amount ?? 0)), state: resolved ? 'Resolved' : line.state }
+      const payment = line.paymentId ? payments.find((entry) => entry.id === line.paymentId) ?? null : null
+      const exception = exceptions.find((entry) => entry.lineId === line.id) ?? null
+      return { line, payment, exception, clinicos: payment?.amount ?? null, difference: round2(line.amount - (payment?.amount ?? 0)), state: line.state }
     })
     .filter((row) => (!source || row.line.source === source) && (!state || (state === 'Matched' ? row.state === 'Matched' : row.state !== 'Matched')) && (!range || inRange(row.line, range)))
 }
@@ -145,7 +149,8 @@ export function reconSummary(rows) {
   }
 }
 
-export const canResolve = ({ evidenceAttached, confirmed, note }) => evidenceAttached && confirmed && note.trim().length > 0
+// The API also asks for a note of at least 10 characters.
+export const canResolve = ({ evidenceAttached, confirmed, note }) => evidenceAttached && confirmed && note.trim().length >= 10
 
 // ---- Advances and balances --------------------------------------------------------------------------------
 

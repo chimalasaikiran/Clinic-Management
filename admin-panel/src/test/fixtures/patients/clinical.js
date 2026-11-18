@@ -1,3 +1,4 @@
+// Test fixture: clinical records for the sample patient used by the clinical and patient-tab tests.
 // Sample clinical records for PT-000184: safety alerts, allergies, notes, care plan, prescriptions, orders and referrals.
 const PATIENT = 'pt-000184'
 
@@ -29,11 +30,6 @@ export const SEED_ALERTS = [
   },
 ]
 
-export const ALERT_DISPOSITIONS = [
-  { id: 'acknowledged', title: 'Clinical Risk Acknowledged — Benefit Outweighs Risk', detail: 'Authorize the action for a brief, defined window with mandatory ambulatory monitoring.' },
-  { id: 'modify', title: 'Modify / Substitute Prescribed Therapy', detail: 'Withhold the flagged order and substitute a safer alternative.' },
-  { id: 'defer', title: 'Defer to Attending Consultant Review', detail: 'Flag the encounter for senior consultant review before the order proceeds.' },
-]
 
 export const SEED_ALLERGIES = [
   {
@@ -137,10 +133,6 @@ export const SEED_PRESCRIPTIONS = [
   { id: 'RX-2026-0190-D', patientId: PATIENT, encounterId: 'ENC-2026-0190', date: '2026-06-22', time: '16:05', prescriber: 'Dr. Rajesh K. Nair', department: 'Cardiothoracic (CTS)', registration: 'NMC #61102', branch: 'Main Surgical Pavilion', indication: 'Post-op prophylaxis', status: 'Completed', dispensing: 'Fully Dispensed', hash: 'sha256:19c3e7a0d5f2b8641c90', items: [rxItem('i1', 'Cefuroxime Axetil', '500 mg', { frequency: 'Twice Daily', frequencyNote: 'After food', durationDays: 10, quantity: 20, refills: 0, indication: 'Post-op prophylaxis', dispensing: { state: 'Dispensed', note: 'Dispensed' } })], events: [] },
 ]
 
-export const ORDER_STEPS = {
-  imaging: ['Ordered', 'Completed', 'Result In', 'Review Required', 'Reviewed'],
-  lab: ['Ordered', 'Phlebotomy Done', 'In Transit to Analyzer', 'Review', 'Signed'],
-}
 
 export const SEED_ORDERS = [
   {

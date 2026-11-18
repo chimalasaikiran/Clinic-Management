@@ -23,17 +23,23 @@ export default function CareProgressDrawer({ plan, patient, onClose, onSave }) {
     observation: '', barriers: [], nextStep: NEXT_STEPS[0], nextReview: '', escalate: false,
   })
   const [attempt, setAttempt] = useState(null)
+  const [serverError, setServerError] = useState('')
   const errors = attempt ? validateReview(values, { complete: attempt === 'complete' }) : {}
   const overdue = overdueDays(plan.nextReview)
 
   const set = (name, value) => setValues((current) => ({ ...current, [name]: value }))
   const toggleBarrier = (barrier) => set('barriers', values.barriers.includes(barrier) ? values.barriers.filter((entry) => entry !== barrier) : [...values.barriers, barrier])
 
-  const submit = (mode) => {
+  // The server repeats the completion rules and works out compliance and status.
+  const submit = async (mode) => {
     setAttempt(mode)
     if (Object.keys(validateReview(values, { complete: mode === 'complete' })).length) return
-    onSave({ ...values, adherence: values.adherence.map((entry, index) => entry || plan.interventions[index].state) }, { complete: mode === 'complete', escalate: mode === 'escalate' || values.escalate })
-    onClose()
+    try {
+      await onSave({ ...values, adherence: values.adherence.map((entry, index) => entry || plan.interventions[index].state) }, { mode })
+      onClose()
+    } catch (error) {
+      setServerError(error.message)
+    }
   }
 
   return (
@@ -56,6 +62,7 @@ export default function CareProgressDrawer({ plan, patient, onClose, onSave }) {
       }
     >
       <div className="flex flex-col gap-5 p-5">
+        {serverError && <p role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-danger">{serverError}</p>}
         <dl className="grid gap-4 rounded-md border border-slate-200 bg-surface-lowest p-4 text-xs sm:grid-cols-2">
           <div><dt className="text-[10px] tracking-wide text-outline uppercase">Assigned attending clinician</dt><dd className="mt-1 font-semibold">{plan.lead}</dd><dd className="text-outline">{plan.title}</dd></div>
           <div><dt className="text-[10px] tracking-wide text-outline uppercase">Follow-up due</dt><dd className="mt-1 font-semibold">{formatDate(plan.nextReview)}</dd>{overdue > 0 && <dd><StatusPill tone="warning">{overdue} {overdue === 1 ? 'day' : 'days'} overdue</StatusPill></dd>}</div>

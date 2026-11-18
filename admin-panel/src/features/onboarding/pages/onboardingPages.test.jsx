@@ -1,8 +1,16 @@
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ROUTES } from '../../../config/routes'
+import { authState } from '../../../test/auth'
 import { renderRoute } from '../../../test/renderRoute'
+
+const api = vi.hoisted(() => ({ createOrganisation: vi.fn() }))
+vi.mock('../../auth/api', () => ({ authApi: api, accessApi: {} }))
+
+beforeEach(() => {
+  api.createOrganisation.mockReset().mockResolvedValue({ organisation: { id: 'org-new', name: 'Apex Health Institute' } })
+})
 
 describe('clinic profile page', () => {
   it('requires the profile fields and a facility classification', async () => {
@@ -17,9 +25,10 @@ describe('clinic profile page', () => {
     expect(router.state.location.pathname).toBe(ROUTES.clinic)
   })
 
-  it('continues to practice contact when the profile is complete', async () => {
+  it('creates the organisation and continues to practice contact', async () => {
     const user = userEvent.setup()
-    const router = renderRoute(ROUTES.clinic)
+    const auth = authState({ status: 'noOrganisation' })
+    const router = renderRoute(ROUTES.clinic, undefined, { auth })
 
     await user.type(screen.getByLabelText('Clinic / Organization Name'), 'Apex Health Institute')
     await user.type(screen.getByLabelText('Primary Location / Campus'), 'Indiranagar')
@@ -28,7 +37,25 @@ describe('clinic profile page', () => {
     await user.click(screen.getByRole('radio', { name: 'Outpatient Practice' }))
     await user.click(screen.getByRole('button', { name: /verify & continue/i }))
 
+    expect(api.createOrganisation).toHaveBeenCalledWith({ clinicName: 'Apex Health Institute', location: 'Indiranagar', city: 'Bengaluru', state: 'Karnataka', facilityType: 'Outpatient Practice' })
+    expect(auth.refresh).toHaveBeenCalledWith('org-new')
     expect(router.state.location.pathname).toBe(ROUTES.contact)
+  })
+
+  it('stays on the page and shows the error when the organisation cannot be created', async () => {
+    const user = userEvent.setup()
+    api.createOrganisation.mockRejectedValue(new Error('Too many attempts. Please wait and try again.'))
+    const router = renderRoute(ROUTES.clinic, undefined, { auth: authState({ status: 'noOrganisation' }) })
+
+    await user.type(screen.getByLabelText('Clinic / Organization Name'), 'Apex Health Institute')
+    await user.type(screen.getByLabelText('Primary Location / Campus'), 'Indiranagar')
+    await user.type(screen.getByLabelText('City'), 'Bengaluru')
+    await user.selectOptions(screen.getByLabelText('State / Territory'), 'Karnataka')
+    await user.click(screen.getByRole('radio', { name: 'Outpatient Practice' }))
+    await user.click(screen.getByRole('button', { name: /verify & continue/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Too many attempts.')
+    expect(router.state.location.pathname).toBe(ROUTES.clinic)
   })
 })
 
