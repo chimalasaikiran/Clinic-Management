@@ -1,0 +1,60 @@
+import { DynamicModule, Module } from '@nestjs/common'
+import { APP_FILTER, APP_GUARD } from '@nestjs/core'
+import { CommonModule } from './common/common.module'
+import { ErrorFilter } from './common/errors/error.filter'
+import { ConfigModule } from './config/config.module'
+import { Env } from './config/env'
+import { DatabaseModule } from './database/database.module'
+import { AppointmentsModule } from './modules/appointments/appointments.module'
+import { AuthModule } from './modules/auth/auth.module'
+import { BillingModule } from './modules/billing/billing.module'
+import { ClinicalModule } from './modules/clinical/clinical.module'
+import { SessionGuard } from './modules/auth/session.guard'
+import { HealthModule } from './modules/health/health.module'
+import { InvitationsModule } from './modules/invitations/invitations.module'
+import { MembersModule } from './modules/members/members.module'
+import { OrganisationsModule } from './modules/organisations/organisations.module'
+import { PatientsModule } from './modules/patients/patients.module'
+import { AccessGuard } from './modules/permissions/access.guard'
+import { PermissionsModule } from './modules/permissions/permissions.module'
+import { RolesModule } from './modules/roles/roles.module'
+import { SchedulingModule } from './modules/scheduling/scheduling.module'
+import { StaffModule } from './modules/staff/staff.module'
+import { UsersModule } from './modules/users/users.module'
+
+// Feature modules are added to `imports`. They get authentication and
+// organisation access for free from the global guards below, and declare permissions with
+// @RequirePermissions / @RequireAnyPermission / @OrgMember.
+@Module({})
+export class AppModule {
+  static register(env: Env): DynamicModule {
+    return {
+      module: AppModule,
+      imports: [
+        ConfigModule.register(env),
+        DatabaseModule,
+        CommonModule,
+        HealthModule,
+        UsersModule,
+        AuthModule,
+        PermissionsModule,
+        RolesModule,
+        OrganisationsModule,
+        MembersModule,
+        InvitationsModule,
+        SchedulingModule,
+        PatientsModule,
+        AppointmentsModule,
+        StaffModule,
+        ClinicalModule,
+        BillingModule,
+      ],
+      providers: [
+        // Order matters: authenticate the session first, then check organisation access.
+        { provide: APP_GUARD, useExisting: SessionGuard },
+        { provide: APP_GUARD, useExisting: AccessGuard },
+        { provide: APP_FILTER, useClass: ErrorFilter },
+      ],
+    }
+  }
+}

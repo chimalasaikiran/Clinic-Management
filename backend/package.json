@@ -1,0 +1,58 @@
+{
+  "name": "clinicos-backend",
+  "private": true,
+  "version": "0.1.0",
+  "description": "ClinicOS backend: authentication, organisations, roles and permissions",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "postinstall": "prisma generate",
+    "build": "prisma generate && tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "dev": "node scripts/dev.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json",
+    "db:generate": "prisma generate",
+    "db:validate": "prisma validate",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:status": "prisma migrate status",
+    "db:studio": "prisma studio",
+    "test": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:all": "vitest run"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.2.10",
+    "@nestjs/core": "^11.2.10",
+    "@nestjs/platform-express": "^11.2.10",
+    "@node-rs/argon2": "^2.2.2",
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
+    "cookie-parser": "^1.4.7",
+    "express-rate-limit": "^8.7.4",
+    "helmet": "^8.3.0",
+    "nodemailer": "^10.5.0",
+    "pg": "^8.23.1",
+    "pino": "^10.4.0",
+    "pino-http": "^11.0.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "^11.2.10",
+    "@swc/core": "^1.16.22",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.18.6",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pg": "^8.23.1",
+    "@types/supertest": "^7.2.1",
+    "prisma": "7.10.1",
+    "supertest": "^7.3.2",
+    "typescript": "~5.9.3",
+    "unplugin-swc": "^2.0.0",
+    "vitest": "^5.1.0"
+  }
+}

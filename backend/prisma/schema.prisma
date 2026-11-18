@@ -1,0 +1,1857 @@
+// ClinicOS database schema (Neon PostgreSQL).
+// Tables and columns use snake_case in the database and camelCase in TypeScript.
+// Change this file, then create a migration with `npm run db:migrate:dev -- --name <change>`.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "cjs"
+  // Extensionless imports so the generated files compile with the rest of the CommonJS build.
+  importFileExtension = ""
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Identity ───────────────────────────────────────────────────────────────
+
+enum UserStatus {
+  active
+  disabled
+
+  @@map("user_status")
+}
+
+model User {
+  id                String     @id @default(uuid(7)) @db.Uuid
+  // Always stored trimmed and lower-cased by the API, so the unique index is case-insensitive in practice.
+  email             String     @unique @db.VarChar(254)
+  fullName          String     @map("full_name") @db.VarChar(120)
+  // Argon2id encoded hash (algorithm, parameters, salt and hash in one string). Never the password.
+  passwordHash      String     @map("password_hash") @db.VarChar(255)
+  status            UserStatus @default(active)
+  emailVerifiedAt   DateTime?  @map("email_verified_at") @db.Timestamptz(6)
+  // Consecutive failed sign-ins; reset on success. Drives the temporary lock in lockedUntil.
+  failedLoginCount  Int        @default(0) @map("failed_login_count")
+  lockedUntil       DateTime?  @map("locked_until") @db.Timestamptz(6)
+  passwordChangedAt DateTime   @default(now()) @map("password_changed_at") @db.Timestamptz(6)
+  lastLoginAt       DateTime?  @map("last_login_at") @db.Timestamptz(6)
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  sessions              Session[]
+  verificationCodes     VerificationCode[]
+  memberships           Membership[]           @relation("MembershipUser")
+  invitedMemberships    Membership[]           @relation("MembershipInvitedBy")
+  createdOrganisations  Organisation[]
+  createdRoles          Role[]                 @relation("RoleCreatedBy")
+  updatedRoles          Role[]                 @relation("RoleUpdatedBy")
+  sentInvitations       Invitation[]           @relation("InvitationInvitedBy")
+  acceptedInvitations   Invitation[]           @relation("InvitationAcceptedBy")
+  createdPatients       Patient[]              @relation("PatientCreatedBy")
+  portalPatients        Patient[]              @relation("PatientPortalUser")
+  bookedAppointments    Appointment[]          @relation("AppointmentBookedBy")
+  appointmentEvents     AppointmentEvent[]
+  createdStaff          StaffMember[]          @relation("StaffCreatedBy")
+  recordedAttendance    AttendanceRecord[]     @relation("AttendanceRecordedBy")
+  attendanceCorrections AttendanceCorrection[] @relation("AttendanceCorrectedBy")
+  createdLeaves         StaffLeave[]           @relation("LeaveCreatedBy")
+  cancelledLeaves       StaffLeave[]           @relation("LeaveCancelledBy")
+  signedEncounters      Encounter[]            @relation("EncounterSignedBy")
+  createdEncounters     Encounter[]            @relation("EncounterCreatedBy")
+  recordedVitals        VitalSign[]            @relation("VitalsRecordedBy")
+  recordedDiagnoses     Diagnosis[]            @relation("DiagnosisRecordedBy")
+  recordedAllergies     Allergy[]              @relation("AllergyRecordedBy")
+  acknowledgedAlerts    ClinicalAlert[]        @relation("AlertAcknowledgedBy")
+  createdAlerts         ClinicalAlert[]        @relation("AlertCreatedBy")
+  authoredNotes         ClinicalNote[]         @relation("NoteAuthor")
+  authoredAddenda       NoteAddendum[]         @relation("AddendumAuthor")
+  createdPrescriptions  Prescription[]         @relation("PrescriptionCreatedBy")
+  prescriptionEvents    PrescriptionEvent[]    @relation("PrescriptionEventActor")
+  createdOrders         DiagnosticOrder[]      @relation("OrderCreatedBy")
+  orderEvents           OrderEvent[]           @relation("OrderEventActor")
+  createdReferrals      Referral[]             @relation("ReferralCreatedBy")
+  referralEvents        ReferralEvent[]        @relation("ReferralEventActor")
+  createdCarePlans      CarePlan[]             @relation("CarePlanCreatedBy")
+  carePlanReviews       CarePlanReview[]       @relation("CarePlanReviewAuthor")
+  reportedIncidents     Incident[]             @relation("IncidentReporter")
+  createdServices       BillingService[]       @relation("BillingServiceCreatedBy")
+  billingSettings       BillingSettings[]      @relation("BillingSettingsUpdatedBy")
+  financeEvents         FinanceEvent[]         @relation("FinanceEventActor")
+  createdCharges        Charge[]               @relation("ChargeCreatedBy")
+  createdInvoices       Invoice[]              @relation("InvoiceCreatedBy")
+  recordedPayments      Payment[]              @relation("PaymentRecordedBy")
+  createdAllocations    PaymentAllocation[]    @relation("AllocationCreatedBy")
+  requestedRefunds      Refund[]               @relation("RefundRequestedBy")
+  statementImports      StatementImport[]      @relation("StatementImportedBy")
+  ownedReconExceptions  ReconException[]       @relation("ReconExceptionOwner")
+
+  @@map("users")
+}
+
+// One row per signed-in browser. The cookie holds a random token; only its keyed hash is stored here.
+model Session {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash") @db.Char(64)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  // Absolute limit; the idle limit is checked against lastSeenAt.
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+  ip         String?   @db.VarChar(64)
+  userAgent  String?   @map("user_agent") @db.VarChar(300)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+enum CodePurpose {
+  email_verification
+  password_reset
+
+  @@map("code_purpose")
+}
+
+model VerificationCode {
+  id         String      @id @default(uuid(7)) @db.Uuid
+  userId     String      @map("user_id") @db.Uuid
+  purpose    CodePurpose
+  codeHash   String      @map("code_hash") @db.Char(64)
+  expiresAt  DateTime    @map("expires_at") @db.Timestamptz(6)
+  attempts   Int         @default(0)
+  consumedAt DateTime?   @map("consumed_at") @db.Timestamptz(6)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, createdAt(sort: Desc)])
+  @@map("verification_codes")
+}
+
+// ─── Organisations ──────────────────────────────────────────────────────────
+
+enum OrganisationStatus {
+  onboarding
+  active
+  suspended
+
+  @@map("organisation_status")
+}
+
+model Organisation {
+  id           String             @id @default(uuid(7)) @db.Uuid
+  displayName  String             @map("display_name") @db.VarChar(160)
+  facilityType String             @map("facility_type") @db.VarChar(80)
+  location     String             @db.VarChar(240)
+  city         String             @db.VarChar(80)
+  state        String             @db.VarChar(80)
+  status       OrganisationStatus @default(onboarding)
+  createdById  String             @map("created_by") @db.Uuid
+  version      Int                @default(1)
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  createdBy     User              @relation(fields: [createdById], references: [id])
+  branches      Branch[]
+  memberships   Membership[]
+  roles         Role[]
+  invitations   Invitation[]
+  patients      Patient[]
+  practitioners Practitioner[]
+  appointments  Appointment[]
+  counters      OrgCounter[]
+  staff         StaffMember[]
+  encounters    Encounter[]
+  vitalSigns    VitalSign[]
+  diagnoses     Diagnosis[]
+  allergies     Allergy[]
+  alerts        ClinicalAlert[]
+  notes         ClinicalNote[]
+  prescriptions Prescription[]
+  orders        DiagnosticOrder[]
+  referrals     Referral[]
+  carePlans     CarePlan[]
+  incidents     Incident[]
+
+  billingServices  BillingService[]
+  billingSettings  BillingSettings?
+  financeEvents    FinanceEvent[]
+  charges          Charge[]
+  invoices         Invoice[]
+  payments         Payment[]
+  allocations      PaymentAllocation[]
+  refunds          Refund[]
+  statementImports StatementImport[]
+  statementLines   StatementLine[]
+  reconExceptions  ReconException[]
+
+  @@map("organisations")
+}
+
+enum BranchStatus {
+  planned
+  active
+  paused
+  inactive
+
+  @@map("branch_status")
+}
+
+model Branch {
+  id        String       @id @default(uuid(7)) @db.Uuid
+  orgId     String       @map("org_id") @db.Uuid
+  code      String       @db.VarChar(20)
+  name      String       @db.VarChar(240)
+  city      String       @db.VarChar(80)
+  state     String       @db.VarChar(80)
+  status    BranchStatus @default(active)
+  version   Int          @default(1)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation  Organisation               @relation(fields: [orgId], references: [id])
+  roleBranches  RoleBranch[]
+  patients      Patient[]
+  availability  PractitionerAvailability[]
+  appointments  Appointment[]
+  staff         StaffBranch[]
+  attendance    AttendanceRecord[]
+  leaves        StaffLeave[]
+  encounters    Encounter[]
+  prescriptions Prescription[]
+  orders        DiagnosticOrder[]
+  incidents     Incident[]
+  servicePrices BillingServicePrice[]
+  charges       Charge[]
+  invoices      Invoice[]
+  payments      Payment[]
+
+  @@unique([orgId, code])
+  @@map("branches")
+}
+
+enum MembershipStatus {
+  active
+  suspended
+  removed
+
+  @@map("membership_status")
+}
+
+model Membership {
+  id          String           @id @default(uuid(7)) @db.Uuid
+  orgId       String           @map("org_id") @db.Uuid
+  userId      String           @map("user_id") @db.Uuid
+  status      MembershipStatus @default(active)
+  invitedById String?          @map("invited_by") @db.Uuid
+  joinedAt    DateTime         @default(now()) @map("joined_at") @db.Timestamptz(6)
+  version     Int              @default(1)
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation     @relation(fields: [orgId], references: [id])
+  user         User             @relation("MembershipUser", fields: [userId], references: [id])
+  invitedBy    User?            @relation("MembershipInvitedBy", fields: [invitedById], references: [id])
+  roles        MembershipRole[]
+  practitioner Practitioner?
+  staff        StaffMember?
+
+  @@unique([orgId, userId])
+  @@index([userId, status])
+  @@map("memberships")
+}
+
+// ─── Roles and permissions ──────────────────────────────────────────────────
+
+enum RoleScope {
+  org
+  branch
+
+  @@map("role_scope")
+}
+
+enum RoleStatus {
+  draft
+  active
+  inactive
+
+  @@map("role_status")
+}
+
+model Role {
+  id          String     @id @default(uuid(7)) @db.Uuid
+  orgId       String     @map("org_id") @db.Uuid
+  name        String     @db.VarChar(80)
+  // lower(trim(name)): keeps role names unique per organisation regardless of case.
+  nameKey     String     @map("name_key") @db.VarChar(80)
+  category    String     @db.VarChar(80)
+  scope       RoleScope
+  isSystem    Boolean    @default(false) @map("is_system")
+  status      RoleStatus @default(active)
+  description String     @default("") @db.VarChar(1000)
+  createdById String?    @map("created_by") @db.Uuid
+  updatedById String?    @map("updated_by") @db.Uuid
+  version     Int        @default(1)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation     @relation(fields: [orgId], references: [id])
+  createdBy    User?            @relation("RoleCreatedBy", fields: [createdById], references: [id])
+  updatedBy    User?            @relation("RoleUpdatedBy", fields: [updatedById], references: [id])
+  permissions  RolePermission[]
+  branches     RoleBranch[]
+  memberships  MembershipRole[]
+
+  @@unique([orgId, nameKey])
+  @@index([orgId, status])
+  @@map("roles")
+}
+
+// Permission ids come from the catalogue in src/modules/permissions/permission-catalogue.ts.
+model RolePermission {
+  roleId     String @map("role_id") @db.Uuid
+  permission String @db.VarChar(64)
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permission])
+  @@map("role_permissions")
+}
+
+model RoleBranch {
+  roleId   String @map("role_id") @db.Uuid
+  branchId String @map("branch_id") @db.Uuid
+
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@id([roleId, branchId])
+  @@index([branchId])
+  @@map("role_branches")
+}
+
+model MembershipRole {
+  membershipId String @map("membership_id") @db.Uuid
+  roleId       String @map("role_id") @db.Uuid
+
+  membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  role       Role       @relation(fields: [roleId], references: [id])
+
+  @@id([membershipId, roleId])
+  @@index([roleId])
+  @@map("membership_roles")
+}
+
+model Invitation {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  orgId        String    @map("org_id") @db.Uuid
+  email        String    @db.VarChar(254)
+  roleIds      String[]  @map("role_ids") @db.Uuid
+  tokenHash    String    @unique @map("token_hash") @db.Char(64)
+  invitedById  String    @map("invited_by") @db.Uuid
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(6)
+  acceptedAt   DateTime? @map("accepted_at") @db.Timestamptz(6)
+  acceptedById String?   @map("accepted_by") @db.Uuid
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+  invitedBy    User         @relation("InvitationInvitedBy", fields: [invitedById], references: [id])
+  acceptedBy   User?        @relation("InvitationAcceptedBy", fields: [acceptedById], references: [id])
+  staff        StaffMember?
+
+  @@index([orgId, createdAt(sort: Desc)])
+  @@index([orgId, email])
+  @@map("invitations")
+}
+
+// ─── Platform ───────────────────────────────────────────────────────────────
+
+// Fixed-window counters shared by every API instance. Keys are keyed hashes (they would contain emails and IPs).
+model RateLimit {
+  key         String   @id @db.Char(64)
+  windowStart DateTime @map("window_start") @db.Timestamptz(6)
+  hits        Int
+
+  @@index([windowStart])
+  @@map("rate_limits")
+}
+
+// Append-only record of security-relevant events.
+model AuditLog {
+  id          BigInt   @id @default(autoincrement())
+  orgId       String?  @map("org_id") @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  action      String   @db.VarChar(80)
+  entityType  String   @map("entity_type") @db.VarChar(40)
+  entityId    String?  @map("entity_id") @db.VarChar(64)
+  ip          String?  @db.VarChar(64)
+  userAgent   String?  @map("user_agent") @db.VarChar(300)
+  traceId     String?  @map("trace_id") @db.VarChar(64)
+  details     Json     @default("{}")
+  occurredAt  DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  @@index([orgId, occurredAt(sort: Desc)])
+  @@index([entityType, entityId])
+  @@index([actorUserId, occurredAt(sort: Desc)])
+  @@map("audit_log")
+}
+
+// ─── Patients ───────────────────────────────────────────────────────────────
+
+enum PatientStatus {
+  active
+  inactive
+
+  @@map("patient_status")
+}
+
+enum Gender {
+  male
+  female
+  other
+
+  @@map("gender")
+}
+
+// Organisation-level master record: one patient file shared by every branch.
+model Patient {
+  id                String        @id @default(uuid(7)) @db.Uuid
+  orgId             String        @map("org_id") @db.Uuid
+  // Human-facing identifier (PT-000001), issued from the organisation counter and never reused.
+  mrn               String        @db.VarChar(20)
+  title             String        @db.VarChar(12)
+  fullName          String        @map("full_name") @db.VarChar(120)
+  alias             String?       @db.VarChar(120)
+  aadhaarLast4      String?       @map("aadhaar_last4") @db.Char(4)
+  abhaNumber        String?       @map("abha_number") @db.VarChar(20)
+  // Ten-digit Indian mobile numbers, digits only.
+  mobile            String        @db.VarChar(10)
+  altMobile         String?       @map("alt_mobile") @db.VarChar(10)
+  email             String?       @db.VarChar(254)
+  addressLine       String?       @map("address_line") @db.VarChar(240)
+  area              String?       @db.VarChar(160)
+  city              String?       @db.VarChar(80)
+  state             String?       @db.VarChar(80)
+  pinCode           String        @map("pin_code") @db.Char(6)
+  dateOfBirth       DateTime      @map("date_of_birth") @db.Date
+  gender            Gender
+  bloodGroup        String?       @map("blood_group") @db.VarChar(3)
+  language          String?       @db.VarChar(40)
+  emergencyName     String?       @map("emergency_name") @db.VarChar(120)
+  emergencyRelation String?       @map("emergency_relation") @db.VarChar(40)
+  emergencyPhone    String?       @map("emergency_phone") @db.VarChar(10)
+  notifyWhatsapp    Boolean       @default(true) @map("notify_whatsapp")
+  notifySms         Boolean       @default(true) @map("notify_sms")
+  homeBranchId      String        @map("home_branch_id") @db.Uuid
+  intakeUnit        String?       @map("intake_unit") @db.VarChar(80)
+  status            PatientStatus @default(active)
+  statusNote        String?       @map("status_note") @db.VarChar(160)
+  // Reserved for a future patient portal: the login allowed to see this record. Unused until then.
+  portalUserId      String?       @unique @map("portal_user_id") @db.Uuid
+  createdById       String        @map("created_by") @db.Uuid
+  version           Int           @default(1)
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation  Organisation      @relation(fields: [orgId], references: [id])
+  homeBranch    Branch            @relation(fields: [homeBranchId], references: [id])
+  portalUser    User?             @relation("PatientPortalUser", fields: [portalUserId], references: [id])
+  createdBy     User              @relation("PatientCreatedBy", fields: [createdById], references: [id])
+  appointments  Appointment[]
+  encounters    Encounter[]
+  vitalSigns    VitalSign[]
+  diagnoses     Diagnosis[]
+  allergies     Allergy[]
+  alerts        ClinicalAlert[]
+  notes         ClinicalNote[]
+  prescriptions Prescription[]
+  orders        DiagnosticOrder[]
+  referrals     Referral[]
+  carePlans     CarePlan[]
+  incidents     Incident[]
+  charges       Charge[]
+  invoices      Invoice[]
+  payments      Payment[]
+  refunds       Refund[]
+
+  @@unique([orgId, mrn])
+  @@index([orgId, mobile])
+  @@index([orgId, status, createdAt])
+  @@index([orgId, fullName])
+  @@map("patients")
+}
+
+// ─── Scheduling ─────────────────────────────────────────────────────────────
+
+enum PractitionerStatus {
+  active
+  inactive
+
+  @@map("practitioner_status")
+}
+
+// A member of staff who sees patients (doctor, therapist). Appointments are booked against this profile.
+model Practitioner {
+  id           String             @id @default(uuid(7)) @db.Uuid
+  orgId        String             @map("org_id") @db.Uuid
+  membershipId String             @unique @map("membership_id") @db.Uuid
+  displayName  String             @map("display_name") @db.VarChar(120)
+  credentials  String?            @db.VarChar(120)
+  specialty    String             @db.VarChar(120)
+  department   String             @db.VarChar(120)
+  room         String?            @db.VarChar(60)
+  // Length of one appointment slot; every booking with this practitioner takes one slot.
+  slotMinutes  Int                @map("slot_minutes")
+  status       PractitionerStatus @default(active)
+  version      Int                @default(1)
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation               @relation(fields: [orgId], references: [id])
+  membership   Membership                 @relation(fields: [membershipId], references: [id])
+  availability PractitionerAvailability[]
+  appointments Appointment[]
+  encounters   Encounter[]
+  referrals    Referral[]
+  carePlans    CarePlan[]
+
+  @@index([orgId, status])
+  @@map("practitioners")
+}
+
+// Weekly recurring consulting window at one branch, in the clinic's local time.
+model PractitionerAvailability {
+  id             String @id @default(uuid(7)) @db.Uuid
+  practitionerId String @map("practitioner_id") @db.Uuid
+  branchId       String @map("branch_id") @db.Uuid
+  // 0 = Sunday … 6 = Saturday.
+  weekday        Int    @db.SmallInt
+  // Minutes after local midnight, e.g. 540 = 09:00.
+  startMinute    Int    @map("start_minute") @db.SmallInt
+  endMinute      Int    @map("end_minute") @db.SmallInt
+
+  practitioner Practitioner @relation(fields: [practitionerId], references: [id], onDelete: Cascade)
+  branch       Branch       @relation(fields: [branchId], references: [id])
+
+  @@index([practitionerId, weekday])
+  @@map("practitioner_availability")
+}
+
+enum AppointmentStatus {
+  pending
+  confirmed
+  arrived
+  in_progress
+  completed
+  cancelled
+  no_show
+
+  @@map("appointment_status")
+}
+
+enum AppointmentType {
+  consultation
+  follow_up
+  procedure
+  diagnostic_review
+
+  @@map("appointment_type")
+}
+
+enum BookingChannel {
+  reception
+  phone
+  portal
+  referral
+  walk_in
+
+  @@map("booking_channel")
+}
+
+model Appointment {
+  id             String            @id @default(uuid(7)) @db.Uuid
+  orgId          String            @map("org_id") @db.Uuid
+  // Human-facing identifier (APT-000001) from the organisation counter.
+  reference      String            @db.VarChar(20)
+  patientId      String            @map("patient_id") @db.Uuid
+  practitionerId String            @map("practitioner_id") @db.Uuid
+  branchId       String            @map("branch_id") @db.Uuid
+  startsAt       DateTime          @map("starts_at") @db.Timestamptz(6)
+  endsAt         DateTime          @map("ends_at") @db.Timestamptz(6)
+  type           AppointmentType
+  status         AppointmentStatus
+  channel        BookingChannel
+  // A walk-in waiting for the next free chamber rather than holding a slot of their own.
+  waitingQueue   Boolean           @default(false) @map("waiting_queue")
+  reason         String            @db.VarChar(500)
+  internalNote   String?           @map("internal_note") @db.VarChar(1000)
+  notifyWhatsapp Boolean           @default(true) @map("notify_whatsapp")
+  notifySms      Boolean           @default(true) @map("notify_sms")
+  queueToken     String?           @map("queue_token") @db.VarChar(10)
+  arrivedAt      DateTime?         @map("arrived_at") @db.Timestamptz(6)
+  closedReason   String?           @map("closed_reason") @db.VarChar(120)
+  bookedById     String            @map("booked_by") @db.Uuid
+  version        Int               @default(1)
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation       @relation(fields: [orgId], references: [id])
+  patient      Patient            @relation(fields: [patientId], references: [id])
+  practitioner Practitioner       @relation(fields: [practitionerId], references: [id])
+  branch       Branch             @relation(fields: [branchId], references: [id])
+  bookedBy     User               @relation("AppointmentBookedBy", fields: [bookedById], references: [id])
+  events       AppointmentEvent[]
+  encounter    Encounter?
+
+  @@unique([orgId, reference])
+  @@index([orgId, practitionerId, startsAt])
+  @@index([orgId, patientId, startsAt])
+  @@index([orgId, branchId, startsAt])
+  @@map("appointments")
+}
+
+// Append-only history of everything that happened to an appointment.
+model AppointmentEvent {
+  id            String             @id @default(uuid(7)) @db.Uuid
+  appointmentId String             @map("appointment_id") @db.Uuid
+  action        String             @db.VarChar(40)
+  fromStatus    AppointmentStatus? @map("from_status")
+  toStatus      AppointmentStatus  @map("to_status")
+  fromStartsAt  DateTime?          @map("from_starts_at") @db.Timestamptz(6)
+  toStartsAt    DateTime?          @map("to_starts_at") @db.Timestamptz(6)
+  reason        String?            @db.VarChar(120)
+  note          String?            @db.VarChar(1000)
+  actorUserId   String             @map("actor_user_id") @db.Uuid
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  actor       User        @relation(fields: [actorUserId], references: [id])
+
+  @@index([appointmentId, createdAt])
+  @@map("appointment_events")
+}
+
+// Per-organisation counters for human-facing numbers (MRNs, appointment references, daily queue tokens).
+model OrgCounter {
+  orgId String @map("org_id") @db.Uuid
+  name  String @db.VarChar(80)
+  value Int
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+
+  @@id([orgId, name])
+  @@map("org_counters")
+}
+
+// ─── Staff ──────────────────────────────────────────────────────────────────
+
+enum StaffType {
+  doctor
+  staff
+
+  @@map("staff_type")
+}
+
+enum StaffStatus {
+  active
+  draft
+  inactive
+
+  @@map("staff_status")
+}
+
+enum Engagement {
+  full_time
+  visiting
+  honorary
+
+  @@map("engagement")
+}
+
+// A person who works for the organisation (doctor, nurse, pharmacist, receptionist …). A ClinicOS login is
+// optional: membershipId links the record to an account once the person has one.
+model StaffMember {
+  id             String      @id @default(uuid(7)) @db.Uuid
+  orgId          String      @map("org_id") @db.Uuid
+  // Human-facing identifier (STF-001) from the organisation counter.
+  staffCode      String      @map("staff_code") @db.VarChar(20)
+  type           StaffType
+  fullName       String      @map("full_name") @db.VarChar(120)
+  email          String?     @db.VarChar(254)
+  mobile         String?     @db.VarChar(10)
+  department     String      @db.VarChar(120)
+  designation    String      @db.VarChar(160)
+  council        String?     @db.VarChar(120)
+  councilNumber  String?     @map("council_number") @db.VarChar(60)
+  qualifications String[]    @db.VarChar(60)
+  engagement     Engagement  @default(full_time)
+  status         StaffStatus @default(active)
+  membershipId   String?     @unique @map("membership_id") @db.Uuid
+  // The pending invitation that will link this record to an account when accepted.
+  invitationId   String?     @unique @map("invitation_id") @db.Uuid
+  createdById    String      @map("created_by") @db.Uuid
+  version        Int         @default(1)
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation       @relation(fields: [orgId], references: [id])
+  membership   Membership?        @relation(fields: [membershipId], references: [id])
+  invitation   Invitation?        @relation(fields: [invitationId], references: [id])
+  createdBy    User               @relation("StaffCreatedBy", fields: [createdById], references: [id])
+  branches     StaffBranch[]
+  attendance   AttendanceRecord[]
+  leaves       StaffLeave[]
+
+  @@unique([orgId, staffCode])
+  @@index([orgId, status])
+  @@index([orgId, fullName])
+  @@map("staff_members")
+}
+
+model StaffBranch {
+  staffId   String   @map("staff_id") @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
+  isPrimary Boolean  @default(false) @map("is_primary")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  staff  StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  branch Branch      @relation(fields: [branchId], references: [id])
+
+  @@id([staffId, branchId])
+  @@index([branchId])
+  @@map("staff_branches")
+}
+
+enum AttendanceStatus {
+  present
+  late
+  absent
+  leave
+  unavailable
+
+  @@map("attendance_status")
+}
+
+// What actually happened on a day at a branch, recorded by an authorised person. One record per person, branch
+// and date; corrections keep the previous values in attendance_corrections.
+model AttendanceRecord {
+  id            String           @id @default(uuid(7)) @db.Uuid
+  staffId       String           @map("staff_id") @db.Uuid
+  branchId      String           @map("branch_id") @db.Uuid
+  date          DateTime         @db.Date
+  status        AttendanceStatus
+  // Arrival time on the local clock, minutes after midnight; only for present and late.
+  arrivalMinute Int?             @map("arrival_minute") @db.SmallInt
+  note          String?          @db.VarChar(500)
+  recordedById  String           @map("recorded_by") @db.Uuid
+  version       Int              @default(1)
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  staff       StaffMember            @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  branch      Branch                 @relation(fields: [branchId], references: [id])
+  recordedBy  User                   @relation("AttendanceRecordedBy", fields: [recordedById], references: [id])
+  corrections AttendanceCorrection[]
+
+  @@unique([staffId, branchId, date])
+  @@index([staffId, date])
+  @@map("attendance_records")
+}
+
+model AttendanceCorrection {
+  id            String           @id @default(uuid(7)) @db.Uuid
+  attendanceId  String           @map("attendance_id") @db.Uuid
+  fromStatus    AttendanceStatus @map("from_status")
+  toStatus      AttendanceStatus @map("to_status")
+  fromMinute    Int?             @map("from_minute") @db.SmallInt
+  toMinute      Int?             @map("to_minute") @db.SmallInt
+  reason        String           @db.VarChar(500)
+  correctedById String           @map("corrected_by") @db.Uuid
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  attendance  AttendanceRecord @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  correctedBy User             @relation("AttendanceCorrectedBy", fields: [correctedById], references: [id])
+
+  @@index([attendanceId, createdAt])
+  @@map("attendance_corrections")
+}
+
+enum LeaveKind {
+  leave
+  block
+  relief
+
+  @@map("leave_kind")
+}
+
+enum LeaveStatus {
+  scheduled
+  cancelled
+
+  @@map("leave_status")
+}
+
+// Planned leave or a temporary block. While scheduled it removes the person's appointment slots for those
+// dates (and times, for a block), at one branch or all of them.
+model StaffLeave {
+  id            String      @id @default(uuid(7)) @db.Uuid
+  staffId       String      @map("staff_id") @db.Uuid
+  kind          LeaveKind
+  title         String      @db.VarChar(120)
+  startDate     DateTime    @map("start_date") @db.Date
+  endDate       DateTime    @map("end_date") @db.Date
+  // Both null for whole days; otherwise the blocked window on each of the dates.
+  startMinute   Int?        @map("start_minute") @db.SmallInt
+  endMinute     Int?        @map("end_minute") @db.SmallInt
+  // Null means every branch the person works at.
+  branchId      String?     @map("branch_id") @db.Uuid
+  reason        String      @db.VarChar(500)
+  status        LeaveStatus @default(scheduled)
+  createdById   String      @map("created_by") @db.Uuid
+  cancelledById String?     @map("cancelled_by") @db.Uuid
+  cancelledAt   DateTime?   @map("cancelled_at") @db.Timestamptz(6)
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  staff       StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  branch      Branch?     @relation(fields: [branchId], references: [id])
+  createdBy   User        @relation("LeaveCreatedBy", fields: [createdById], references: [id])
+  cancelledBy User?       @relation("LeaveCancelledBy", fields: [cancelledById], references: [id])
+
+  @@index([staffId, startDate])
+  @@map("staff_leaves")
+}
+
+// ─── Clinical ───────────────────────────────────────────────────────────────
+
+enum EncounterStatus {
+  in_progress
+  signed
+
+  @@map("encounter_status")
+}
+
+// One consultation. Editable while in progress; signing locks it (corrections become note addenda).
+model Encounter {
+  id             String          @id @default(uuid(7)) @db.Uuid
+  orgId          String          @map("org_id") @db.Uuid
+  reference      String          @db.VarChar(20)
+  patientId      String          @map("patient_id") @db.Uuid
+  appointmentId  String?         @unique @map("appointment_id") @db.Uuid
+  practitionerId String?         @map("practitioner_id") @db.Uuid
+  branchId       String          @map("branch_id") @db.Uuid
+  type           String          @db.VarChar(120)
+  reason         String          @db.VarChar(500)
+  chiefComplaint String          @default("") @map("chief_complaint") @db.VarChar(2000)
+  subjective     String          @default("") @db.VarChar(4000)
+  objective      String          @default("") @db.VarChar(4000)
+  assessment     String          @default("") @db.VarChar(4000)
+  plan           String          @default("") @db.VarChar(4000)
+  status         EncounterStatus @default(in_progress)
+  startedAt      DateTime        @default(now()) @map("started_at") @db.Timestamptz(6)
+  signedAt       DateTime?       @map("signed_at") @db.Timestamptz(6)
+  signedById     String?         @map("signed_by") @db.Uuid
+  createdById    String          @map("created_by") @db.Uuid
+  version        Int             @default(1)
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation  Organisation      @relation(fields: [orgId], references: [id])
+  patient       Patient           @relation(fields: [patientId], references: [id])
+  appointment   Appointment?      @relation(fields: [appointmentId], references: [id])
+  practitioner  Practitioner?     @relation(fields: [practitionerId], references: [id])
+  branch        Branch            @relation(fields: [branchId], references: [id])
+  signedBy      User?             @relation("EncounterSignedBy", fields: [signedById], references: [id])
+  createdBy     User              @relation("EncounterCreatedBy", fields: [createdById], references: [id])
+  vitals        VitalSign[]
+  diagnoses     Diagnosis[]
+  notes         ClinicalNote[]
+  prescriptions Prescription[]
+  orders        DiagnosticOrder[]
+  referrals     Referral[]
+  charges       Charge[]
+  invoices      Invoice[]
+
+  @@unique([orgId, reference])
+  @@index([orgId, patientId, startedAt])
+  @@index([orgId, status])
+  @@map("encounters")
+}
+
+model VitalSign {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  patientId    String   @map("patient_id") @db.Uuid
+  encounterId  String?  @map("encounter_id") @db.Uuid
+  systolic     Int      @db.SmallInt
+  diastolic    Int      @db.SmallInt
+  pulse        Int      @db.SmallInt
+  respiration  Int      @db.SmallInt
+  temperatureF Float    @map("temperature_f")
+  spo2         Int      @db.SmallInt
+  weightKg     Float    @map("weight_kg")
+  heightCm     Float    @map("height_cm")
+  bloodSugar   Int?     @map("blood_sugar") @db.SmallInt
+  painScore    Int?     @map("pain_score") @db.SmallInt
+  site         String?  @db.VarChar(120)
+  posture      String?  @db.VarChar(120)
+  device       String?  @db.VarChar(120)
+  recordedById String   @map("recorded_by") @db.Uuid
+  recordedAt   DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+  patient      Patient      @relation(fields: [patientId], references: [id])
+  encounter    Encounter?   @relation(fields: [encounterId], references: [id])
+  recordedBy   User         @relation("VitalsRecordedBy", fields: [recordedById], references: [id])
+
+  @@index([orgId, patientId, recordedAt])
+  @@map("vital_signs")
+}
+
+enum DiagnosisStatus {
+  active
+  resolved
+
+  @@map("diagnosis_status")
+}
+
+model Diagnosis {
+  id           String          @id @default(uuid(7)) @db.Uuid
+  orgId        String          @map("org_id") @db.Uuid
+  patientId    String          @map("patient_id") @db.Uuid
+  encounterId  String?         @map("encounter_id") @db.Uuid
+  icd          String          @db.VarChar(20)
+  snomed       String?         @db.VarChar(20)
+  name         String          @db.VarChar(240)
+  designation  String          @default("Primary") @db.VarChar(20)
+  verification String          @default("Confirmed") @db.VarChar(20)
+  severity     String?         @db.VarChar(60)
+  description  String          @db.VarChar(2000)
+  status       DiagnosisStatus @default(active)
+  recordedById String          @map("recorded_by") @db.Uuid
+  recordedAt   DateTime        @default(now()) @map("recorded_at") @db.Timestamptz(6)
+  resolvedAt   DateTime?       @map("resolved_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+  patient      Patient      @relation(fields: [patientId], references: [id])
+  encounter    Encounter?   @relation(fields: [encounterId], references: [id])
+  recordedBy   User         @relation("DiagnosisRecordedBy", fields: [recordedById], references: [id])
+
+  @@index([orgId, patientId, status])
+  @@map("diagnoses")
+}
+
+enum AllergySeverity {
+  mild
+  moderate
+  severe
+
+  @@map("allergy_severity")
+}
+
+model Allergy {
+  id           String          @id @default(uuid(7)) @db.Uuid
+  orgId        String          @map("org_id") @db.Uuid
+  patientId    String          @map("patient_id") @db.Uuid
+  substance    String          @db.VarChar(160)
+  // Medicine class used for prescription cross-checks (for example "penicillin", "nsaid").
+  drugClass    String?         @map("drug_class") @db.VarChar(60)
+  classLabel   String?         @map("class_label") @db.VarChar(120)
+  severity     AllergySeverity
+  reaction     String          @db.VarChar(500)
+  verification String?         @db.VarChar(60)
+  active       Boolean         @default(true)
+  recordedById String          @map("recorded_by") @db.Uuid
+  recordedAt   DateTime        @default(now()) @map("recorded_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+  patient      Patient      @relation(fields: [patientId], references: [id])
+  recordedBy   User         @relation("AllergyRecordedBy", fields: [recordedById], references: [id])
+
+  @@index([orgId, patientId])
+  @@map("allergies")
+}
+
+enum AlertSeverity {
+  critical
+  high
+  moderate
+  low
+
+  @@map("alert_severity")
+}
+
+enum AlertStatus {
+  active
+  acknowledged
+  resolved
+
+  @@map("alert_status")
+}
+
+// A safety flag on the patient chart. Acknowledging needs a disposition and a justification.
+model ClinicalAlert {
+  id               String        @id @default(uuid(7)) @db.Uuid
+  orgId            String        @map("org_id") @db.Uuid
+  patientId        String        @map("patient_id") @db.Uuid
+  kind             String        @db.VarChar(80)
+  title            String        @db.VarChar(240)
+  severity         AlertSeverity
+  status           AlertStatus   @default(active)
+  detail           String        @db.VarChar(2000)
+  statement        String?       @db.VarChar(2000)
+  allergyId        String?       @unique @map("allergy_id") @db.Uuid
+  // Raised by an abnormal or critical result; reviewing the result resolves it.
+  orderId          String?       @map("order_id") @db.Uuid
+  disposition      String?       @db.VarChar(60)
+  justification    String?       @db.VarChar(2000)
+  acknowledgedById String?       @map("acknowledged_by") @db.Uuid
+  acknowledgedAt   DateTime?     @map("acknowledged_at") @db.Timestamptz(6)
+  createdById      String?       @map("created_by") @db.Uuid
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation   Organisation     @relation(fields: [orgId], references: [id])
+  patient        Patient          @relation(fields: [patientId], references: [id])
+  order          DiagnosticOrder? @relation(fields: [orderId], references: [id])
+  acknowledgedBy User?            @relation("AlertAcknowledgedBy", fields: [acknowledgedById], references: [id])
+  createdBy      User?            @relation("AlertCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([orgId, patientId, status])
+  @@index([orgId, status, severity])
+  @@index([orderId])
+  @@map("clinical_alerts")
+}
+
+// A signed clinical note. Never edited after signing; later additions are addenda.
+model ClinicalNote {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  patientId   String   @map("patient_id") @db.Uuid
+  encounterId String?  @map("encounter_id") @db.Uuid
+  title       String   @db.VarChar(240)
+  department  String?  @db.VarChar(120)
+  // [{ heading, body }]
+  sections    Json
+  authorId    String   @map("author_id") @db.Uuid
+  signedAt    DateTime @default(now()) @map("signed_at") @db.Timestamptz(6)
+
+  organisation Organisation   @relation(fields: [orgId], references: [id])
+  patient      Patient        @relation(fields: [patientId], references: [id])
+  encounter    Encounter?     @relation(fields: [encounterId], references: [id])
+  author       User           @relation("NoteAuthor", fields: [authorId], references: [id])
+  addenda      NoteAddendum[]
+
+  @@index([orgId, patientId, signedAt])
+  @@map("clinical_notes")
+}
+
+model NoteAddendum {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  noteId    String   @map("note_id") @db.Uuid
+  text      String   @db.VarChar(4000)
+  authorId  String   @map("author_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  note   ClinicalNote @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  author User         @relation("AddendumAuthor", fields: [authorId], references: [id])
+
+  @@index([noteId, createdAt])
+  @@map("note_addenda")
+}
+
+// ─── Prescriptions, diagnostic orders, referrals, care plans, incidents ─────
+
+enum PrescriptionStatus {
+  active
+  completed
+  discontinued
+
+  @@map("prescription_status")
+}
+
+// A signed medication order. Its items never change; a correction discontinues it and a new one is written.
+model Prescription {
+  id                     String             @id @default(uuid(7)) @db.Uuid
+  orgId                  String             @map("org_id") @db.Uuid
+  reference              String             @db.VarChar(20)
+  patientId              String             @map("patient_id") @db.Uuid
+  encounterId            String?            @map("encounter_id") @db.Uuid
+  branchId               String             @map("branch_id") @db.Uuid
+  // Snapshots taken at signing, so the record keeps showing who prescribed and under which registration.
+  prescriberName         String             @map("prescriber_name") @db.VarChar(120)
+  registration           String?            @db.VarChar(80)
+  department             String?            @db.VarChar(120)
+  indication             String             @db.VarChar(500)
+  precautionAcknowledged Boolean            @default(false) @map("precaution_acknowledged")
+  status                 PrescriptionStatus @default(active)
+  // SHA-256 of the signed content (patient, prescriber, time and items), so later tampering is detectable.
+  contentHash            String             @map("content_hash") @db.Char(64)
+  createdById            String             @map("created_by") @db.Uuid
+  createdAt              DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  version                Int                @default(1)
+
+  organisation Organisation        @relation(fields: [orgId], references: [id])
+  patient      Patient             @relation(fields: [patientId], references: [id])
+  encounter    Encounter?          @relation(fields: [encounterId], references: [id])
+  branch       Branch              @relation(fields: [branchId], references: [id])
+  createdBy    User                @relation("PrescriptionCreatedBy", fields: [createdById], references: [id])
+  items        PrescriptionItem[]
+  events       PrescriptionEvent[]
+
+  @@unique([orgId, reference])
+  @@index([orgId, patientId, createdAt])
+  @@map("prescriptions")
+}
+
+model PrescriptionItem {
+  id              String  @id @default(uuid(7)) @db.Uuid
+  prescriptionId  String  @map("prescription_id") @db.Uuid
+  position        Int     @db.SmallInt
+  medicineCode    String  @map("medicine_code") @db.VarChar(60)
+  name            String  @db.VarChar(160)
+  strength        String  @db.VarChar(40)
+  form            String  @db.VarChar(40)
+  route           String  @db.VarChar(40)
+  drugClass       String? @map("drug_class") @db.VarChar(60)
+  dose            String  @db.VarChar(60)
+  frequency       String  @db.VarChar(80)
+  frequencyPerDay Int     @map("frequency_per_day") @db.SmallInt
+  food            String  @db.VarChar(40)
+  durationDays    Int     @map("duration_days") @db.SmallInt
+  quantity        Int
+  refills         Int     @default(0) @db.SmallInt
+  instructions    String  @default("") @db.VarChar(1000)
+  indication      String  @db.VarChar(500)
+
+  prescription Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([prescriptionId, position])
+  @@map("prescription_items")
+}
+
+model PrescriptionEvent {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  prescriptionId String   @map("prescription_id") @db.Uuid
+  action         String   @db.VarChar(40)
+  note           String   @default("") @db.VarChar(1000)
+  actorId        String   @map("actor_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  prescription Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  actor        User         @relation("PrescriptionEventActor", fields: [actorId], references: [id])
+
+  @@index([prescriptionId, createdAt])
+  @@map("prescription_events")
+}
+
+enum OrderKind {
+  lab
+  imaging
+
+  @@map("order_kind")
+}
+
+enum OrderStatus {
+  ordered
+  processing
+  awaiting_review
+  reviewed
+  cancelled
+
+  @@map("order_status")
+}
+
+enum ResultFlag {
+  normal
+  abnormal
+  critical
+
+  @@map("result_flag")
+}
+
+// A laboratory or imaging order: ordered, specimen collected (lab), result recorded, reviewed by a clinician.
+model DiagnosticOrder {
+  id            String      @id @default(uuid(7)) @db.Uuid
+  orgId         String      @map("org_id") @db.Uuid
+  reference     String      @db.VarChar(20)
+  patientId     String      @map("patient_id") @db.Uuid
+  encounterId   String?     @map("encounter_id") @db.Uuid
+  branchId      String      @map("branch_id") @db.Uuid
+  orderingName  String      @map("ordering_name") @db.VarChar(160)
+  kind          OrderKind
+  category      String      @db.VarChar(120)
+  title         String      @db.VarChar(1000)
+  indication    String      @db.VarChar(2000)
+  performing    String      @db.VarChar(240)
+  urgent        Boolean     @default(false)
+  status        OrderStatus @default(ordered)
+  accession     String?     @db.VarChar(40)
+  specimenNote  String?     @map("specimen_note") @db.VarChar(1000)
+  resultSummary String?     @map("result_summary") @db.VarChar(4000)
+  resultFlag    ResultFlag? @map("result_flag")
+  reviewOutcome String?     @map("review_outcome") @db.VarChar(20)
+  reviewNote    String?     @map("review_note") @db.VarChar(2000)
+  createdById   String      @map("created_by") @db.Uuid
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  version       Int         @default(1)
+
+  organisation Organisation          @relation(fields: [orgId], references: [id])
+  patient      Patient               @relation(fields: [patientId], references: [id])
+  encounter    Encounter?            @relation(fields: [encounterId], references: [id])
+  branch       Branch                @relation(fields: [branchId], references: [id])
+  createdBy    User                  @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  items        DiagnosticOrderItem[]
+  events       OrderEvent[]
+  alerts       ClinicalAlert[]
+
+  @@unique([orgId, reference])
+  @@index([orgId, patientId, createdAt])
+  @@index([orgId, status])
+  @@map("diagnostic_orders")
+}
+
+model DiagnosticOrderItem {
+  id          String  @id @default(uuid(7)) @db.Uuid
+  orderId     String  @map("order_id") @db.Uuid
+  position    Int     @db.SmallInt
+  code        String  @db.VarChar(40)
+  name        String  @db.VarChar(240)
+  category    String  @db.VarChar(60)
+  loinc       String? @db.VarChar(20)
+  destination String  @db.VarChar(240)
+  priority    String  @db.VarChar(60)
+
+  order DiagnosticOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, position])
+  @@map("diagnostic_order_items")
+}
+
+model OrderEvent {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  orderId   String   @map("order_id") @db.Uuid
+  action    String   @db.VarChar(40)
+  note      String   @default("") @db.VarChar(2000)
+  actorId   String   @map("actor_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  order DiagnosticOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  actor User            @relation("OrderEventActor", fields: [actorId], references: [id])
+
+  @@index([orderId, createdAt])
+  @@map("order_events")
+}
+
+enum ReferralDirection {
+  outgoing
+  incoming
+
+  @@map("referral_direction")
+}
+
+enum ReferralStatus {
+  pending_acceptance
+  awaiting_review
+  info_requested
+  accepted
+  scheduled
+  completed
+  declined
+  cancelled
+
+  @@map("referral_status")
+}
+
+model Referral {
+  id                   String            @id @default(uuid(7)) @db.Uuid
+  orgId                String            @map("org_id") @db.Uuid
+  reference            String            @db.VarChar(20)
+  patientId            String            @map("patient_id") @db.Uuid
+  encounterId          String?           @map("encounter_id") @db.Uuid
+  direction            ReferralDirection
+  status               ReferralStatus
+  priority             String            @db.VarChar(60)
+  // Hours the receiving side has to respond, from the priority.
+  windowHours          Int               @map("window_hours") @db.SmallInt
+  model                String            @db.VarChar(80)
+  specialty            String            @db.VarChar(120)
+  indication           String            @db.VarChar(500)
+  narrative            String            @db.VarChar(4000)
+  questions            String[]          @db.VarChar(500)
+  attachedRecords      String[]          @map("attached_records") @db.VarChar(240)
+  // Outgoing: where it goes. Incoming: where it came from. An internal target is one of the clinic's therapists.
+  targetPractitionerId String?           @map("target_practitioner_id") @db.Uuid
+  facility             String            @db.VarChar(240)
+  facilityNote         String            @default("") @map("facility_note") @db.VarChar(240)
+  clinician            String            @db.VarChar(160)
+  clinicianNote        String            @default("") @map("clinician_note") @db.VarChar(240)
+  outcome              String            @default("") @db.VarChar(240)
+  createdById          String            @map("created_by") @db.Uuid
+  createdAt            DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  version              Int               @default(1)
+
+  organisation       Organisation    @relation(fields: [orgId], references: [id])
+  patient            Patient         @relation(fields: [patientId], references: [id])
+  encounter          Encounter?      @relation(fields: [encounterId], references: [id])
+  targetPractitioner Practitioner?   @relation(fields: [targetPractitionerId], references: [id])
+  createdBy          User            @relation("ReferralCreatedBy", fields: [createdById], references: [id])
+  events             ReferralEvent[]
+
+  @@unique([orgId, reference])
+  @@index([orgId, patientId, createdAt])
+  @@map("referrals")
+}
+
+model ReferralEvent {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  referralId String   @map("referral_id") @db.Uuid
+  title      String   @db.VarChar(240)
+  text       String   @default("") @db.VarChar(2000)
+  actorId    String   @map("actor_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  referral Referral @relation(fields: [referralId], references: [id], onDelete: Cascade)
+  actor    User     @relation("ReferralEventActor", fields: [actorId], references: [id])
+
+  @@index([referralId, createdAt])
+  @@map("referral_events")
+}
+
+enum CarePlanStatus {
+  on_track
+  at_risk
+  achieved
+  closed
+
+  @@map("care_plan_status")
+}
+
+model CarePlan {
+  id                 String         @id @default(uuid(7)) @db.Uuid
+  orgId              String         @map("org_id") @db.Uuid
+  reference          String         @db.VarChar(20)
+  patientId          String         @map("patient_id") @db.Uuid
+  leadPractitionerId String         @map("lead_practitioner_id") @db.Uuid
+  title              String         @db.VarChar(200)
+  category           String         @db.VarChar(120)
+  rationale          String         @db.VarChar(4000)
+  startDate          DateTime       @map("start_date") @db.Date
+  nextReview         DateTime       @map("next_review") @db.Date
+  targetDate         DateTime       @map("target_date") @db.Date
+  // Linked problems as [{ icd, name }].
+  diagnoses          Json
+  education          String[]       @db.VarChar(500)
+  whatsapp           Boolean        @default(false)
+  status             CarePlanStatus @default(on_track)
+  compliance         Int            @default(0) @db.SmallInt
+  createdById        String         @map("created_by") @db.Uuid
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version            Int            @default(1)
+
+  organisation     Organisation           @relation(fields: [orgId], references: [id])
+  patient          Patient                @relation(fields: [patientId], references: [id])
+  leadPractitioner Practitioner           @relation(fields: [leadPractitionerId], references: [id])
+  createdBy        User                   @relation("CarePlanCreatedBy", fields: [createdById], references: [id])
+  goals            CarePlanGoal[]
+  interventions    CarePlanIntervention[]
+  reviews          CarePlanReview[]
+
+  @@unique([orgId, reference])
+  @@index([orgId, patientId])
+  @@index([orgId, status, nextReview])
+  @@map("care_plans")
+}
+
+model CarePlanGoal {
+  id          String  @id @default(uuid(7)) @db.Uuid
+  carePlanId  String  @map("care_plan_id") @db.Uuid
+  position    Int     @db.SmallInt
+  title       String  @db.VarChar(200)
+  target      String  @db.VarChar(200)
+  protocol    String  @default("") @db.VarChar(500)
+  cadence     String  @db.VarChar(80)
+  status      String  @default("Pending Baseline") @db.VarChar(40)
+  observation String? @db.VarChar(1000)
+
+  carePlan CarePlan @relation(fields: [carePlanId], references: [id], onDelete: Cascade)
+
+  @@unique([carePlanId, position])
+  @@map("care_plan_goals")
+}
+
+model CarePlanIntervention {
+  id         String @id @default(uuid(7)) @db.Uuid
+  carePlanId String @map("care_plan_id") @db.Uuid
+  position   Int    @db.SmallInt
+  type       String @db.VarChar(40)
+  title      String @db.VarChar(200)
+  due        String @default("") @db.VarChar(120)
+  state      String @default("Staged") @db.VarChar(40)
+
+  carePlan CarePlan @relation(fields: [carePlanId], references: [id], onDelete: Cascade)
+
+  @@unique([carePlanId, position])
+  @@map("care_plan_interventions")
+}
+
+model CarePlanReview {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  carePlanId  String   @map("care_plan_id") @db.Uuid
+  kind        String   @db.VarChar(20)
+  observation String   @db.VarChar(2000)
+  summary     String   @db.VarChar(2000)
+  barriers    String[] @db.VarChar(120)
+  authorId    String   @map("author_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  carePlan CarePlan @relation(fields: [carePlanId], references: [id], onDelete: Cascade)
+  author   User     @relation("CarePlanReviewAuthor", fields: [authorId], references: [id])
+
+  @@index([carePlanId, createdAt])
+  @@map("care_plan_reviews")
+}
+
+// A patient-safety incident report. An anonymous report stores no reporter at all.
+model Incident {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  reference     String   @db.VarChar(20)
+  patientId     String?  @map("patient_id") @db.Uuid
+  branchId      String   @map("branch_id") @db.Uuid
+  category      String   @db.VarChar(40)
+  severity      Int      @db.SmallInt
+  occurredOn    DateTime @map("occurred_on") @db.Date
+  occurredTime  String   @map("occurred_time") @db.VarChar(5)
+  zone          String   @db.VarChar(160)
+  headline      String   @db.VarChar(240)
+  chronology    String   @db.VarChar(4000)
+  factors       String[] @db.VarChar(120)
+  actions       String   @default("") @db.VarChar(2000)
+  witnesses     String[] @db.VarChar(160)
+  notifyQuality Boolean  @default(true) @map("notify_quality")
+  logRegister   Boolean  @default(true) @map("log_register")
+  reporterId    String?  @map("reporter_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+  patient      Patient?     @relation(fields: [patientId], references: [id])
+  branch       Branch       @relation(fields: [branchId], references: [id])
+  reporter     User?        @relation("IncidentReporter", fields: [reporterId], references: [id])
+
+  @@unique([orgId, reference])
+  @@index([orgId, createdAt])
+  @@map("incidents")
+}
+
+// ─── Billing & finance ───────────────────────────────────────────────────────
+
+enum BillingServiceStatus {
+  active
+  inactive
+
+  @@map("billing_service_status")
+}
+
+enum TaxTreatment {
+  exempt
+  no_tax
+  taxable
+  not_configured
+
+  @@map("tax_treatment")
+}
+
+enum ChargeStatus {
+  draft
+  unbilled
+  invoiced
+
+  @@map("charge_status")
+}
+
+enum RefundStatus {
+  pending
+  approved
+  processed
+  failed
+  rejected
+
+  @@map("refund_status")
+}
+
+enum StatementLineState {
+  matched
+  candidate
+  exception
+  resolved
+
+  @@map("statement_line_state")
+}
+
+enum ReconExceptionStatus {
+  open
+  in_review
+  resolved
+
+  @@map("recon_exception_status")
+}
+
+// The organisation's service catalogue: what can be charged and at what default price and tax.
+model BillingService {
+  id           String               @id @default(uuid(7)) @db.Uuid
+  orgId        String               @map("org_id") @db.Uuid
+  code         String               @db.VarChar(40)
+  name         String               @db.VarChar(200)
+  category     String               @db.VarChar(80)
+  department   String?              @db.VarChar(120)
+  description  String               @default("") @db.VarChar(2000)
+  unit         String?              @db.VarChar(40)
+  status       BillingServiceStatus @default(inactive)
+  price        Decimal              @db.Decimal(12, 2)
+  taxTreatment TaxTreatment         @default(not_configured) @map("tax_treatment")
+  taxConfig    String?              @map("tax_config") @db.VarChar(80)
+  // GST percentage that follows from the tax configuration; 0 unless taxable.
+  gstRate      Decimal              @default(0) @map("gst_rate") @db.Decimal(5, 2)
+  createdById  String               @map("created_by") @db.Uuid
+  createdAt    DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version      Int                  @default(1)
+
+  organisation Organisation          @relation(fields: [orgId], references: [id])
+  createdBy    User                  @relation("BillingServiceCreatedBy", fields: [createdById], references: [id])
+  prices       BillingServicePrice[]
+  charges      Charge[]
+  invoiceLines InvoiceLine[]
+
+  @@unique([orgId, code])
+  @@map("billing_services")
+}
+
+// Where a service is offered. A null price means the branch charges the service default.
+model BillingServicePrice {
+  serviceId String   @map("service_id") @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
+  price     Decimal? @db.Decimal(12, 2)
+
+  service BillingService @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  branch  Branch         @relation(fields: [branchId], references: [id])
+
+  @@id([serviceId, branchId])
+  @@map("billing_service_prices")
+}
+
+// Prospective billing defaults for the organisation. Saving never changes existing records.
+model BillingSettings {
+  orgId            String   @id @map("org_id") @db.Uuid
+  billingModel     String   @default("Pay-as-you-go") @map("billing_model") @db.VarChar(30)
+  cashEnabled      Boolean  @default(true) @map("cash_enabled")
+  bankEnabled      Boolean  @default(true) @map("bank_enabled")
+  upiEnabled       Boolean  @default(true) @map("upi_enabled")
+  advancePolicy    String   @default("") @map("advance_policy") @db.VarChar(60)
+  partialPolicy    String   @default("") @map("partial_policy") @db.VarChar(60)
+  allocationPolicy String   @default("") @map("allocation_policy") @db.VarChar(60)
+  invoiceDocument  String   @default("") @map("invoice_document") @db.VarChar(60)
+  receiptDocument  String   @default("") @map("receipt_document") @db.VarChar(60)
+  updatedById      String?  @map("updated_by") @db.Uuid
+  updatedAt        DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  version          Int      @default(1)
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+  updatedBy    User?        @relation("BillingSettingsUpdatedBy", fields: [updatedById], references: [id])
+
+  @@map("billing_settings")
+}
+
+// The activity history of every finance record (services, settings, charges, refunds, exceptions...).
+model FinanceEvent {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  entityType String   @map("entity_type") @db.VarChar(30)
+  entityId   String   @map("entity_id") @db.Uuid
+  action     String   @db.VarChar(60)
+  note       String   @default("") @db.VarChar(1000)
+  // Null for steps taken by the system, such as statement matching.
+  actorId    String?  @map("actor_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+  actor        User?        @relation("FinanceEventActor", fields: [actorId], references: [id])
+
+  @@index([orgId, entityType, entityId, createdAt])
+  @@map("finance_events")
+}
+
+// An amount owed for one service. Draft charges can be edited; confirmed ones are fixed until invoiced.
+model Charge {
+  id          String       @id @default(uuid(7)) @db.Uuid
+  orgId       String       @map("org_id") @db.Uuid
+  reference   String       @db.VarChar(20)
+  patientId   String       @map("patient_id") @db.Uuid
+  branchId    String       @map("branch_id") @db.Uuid
+  encounterId String?      @map("encounter_id") @db.Uuid
+  serviceId   String       @map("service_id") @db.Uuid
+  payer       String       @db.VarChar(60)
+  model       String       @db.VarChar(30)
+  chargeDate  DateTime     @map("charge_date") @db.Date
+  status      ChargeStatus @default(draft)
+  invoiceId   String?      @map("invoice_id") @db.Uuid
+  note        String       @default("") @db.VarChar(1000)
+  // The service as it was priced for this charge.
+  code        String       @db.VarChar(40)
+  name        String       @db.VarChar(200)
+  category    String       @db.VarChar(80)
+  department  String?      @db.VarChar(120)
+  quantity    Int
+  unitPrice   Decimal      @map("unit_price") @db.Decimal(12, 2)
+  discountPct Decimal      @default(0) @map("discount_pct") @db.Decimal(5, 2)
+  gstPct      Decimal      @default(0) @map("gst_pct") @db.Decimal(5, 2)
+  total       Decimal      @db.Decimal(12, 2)
+  createdById String       @map("created_by") @db.Uuid
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version     Int          @default(1)
+
+  organisation Organisation   @relation(fields: [orgId], references: [id])
+  patient      Patient        @relation(fields: [patientId], references: [id])
+  branch       Branch         @relation(fields: [branchId], references: [id])
+  encounter    Encounter?     @relation(fields: [encounterId], references: [id])
+  service      BillingService @relation(fields: [serviceId], references: [id])
+  invoice      Invoice?       @relation(fields: [invoiceId], references: [id])
+  createdBy    User           @relation("ChargeCreatedBy", fields: [createdById], references: [id])
+  invoiceLines InvoiceLine[]
+
+  @@unique([orgId, reference])
+  @@index([orgId, patientId, status])
+  @@index([orgId, chargeDate])
+  @@map("charges")
+}
+
+// An issued invoice. Lines and totals are fixed at issue; the balance follows the allocations made to it.
+model Invoice {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  reference    String   @db.VarChar(20)
+  patientId    String   @map("patient_id") @db.Uuid
+  branchId     String   @map("branch_id") @db.Uuid
+  encounterId  String?  @map("encounter_id") @db.Uuid
+  payer        String   @db.VarChar(60)
+  model        String   @db.VarChar(30)
+  invoiceDate  DateTime @map("invoice_date") @db.Date
+  dueDate      DateTime @map("due_date") @db.Date
+  title        String   @db.VarChar(240)
+  publicNote   String   @default("") @map("public_note") @db.VarChar(1000)
+  internalNote String   @default("") @map("internal_note") @db.VarChar(1000)
+  gross        Decimal  @db.Decimal(12, 2)
+  discount     Decimal  @db.Decimal(12, 2)
+  tax          Decimal  @db.Decimal(12, 2)
+  total        Decimal  @db.Decimal(12, 2)
+  createdById  String   @map("created_by") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation        @relation(fields: [orgId], references: [id])
+  patient      Patient             @relation(fields: [patientId], references: [id])
+  branch       Branch              @relation(fields: [branchId], references: [id])
+  encounter    Encounter?          @relation(fields: [encounterId], references: [id])
+  createdBy    User                @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  lines        InvoiceLine[]
+  charges      Charge[]
+  allocations  PaymentAllocation[]
+
+  @@unique([orgId, reference])
+  @@index([orgId, patientId])
+  @@index([orgId, invoiceDate])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id          String  @id @default(uuid(7)) @db.Uuid
+  invoiceId   String  @map("invoice_id") @db.Uuid
+  position    Int     @db.SmallInt
+  // A line comes from a confirmed charge, or straight from the catalogue.
+  chargeId    String? @unique @map("charge_id") @db.Uuid
+  serviceId   String? @map("service_id") @db.Uuid
+  code        String  @db.VarChar(40)
+  name        String  @db.VarChar(200)
+  note        String  @default("") @db.VarChar(200)
+  quantity    Int
+  unitPrice   Decimal @map("unit_price") @db.Decimal(12, 2)
+  discountPct Decimal @default(0) @map("discount_pct") @db.Decimal(5, 2)
+  gstPct      Decimal @default(0) @map("gst_pct") @db.Decimal(5, 2)
+  total       Decimal @db.Decimal(12, 2)
+
+  invoice Invoice         @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  charge  Charge?         @relation(fields: [chargeId], references: [id])
+  service BillingService? @relation(fields: [serviceId], references: [id])
+
+  @@unique([invoiceId, position])
+  @@map("invoice_lines")
+}
+
+// Money received. Never edited: allocations and refunds are separate records against it.
+model Payment {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  reference     String   @db.VarChar(20)
+  // Every payment gets a receipt number when it is recorded.
+  receiptNumber String   @map("receipt_number") @db.VarChar(20)
+  patientId     String   @map("patient_id") @db.Uuid
+  branchId      String   @map("branch_id") @db.Uuid
+  amount        Decimal  @db.Decimal(12, 2)
+  channel       String   @db.VarChar(40)
+  payer         String   @db.VarChar(60)
+  purpose       String   @db.VarChar(20)
+  txnReference  String?  @map("txn_reference") @db.VarChar(120)
+  narration     String   @default("") @db.VarChar(500)
+  receivedAt    DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+  recordedById  String   @map("recorded_by") @db.Uuid
+
+  organisation   Organisation        @relation(fields: [orgId], references: [id])
+  patient        Patient             @relation(fields: [patientId], references: [id])
+  branch         Branch              @relation(fields: [branchId], references: [id])
+  recordedBy     User                @relation("PaymentRecordedBy", fields: [recordedById], references: [id])
+  allocations    PaymentAllocation[]
+  refunds        Refund[]
+  statementLines StatementLine[]
+
+  @@unique([orgId, reference])
+  @@unique([orgId, receiptNumber])
+  @@index([orgId, patientId])
+  @@index([orgId, receivedAt])
+  @@index([orgId, txnReference])
+  @@map("payments")
+}
+
+// Part of a payment applied to an invoice. A negative amount releases an earlier allocation (for a refund).
+model PaymentAllocation {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  reference   String   @db.VarChar(20)
+  paymentId   String   @map("payment_id") @db.Uuid
+  invoiceId   String   @map("invoice_id") @db.Uuid
+  amount      Decimal  @db.Decimal(12, 2)
+  refundId    String?  @map("refund_id") @db.Uuid
+  createdById String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+  payment      Payment      @relation(fields: [paymentId], references: [id])
+  invoice      Invoice      @relation(fields: [invoiceId], references: [id])
+  refund       Refund?      @relation(fields: [refundId], references: [id])
+  createdBy    User         @relation("AllocationCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([orgId, reference])
+  @@index([paymentId])
+  @@index([invoiceId])
+  @@map("payment_allocations")
+}
+
+// Money returned against a payment: requested, approved, then processed (or failed / rejected).
+model Refund {
+  id                  String       @id @default(uuid(7)) @db.Uuid
+  orgId               String       @map("org_id") @db.Uuid
+  reference           String       @db.VarChar(20)
+  paymentId           String       @map("payment_id") @db.Uuid
+  patientId           String       @map("patient_id") @db.Uuid
+  amount              Decimal      @db.Decimal(12, 2)
+  reason              String       @db.VarChar(120)
+  method              String       @db.VarChar(80)
+  internalReference   String       @map("internal_reference") @db.VarChar(80)
+  notes               String       @default("") @db.VarChar(1000)
+  // When true the refund may take back money already applied to invoices, reopening their balances.
+  releasesAllocations Boolean      @default(false) @map("releases_allocations")
+  status              RefundStatus @default(pending)
+  outcomeReference    String?      @map("outcome_reference") @db.VarChar(120)
+  outcomeNote         String?      @map("outcome_note") @db.VarChar(1000)
+  requestedById       String       @map("requested_by") @db.Uuid
+  createdAt           DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  decidedAt           DateTime?    @map("decided_at") @db.Timestamptz(6)
+  completedAt         DateTime?    @map("completed_at") @db.Timestamptz(6)
+  version             Int          @default(1)
+
+  organisation Organisation        @relation(fields: [orgId], references: [id])
+  payment      Payment             @relation(fields: [paymentId], references: [id])
+  patient      Patient             @relation(fields: [patientId], references: [id])
+  requestedBy  User                @relation("RefundRequestedBy", fields: [requestedById], references: [id])
+  releases     PaymentAllocation[]
+
+  @@unique([orgId, reference])
+  @@index([paymentId])
+  @@index([orgId, status])
+  @@map("refunds")
+}
+
+// A bank or gateway statement uploaded for reconciliation.
+model StatementImport {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  reference    String   @db.VarChar(20)
+  source       String   @db.VarChar(60)
+  fileName     String   @map("file_name") @db.VarChar(200)
+  lineCount    Int      @map("line_count")
+  importedById String   @map("imported_by") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation    @relation(fields: [orgId], references: [id])
+  importedBy   User            @relation("StatementImportedBy", fields: [importedById], references: [id])
+  lines        StatementLine[]
+
+  @@unique([orgId, reference])
+  @@map("statement_imports")
+}
+
+// One transaction from an imported statement, kept as it was received, and the payment it was matched to.
+model StatementLine {
+  id              String             @id @default(uuid(7)) @db.Uuid
+  orgId           String             @map("org_id") @db.Uuid
+  importId        String             @map("import_id") @db.Uuid
+  source          String             @db.VarChar(60)
+  sourceReference String             @map("source_reference") @db.VarChar(120)
+  txnDate         DateTime           @map("txn_date") @db.Date
+  txnTime         String?            @map("txn_time") @db.VarChar(5)
+  amount          Decimal            @db.Decimal(12, 2)
+  narration       String             @default("") @db.VarChar(300)
+  paymentId       String?            @map("payment_id") @db.Uuid
+  state           StatementLineState
+
+  organisation Organisation    @relation(fields: [orgId], references: [id])
+  import       StatementImport @relation(fields: [importId], references: [id])
+  payment      Payment?        @relation(fields: [paymentId], references: [id])
+  exception    ReconException?
+
+  @@unique([orgId, source, sourceReference])
+  @@index([orgId, txnDate])
+  @@index([paymentId])
+  @@map("statement_lines")
+}
+
+// A statement line that could not be matched cleanly, worked through to a documented resolution.
+model ReconException {
+  id             String               @id @default(uuid(7)) @db.Uuid
+  orgId          String               @map("org_id") @db.Uuid
+  reference      String               @db.VarChar(20)
+  lineId         String               @unique @map("line_id") @db.Uuid
+  kind           String               @db.VarChar(60)
+  reason         String               @db.VarChar(1000)
+  status         ReconExceptionStatus @default(open)
+  ownerId        String?              @map("owner_id") @db.Uuid
+  evidence       String?              @db.VarChar(500)
+  resolutionType String?              @map("resolution_type") @db.VarChar(80)
+  resolutionNote String?              @map("resolution_note") @db.VarChar(1000)
+  resolvedAt     DateTime?            @map("resolved_at") @db.Timestamptz(6)
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  version        Int                  @default(1)
+
+  organisation Organisation  @relation(fields: [orgId], references: [id])
+  line         StatementLine @relation(fields: [lineId], references: [id])
+  owner        User?         @relation("ReconExceptionOwner", fields: [ownerId], references: [id])
+
+  @@unique([orgId, reference])
+  @@index([orgId, status])
+  @@map("reconciliation_exceptions")
+}
