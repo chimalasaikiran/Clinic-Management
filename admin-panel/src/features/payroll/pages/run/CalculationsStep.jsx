@@ -10,7 +10,7 @@ import { ROUTES } from '../../../../config/routes'
 import { Amount, EmployeeCell, MetricCard, MetricGrid, SummaryLine } from '../../components/PayrollKit'
 import StepFooter from '../../components/StepFooter'
 import { usePayroll } from '../../context/usePayroll'
-import { PAY_MODELS, PAYROLL_BRANCHES, STAFF_STATUSES } from '../../data/seed'
+import { PAY_MODELS, PAYROLL_BRANCHES, STAFF_STATUSES } from '../../constants'
 import { minus, rupees, signed } from '../../format'
 import { advanceProgress, branchName } from '../../payrollLogic'
 import { STAFF_TONES } from '../../tones'
@@ -22,7 +22,7 @@ function Breakdown({ slip }) {
       <section>
         <h3 className="mb-2 text-[11px] font-semibold tracking-wide text-outline uppercase">Earnings breakdown</h3>
         <dl className="space-y-2 rounded-md border border-slate-200 p-3">
-          <SummaryLine label={employee.model === 'monthly' ? `Base salary (${employee.paidDays} paid days)` : `${employee.units} × ${rupees(employee.rate)} per ${PAY_MODELS[employee.model].unit}`} value={rupees(slip.gross)} />
+          <SummaryLine label={employee.model === 'monthly' ? `Base salary (${employee.paidDays} paid days)` : `${employee.units} × ${rupees(employee.rate)} per ${PAY_MODELS[employee.model]?.unit ?? 'unit'}`} value={rupees(slip.gross)} />
           {slip.approvedAdjustments.map((entry) => (
             <SummaryLine key={entry.id} label={entry.label} value={entry.direction === 'addition' ? signed(entry.amount) : minus(entry.amount)} tone={entry.direction === 'addition' ? 'add' : 'deduct'} />
           ))}
@@ -33,14 +33,15 @@ function Breakdown({ slip }) {
       <section>
         <h3 className="mb-2 text-[11px] font-semibold tracking-wide text-danger uppercase">Employee advance & loan recovery</h3>
         {slip.advanceLines.length ? (
-          slip.advanceLines.map(({ advance, amount }) => {
-            const progress = advanceProgress(advance)
+          slip.advanceLines.map(({ advance, amount, number }) => {
+            // Once the run is processed the instalment is already counted as recovered.
+            const before = advanceProgress(advance).outstanding + (advance.recoveries.some((entry) => entry.number === number) ? amount : 0)
             return (
               <dl key={advance.id} className="space-y-2 rounded-md border border-red-200 bg-red-50/40 p-3">
                 <SummaryLine label={`${advance.id} principal`} value={rupees(advance.principal)} />
-                <SummaryLine label="Outstanding before run" value={rupees(progress.outstanding)} />
-                <SummaryLine label={`Scheduled deduction (inst. ${progress.current.number} of ${advance.installments})`} value={rupees(-amount)} tone="deduct" />
-                <SummaryLine label="Balance after run" value={rupees(progress.outstanding - amount)} strong />
+                <SummaryLine label="Outstanding before run" value={rupees(before)} />
+                <SummaryLine label={`Scheduled deduction (inst. ${number} of ${advance.installments})`} value={rupees(-amount)} tone="deduct" />
+                <SummaryLine label="Balance after run" value={rupees(before - amount)} strong />
               </dl>
             )
           })
@@ -94,7 +95,7 @@ export default function CalculationsStep() {
     ({ employee }) =>
       (!search || `${employee.name} ${employee.id} ${employee.title}`.toLowerCase().includes(search)) &&
       (!branchId || employee.branchId === branchId) &&
-      (!model || PAY_MODELS[employee.model].label === model) &&
+      (!model || PAY_MODELS[employee.model]?.label === model) &&
       (!status || employee.status === status),
   )
   const inspected = slips.find((slip) => slip.employee.id === inspectId)
@@ -130,7 +131,7 @@ export default function CalculationsStep() {
                 <p className="text-[11px] text-outline">{branchName(slip.employee.branchId)}</p>
               </Cell>
               <Cell>
-                <StatusPill>{PAY_MODELS[slip.employee.model].label}</StatusPill>
+                <StatusPill>{PAY_MODELS[slip.employee.model]?.label ?? '—'}</StatusPill>
                 <p className="mt-1 text-[11px] text-outline">{slip.employee.volumeNote}</p>
               </Cell>
               <Cell>{rupees(slip.gross)}</Cell>

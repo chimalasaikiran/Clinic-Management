@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowLeft, CalendarCheck, ChevronDown, ChevronRight, CircleCheck, Download, FileText, History, Lock, Users, Wallet } from 'lucide-react'
+import { ArrowLeft, CalendarCheck, ChevronDown, ChevronRight, CircleCheck, Clock, Download, FileText, History, Lock, Users, Wallet } from 'lucide-react'
 import ActionButton from '../../../components/workspace/ActionButton'
 import Breadcrumb from '../../../components/workspace/Breadcrumb'
 import { FilterSelect, SearchBox } from '../../../components/workspace/controls'
@@ -8,6 +8,7 @@ import PageIntro from '../../../components/workspace/PageIntro'
 import StatusPill from '../../../components/workspace/StatusPill'
 import WorkspacePage from '../../../components/workspace/WorkspacePage'
 import { ROUTES } from '../../../config/routes'
+import { TextInput } from '../../../components/workspace/FormControls'
 import { cn } from '../../../lib/cn'
 import { exportCsv } from '../../../lib/exportCsv'
 import { MetricCard, MetricGrid, PayrollTabs } from '../components/PayrollKit'
@@ -15,10 +16,50 @@ import { usePayroll } from '../context/usePayroll'
 import { rupees } from '../format'
 import { branchName, sum } from '../payrollLogic'
 
-const netOf = (cycle) => cycle.gross + cycle.adjustments - cycle.statutory - cycle.advances
+const netOf = (cycle) => cycle.net
+
+// One payslip of a processed run, with the bank reference (UTR) of its transfer once it is recorded.
+function PayslipRow({ slip, onRecord }) {
+  const [reference, setReference] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const record = async () => {
+    if (reference.trim().length < 3) return setError('Enter the bank reference (UTR) of the transfer.')
+    setBusy(true)
+    const result = await onRecord(reference)
+    setBusy(false)
+    if (result.error) setError(result.error)
+  }
+  return (
+    <tr className="border-b border-slate-100 align-top last:border-0">
+      <Cell>
+        <p className="font-semibold">{slip.name}</p>
+        <p className="text-[11px] text-outline">{slip.staffCode} · {slip.payslipRef}</p>
+      </Cell>
+      <Cell>{branchName(slip.branchId)}</Cell>
+      <Cell>{rupees(slip.gross)}</Cell>
+      <Cell className="font-semibold">{rupees(slip.net)}</Cell>
+      <Cell>
+        {slip.paymentRef ? (
+          <>
+            <StatusPill tone="success">Paid · {slip.paymentRef}</StatusPill>
+            <p className="mt-1 text-[11px] text-outline">{slip.paidBy} · {slip.paidOn}</p>
+          </>
+        ) : (
+          <div className="flex flex-wrap items-start gap-2">
+            <TextInput label={`Bank reference for ${slip.name}`} name="reference" value={reference} onChange={(event) => { setReference(event.target.value); setError('') }} placeholder="UTR / cheque no." error={error} className="w-48" />
+            <ActionButton size="sm" onClick={record} disabled={busy} className="mt-6">
+              Record payment
+            </ActionButton>
+          </div>
+        )}
+      </Cell>
+    </tr>
+  )
+}
 
 export default function CycleHistoryPage() {
-  const { history } = usePayroll()
+  const { history, recordPayment } = usePayroll()
   const [query, setQuery] = useState('')
   const [year, setYear] = useState('')
   const [oldestFirst, setOldestFirst] = useState(false)
@@ -39,8 +80,8 @@ export default function CycleHistoryPage() {
     ])
   const exportCycle = (cycle) =>
     exportCsv(`payroll-${cycle.month}.csv`, [
-      ['Branch', 'Staff', 'Gross', 'Net paid'],
-      ...cycle.branches.map((row) => [branchName(row.branchId), row.staff, row.gross, row.net]),
+      ['Payslip', 'Employee ID', 'Name', 'Branch', 'Gross', 'Adjustments', 'Statutory', 'Advance recovery', 'Net', 'Bank reference'],
+      ...cycle.payslips.map((slip) => [slip.payslipRef, slip.staffCode, slip.name, branchName(slip.branchId), slip.gross, slip.additions - slip.deductions, sum(slip.statutory, (line) => line.amount), slip.advance, slip.net, slip.paymentRef ?? '']),
     ])
 
   return (
@@ -67,7 +108,7 @@ export default function CycleHistoryPage() {
           <MetricCard label="Completed cycles" icon={History} value={`${history.length} cycles`} hint={`${history.at(-1).label} – ${latest.label}`} />
           <MetricCard label="Total net payroll" icon={Wallet} value={rupees(sum(history, netOf))} hint="Disbursed across all branches" />
           <MetricCard label="Employees in latest cycle" icon={Users} value={`${latest.employees} staff`} hint={`${latest.label} payroll`} />
-          <MetricCard label="Last payment date" icon={CalendarCheck} value={latest.payDate} hint="All employee payouts recorded" />
+          <MetricCard label="Last payment date" icon={CalendarCheck} value={latest.payDate} hint={latest.paid ? 'All employee payouts recorded' : `${latest.status} · bank references outstanding`} />
         </MetricGrid>
       )}
 
@@ -95,9 +136,9 @@ export default function CycleHistoryPage() {
                 <Cell className="font-semibold">{rupees(netOf(cycle))}</Cell>
                 <Cell>{cycle.employees} staff</Cell>
                 <Cell>
-                  <StatusPill tone="success">
-                    <CircleCheck className="size-3" aria-hidden="true" />
-                    {cycle.status ?? 'Paid'}
+                  <StatusPill tone={cycle.paid ? 'success' : 'warning'}>
+                    {cycle.paid ? <CircleCheck className="size-3" aria-hidden="true" /> : <Clock className="size-3" aria-hidden="true" />}
+                    {cycle.status}
                   </StatusPill>
                 </Cell>
                 <Cell>{cycle.payDate}</Cell>
@@ -122,7 +163,7 @@ export default function CycleHistoryPage() {
                 <Lock className="size-3" aria-hidden="true" /> Closed cycle · Read-only
               </p>
               <h2 className="flex flex-wrap items-center gap-2 text-xl font-semibold text-on-surface">
-                {selected.label} cycle <StatusPill tone="success">{selected.status ?? 'Paid'}</StatusPill>
+                {selected.label} cycle <StatusPill tone={selected.paid ? 'success' : 'warning'}>{selected.status}</StatusPill>
               </h2>
             </div>
             <ActionButton variant="primary" icon={FileText} onClick={() => exportCycle(selected)}>
@@ -153,7 +194,7 @@ export default function CycleHistoryPage() {
           </dl>
           <p className="flex items-center gap-2 border-y border-teal-200 bg-teal-50 px-5 py-2.5 text-xs text-brand">
             <CircleCheck className="size-3.5" aria-hidden="true" />
-            {rupees(netOf(selected))} paid to {selected.employees} employees.
+            {selected.paid ? `${rupees(netOf(selected))} paid to ${selected.employees} employees.` : `${rupees(netOf(selected))} payable to ${selected.employees} employees · ${selected.status}.`}
           </p>
           <div className="grid gap-6 p-5 lg:grid-cols-[280px_minmax(0,1fr)]">
             <div>
@@ -185,15 +226,27 @@ export default function CycleHistoryPage() {
                     <Cell>{rupees(row.gross)}</Cell>
                     <Cell>{rupees(row.net)}</Cell>
                     <Cell>
-                      <StatusPill tone="success">{selected.status ?? 'Paid'}</StatusPill>
+                      <StatusPill tone={selected.payslips.filter((slip) => slip.branchId === row.branchId).every((slip) => slip.paymentRef) ? 'success' : 'warning'}>
+                        {selected.payslips.filter((slip) => slip.branchId === row.branchId).every((slip) => slip.paymentRef) ? 'Paid' : 'Awaiting payment'}
+                      </StatusPill>
                     </Cell>
                   </tr>
                 ))}
               </Table>
             </div>
           </div>
+          <div className="border-t border-slate-200 p-5">
+            <h3 className="mb-3 text-[13px] font-semibold text-on-surface">Payslips & payments</h3>
+            <div className="overflow-hidden rounded-md border border-slate-200">
+              <Table headings={['Employee', 'Branch', 'Gross', 'Net pay', 'Payment']} minWidth={760}>
+                {selected.payslips.map((slip) => (
+                  <PayslipRow key={`${slip.entryId}-${slip.version}`} slip={slip} onRecord={(reference) => recordPayment(slip.entryId, reference, slip.version)} />
+                ))}
+              </Table>
+            </div>
+          </div>
           <p className="border-t border-slate-200 bg-surface-lowest px-5 py-3 text-xs text-on-surface-variant">
-            Approved by {selected.approvedBy} · {selected.approvedOn}
+            Approved by {selected.approvedBy} · {selected.approvedOn} · Processed by {selected.processedBy} · {selected.processedOn}
           </p>
         </section>
       )}

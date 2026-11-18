@@ -14,21 +14,23 @@ import { exportCsv } from '../../../../lib/exportCsv'
 import { Amount, MetricCard, MetricGrid, SummaryLine } from '../../components/PayrollKit'
 import { usePayroll } from '../../context/usePayroll'
 import { minus, rupees, signed } from '../../format'
-import { approvalBlockers, branchSummary } from '../../payrollLogic'
+import { branchSummary } from '../../payrollLogic'
 
 export default function ProcessStep() {
-  const { cycle, slips, summary, employees, adjustments, batch, processBatch } = usePayroll()
+  const { cycle, slips, summary, batch, processBatch } = usePayroll()
   const [confirmed, setConfirmed] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
   const branches = branchSummary(slips)
-  const blockers = approvalBlockers({ employees, adjustments })
   const approved = batch.status !== 'Draft'
   const processed = batch.status === 'Processed'
+  // Approval already required every check to pass; a change since then withdraws it.
+  const payees = slips.map((slip) => slip.employee)
   const gates = [
     ['Payroll approval completed', approved],
-    ['All included staff marked ready', !blockers.some((blocker) => blocker.includes('ready'))],
-    ['Bank details verified', !blockers.some((blocker) => blocker.includes('bank'))],
-    ['Adjustments decided', !blockers.some((blocker) => blocker.includes('adjustment'))],
+    ['All included staff marked ready', approved || payees.every((employee) => employee.status === 'Ready')],
+    ['Bank details verified', payees.every((employee) => employee.bankVerified)],
+    ['Adjustments decided', approved],
     ['At least one payee included', summary.staff > 0],
   ]
   const ready = gates.every(([, ok]) => ok)
@@ -40,8 +42,10 @@ export default function ProcessStep() {
       ['Total', summary.staff, summary.gross, summary.adjustments, summary.advance, summary.statutory, summary.net],
     ])
 
-  const process = () => {
-    processBatch()
+  const process = async () => {
+    setBusy(true)
+    await processBatch()
+    setBusy(false)
     setDialogOpen(false)
   }
 
@@ -75,7 +79,7 @@ export default function ProcessStep() {
           <Panel title="Processing method" icon={Building2} bodyClassName="flex flex-col gap-4">
             <RadioCard name="method" value="ledger" checked onChange={() => {}} title="Payroll batch processing (ledger record)" detail="Locks the calculations, records instalment recoveries against each advance and creates the payroll record for payslips." badge={<StatusPill tone="brand">Selected</StatusPill>} />
             <Banner tone="warning" title="No money is transferred from this screen">
-              Processing records the batch as processed. Employee bank transfers still need to be released through your bank or a connected payment integration.
+              Processing fixes the payslips and records the advance recoveries. Release the transfers through your bank, then record each transfer's bank reference (UTR) in the payroll history.
             </Banner>
           </Panel>
 
@@ -121,6 +125,7 @@ export default function ProcessStep() {
                 <ActionButton icon={History} to={ROUTES.payrollHistory}>
                   View payroll history
                 </ActionButton>
+                <p className="text-[11px] text-on-surface-variant">Record each transfer's bank reference (UTR) against its payslip in the payroll history.</p>
                 <ActionButton to={ROUTES.payroll}>
                   Back to payroll overview <ArrowRight className="size-3.5" aria-hidden="true" />
                 </ActionButton>
@@ -161,7 +166,7 @@ export default function ProcessStep() {
         footer={
           <div className="flex justify-end gap-2">
             <ActionButton onClick={() => setDialogOpen(false)}>Cancel</ActionButton>
-            <ActionButton variant="primary" icon={Lock} onClick={process}>
+            <ActionButton variant="primary" icon={Lock} onClick={process} disabled={busy}>
               Confirm & process
             </ActionButton>
           </div>

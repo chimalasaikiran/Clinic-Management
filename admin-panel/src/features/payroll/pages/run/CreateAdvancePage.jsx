@@ -11,9 +11,9 @@ import { ROUTES } from '../../../../config/routes'
 import { useFormFields } from '../../../../hooks/useFormFields'
 import { EmployeeCell, ScheduleTable, SummaryLine, ToggleChip } from '../../components/PayrollKit'
 import { usePayroll } from '../../context/usePayroll'
-import { ADVANCE_CATEGORIES, DISBURSAL_METHODS } from '../../data/seed'
+import { ADVANCE_CATEGORIES, ADVANCE_LIMIT_MULTIPLE, DISBURSAL_METHODS, RECOVERY_CAP } from '../../constants'
 import { rupees } from '../../format'
-import { ADVANCE_LIMIT_MULTIPLE, RECOVERY_CAP, addMonths, advanceExposure, advanceSchedule, monthLabel, monthlyBase, validateAdvance } from '../../payrollLogic'
+import { advanceExposure, monthLabel, previewSchedule, recoveryStart, validateAdvance } from '../../payrollLogic'
 
 const TENURES = ['3', '6', '12']
 const optionFor = (employee) => `${employee.name} (${employee.id})`
@@ -21,7 +21,7 @@ const optionFor = (employee) => `${employee.name} (${employee.id})`
 export default function CreateAdvancePage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { cycle, employees, advances, locked } = usePayroll()
+  const { cycle, open, history, today, settings, employees, advances } = usePayroll()
   const draft = location.state?.draft
   const [values, handleChange, setValues] = useFormFields(
     draft ?? { employee: '', principal: '', disbursalDate: '', category: '', method: DISBURSAL_METHODS[0], mode: 'monthly', installments: '6', notes: '' },
@@ -31,17 +31,17 @@ export default function CreateAdvancePage() {
   const employee = employees.find((entry) => optionFor(entry) === values.employee)
   const exposure = employee && advanceExposure(employee, advances)
   const installments = values.mode === 'single' ? '1' : values.installments
-  const startMonth = addMonths(cycle.month, 1)
+  const startMonth = recoveryStart({ cycle, open, history, today })
   const principal = Number(values.principal) || 0
   const fields = { employee, principal: values.principal, installments, disbursalDate: values.disbursalDate, category: values.category, outstanding: exposure?.outstanding }
   const errors = submitted ? validateAdvance(fields) : {}
-  const schedule = principal > 0 && Number(installments) >= 1 ? advanceSchedule({ principal, installments: Number(installments), startMonth, status: 'Pending disbursal' }) : []
-  const share = employee && schedule.length ? Math.round((schedule[0].amount / monthlyBase(employee)) * 1000) / 10 : 0
+  const schedule = principal > 0 && Number(installments) >= 1 && Number(installments) <= 12 ? previewSchedule({ principal, installments: Number(installments), startMonth }, settings.payDay) : []
+  const share = employee?.monthlyBase && schedule.length ? Math.round((schedule[0].amount / employee.monthlyBase) * 1000) / 10 : 0
 
   const handleSubmit = (event) => {
     event.preventDefault()
     setSubmitted(true)
-    if (locked || Object.keys(validateAdvance(fields)).length) return
+    if (Object.keys(validateAdvance(fields)).length) return
     navigate(ROUTES.payrollAdvanceReview, { state: { draft: { ...values, installments } } })
   }
 
@@ -66,7 +66,7 @@ export default function CreateAdvancePage() {
                   <EmployeeCell employee={employee} withBranch />
                 </div>
                 <dl className="grid gap-3 sm:grid-cols-3">
-                  <SummaryLine label="Monthly gross" value={rupees(monthlyBase(employee))} />
+                  <SummaryLine label="Monthly gross" value={employee.monthlyBase ? rupees(employee.monthlyBase) : 'No processed payslip yet'} />
                   <SummaryLine label={`Limit (${ADVANCE_LIMIT_MULTIPLE}× gross)`} value={rupees(exposure.limit)} />
                   <SummaryLine label="Available" value={rupees(exposure.available)} tone="add" />
                 </dl>
@@ -109,7 +109,7 @@ export default function CreateAdvancePage() {
                 {errors.installments}
               </p>
             )}
-            {schedule.length > 0 && employee && (
+            {schedule.length > 0 && employee?.monthlyBase && (
               <p className="text-xs text-on-surface-variant">
                 {rupees(schedule[0].amount)} per month is {share}% of monthly gross (cap {RECOVERY_CAP * 100}%).
               </p>
@@ -146,7 +146,7 @@ export default function CreateAdvancePage() {
             </p>
           </Panel>
           <div className="flex flex-col gap-2">
-            <ActionButton variant="primary" type="submit" className="w-full py-2.5" disabled={locked}>
+            <ActionButton variant="primary" type="submit" className="w-full py-2.5">
               Review advance <ArrowRight className="size-3.5" aria-hidden="true" />
             </ActionButton>
             <ActionButton variant="soft" to={ROUTES.payrollRunAdvances} className="w-full bg-transparent text-on-surface-variant">

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { ArrowRight, Building2, CircleCheck, Equal, HandCoins, Layers, Minus, Plus, ShieldCheck, TriangleAlert } from 'lucide-react'
 import ActionButton from '../../../../components/workspace/ActionButton'
 import { Cell, Table } from '../../../../components/workspace/DataTable'
@@ -7,9 +8,9 @@ import { ROUTES } from '../../../../config/routes'
 import { Amount, MetricCard, MetricGrid, SummaryLine } from '../../components/PayrollKit'
 import StepFooter from '../../components/StepFooter'
 import { usePayroll } from '../../context/usePayroll'
-import { PAY_MODELS } from '../../data/seed'
+import { PAY_MODELS } from '../../constants'
 import { minus, rupees, signed } from '../../format'
-import { advanceProgress, approvalBlockers, branchSummary, sum } from '../../payrollLogic'
+import { advanceProgress, branchSummary, sum } from '../../payrollLogic'
 
 // Groups line items by label and sums them, e.g. statutory deductions across all payslips.
 function groupTotals(lines) {
@@ -44,9 +45,14 @@ function ComponentGroup({ title, total, tone, items }) {
 }
 
 export default function FinalReviewStep() {
-  const { cycle, slips, summary, employees, adjustments, batch, approveBatch, locked } = usePayroll()
+  const { cycle, slips, summary, blockers, batch, approveBatch, locked } = usePayroll()
+  const [busy, setBusy] = useState(false)
   const branches = branchSummary(slips)
-  const blockers = approvalBlockers({ employees, adjustments })
+  const approve = async () => {
+    setBusy(true)
+    await approveBatch()
+    setBusy(false)
+  }
   const advanceLines = slips.flatMap((slip) => slip.advanceLines.map((line) => ({ ...line, employee: slip.employee })))
 
   const grossByModel = Object.entries(PAY_MODELS)
@@ -136,15 +142,16 @@ export default function FinalReviewStep() {
         <div className="flex flex-col gap-5">
           <Panel title="Employee advance recovery" icon={HandCoins} action={<StatusPill>{advanceLines.length} staff</StatusPill>}>
             <ul className="space-y-2">
-              {advanceLines.map(({ advance, amount, employee }) => {
-                const progress = advanceProgress(advance)
+              {advanceLines.map(({ advance, amount, number, employee }) => {
+                const recovered = advance.recoveries.some((entry) => entry.number === number)
+                const remaining = advanceProgress(advance).outstanding - (recovered ? 0 : amount)
                 return (
                   <li key={advance.id} className="rounded-md border border-slate-200 p-3 text-xs">
                     <p className="flex justify-between font-semibold">
                       {employee.name} <span className="text-danger">{rupees(-amount)}</span>
                     </p>
                     <p className="text-outline">
-                      Instalment {progress.current.number} of {advance.installments} · Remaining after run {rupees(progress.outstanding - amount)}
+                      Instalment {number} of {advance.installments} · Remaining after run {rupees(remaining)}
                     </p>
                   </li>
                 )
@@ -184,7 +191,7 @@ export default function FinalReviewStep() {
                   <SummaryLine label="Total net payout" value={rupees(summary.net)} />
                   <SummaryLine label="Disbursal target" value={cycle.payDate} />
                 </dl>
-                <ActionButton variant="primary" icon={CircleCheck} className="w-full" onClick={approveBatch} disabled={locked || blockers.length > 0}>
+                <ActionButton variant="primary" icon={CircleCheck} className="w-full" onClick={approve} disabled={locked || busy || blockers.length > 0}>
                   Approve batch for processing
                 </ActionButton>
                 {blockers.length > 0 && <p className="mt-2 text-[11px] text-on-surface-variant">Resolve the open checks above to approve.</p>}
@@ -192,7 +199,7 @@ export default function FinalReviewStep() {
             ) : (
               <>
                 <p className="flex items-center gap-2 text-[13px] font-semibold text-brand">
-                  <CircleCheck className="size-4" aria-hidden="true" /> Approved by {batch.approvedBy}
+                  <CircleCheck className="size-4" aria-hidden="true" /> {batch.status === 'Processed' ? 'Processed' : 'Approved'} · approved by {batch.approvedBy}
                 </p>
                 <p className="mb-4 text-xs text-outline">{batch.approvedOn}</p>
                 <ActionButton variant="primary" to={ROUTES.payrollRunProcess} className="w-full">

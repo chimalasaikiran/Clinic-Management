@@ -9,6 +9,7 @@ const TABS = [
   { label: 'Cycle history', to: ROUTES.payrollHistory },
   { label: 'Employee advances', to: ROUTES.payrollRunAdvances },
   { label: 'Adjustments ledger', to: ROUTES.payrollRunAdjustments },
+  { label: 'Pay profiles & rules', to: ROUTES.payrollSetup },
 ]
 
 export function PayrollTabs() {

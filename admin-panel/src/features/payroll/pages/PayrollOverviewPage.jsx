@@ -9,10 +9,11 @@ import WorkspacePage from '../../../components/workspace/WorkspacePage'
 import { ROUTES } from '../../../config/routes'
 import { exportCsv } from '../../../lib/exportCsv'
 import { usePayroll } from '../context/usePayroll'
-import { PAY_MODELS } from '../data/seed'
+import { PAY_MODELS } from '../constants'
 import { minus, rupees, signed } from '../format'
 import { Amount, MetricCard, MetricGrid, PayrollTabs } from '../components/PayrollKit'
-import { advanceProgress, branchSummary, sum } from '../payrollLogic'
+import StartRunPanel from '../components/StartRunPanel'
+import { advanceProgress, branchName, branchSummary, sum } from '../payrollLogic'
 import { ADVANCE_TONES } from '../tones'
 
 function QuickAction({ icon: Icon, title, detail, to, onClick }) {
@@ -36,9 +37,11 @@ function QuickAction({ icon: Icon, title, detail, to, onClick }) {
 }
 
 export default function PayrollOverviewPage() {
-  const { cycle, batch, slips, summary, scopedEmployees, advances, activity, getEmployee } = usePayroll()
+  const { cycle, open, batch, slips, summary, scopedEmployees, advances, activity, history, getEmployee } = usePayroll()
   const branches = branchSummary(slips)
   const processed = batch.status === 'Processed'
+  // Paid is what has a recorded bank reference; the rest of a processed run is still to be transferred.
+  const paidNet = processed ? sum(history[0].payslips.filter((slip) => slip.paymentRef), (slip) => slip.net) : 0
   const count = (status) => scopedEmployees.filter((employee) => employee.status === status).length
   const activeAdvances = advances.filter((advance) => advance.status === 'Active')
   const openAdvances = advances.filter((advance) => advance.status !== 'Settled')
@@ -46,17 +49,17 @@ export default function PayrollOverviewPage() {
   const models = Object.entries(PAY_MODELS).map(([id, model]) => ({ ...model, staff: scopedEmployees.filter((employee) => employee.model === id).length }))
 
   const exportPayroll = () =>
-    exportCsv(`payroll-${cycle.month}.csv`, [
+    exportCsv(`payroll-${cycle?.month ?? 'none'}.csv`, [
       ['Employee ID', 'Name', 'Branch', 'Gross', 'Adjustments', 'Advance recovery', 'Statutory', 'Net'],
-      ...slips.map((slip) => [slip.employee.id, slip.employee.name, slip.employee.branchId, slip.gross, slip.adjustments, slip.advance, slip.statutoryTotal, slip.net]),
+      ...slips.map((slip) => [slip.employee.id, slip.employee.name, branchName(slip.employee.branchId), slip.gross, slip.adjustments, slip.advance, slip.statutoryTotal, slip.net]),
     ])
   const exportBranches = () =>
-    exportCsv(`payroll-branches-${cycle.month}.csv`, [
+    exportCsv(`payroll-branches-${cycle?.month ?? 'none'}.csv`, [
       ['Branch', 'Staff', 'Gross', 'Adjustments', 'Advance recovery', 'Statutory', 'Net'],
       ...branches.map((row) => [row.branch.name, row.staff, row.gross, row.adjustments, row.advance, row.statutory, row.net]),
     ])
   const exportVouchers = () =>
-    exportCsv(`consultant-vouchers-${cycle.month}.csv`, [
+    exportCsv(`consultant-vouchers-${cycle?.month ?? 'none'}.csv`, [
       ['Employee ID', 'Name', 'Gross', 'TDS', 'Net'],
       ...consultants.map((slip) => [slip.employee.id, slip.employee.name, slip.gross, slip.statutoryTotal, slip.net]),
     ])
@@ -79,11 +82,14 @@ export default function PayrollOverviewPage() {
       />
       <PayrollTabs />
 
+      {!open && <div className="mb-5"><StartRunPanel /></div>}
+
+      {cycle && (
       <section className="mb-5 rounded-lg border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-lg font-semibold text-on-surface">{cycle.label} cycle</h2>
           <StatusPill tone={processed ? 'success' : 'info'} dot>
-            {processed ? 'Processed' : 'Processing'}
+            {processed ? (history[0].paid ? 'Paid' : 'Processed') : batch.status === 'Approved' ? 'Approved' : 'Processing'}
           </StatusPill>
           <StatusPill>Batch ID: {cycle.batchId}</StatusPill>
         </div>
@@ -118,12 +124,13 @@ export default function PayrollOverviewPage() {
           </ActionButton>
         </div>
       </section>
+      )}
 
       <MetricGrid className="lg:grid-cols-3 2xl:grid-cols-6">
         <MetricCard label="Total payroll" icon={Wallet} value={rupees(summary.gross)} hint={`Gross across ${branches.filter((row) => row.staff).length} branches`} />
-        <MetricCard label="Pending payment" icon={Clock} value={rupees(processed ? 0 : summary.net)} tone="danger" hint="Awaiting bank batch" />
-        <MetricCard label="Paid" icon={CircleCheck} value={rupees(processed ? summary.net : 0)} tone="brand" hint="Recorded once the batch is processed" />
-        <MetricCard label="Staff processed" icon={Users} value={`${summary.staff} staff`} hint={`${count('Ready')} ready · ${count('Needs review')} review · ${count('On hold')} hold`} />
+        <MetricCard label="Pending payment" icon={Clock} value={rupees(summary.net - paidNet)} tone="danger" hint={processed ? 'Processed, bank reference not yet recorded' : 'Awaiting processing'} />
+        <MetricCard label="Paid" icon={CircleCheck} value={rupees(paidNet)} tone="brand" hint="Transfers with a recorded bank reference" />
+        <MetricCard label="Staff processed" icon={Users} value={`${summary.staff} staff`} hint={processed ? `${history[0].payslips.length} payslips` : `${count('Ready')} ready · ${count('Needs review')} review · ${count('On hold')} hold`} />
         <MetricCard label="Advances out" icon={HandCoins} value={rupees(sum(activeAdvances, (advance) => advanceProgress(advance).outstanding))} hint={`${activeAdvances.length} active agreements`} />
         <MetricCard label="Consultants" icon={Stethoscope} value={rupees(sum(consultants, (slip) => slip.gross))} tone="brand" hint={`${consultants.length} visiting specialist${consultants.length === 1 ? '' : 's'} (non-PAYE)`} />
       </MetricGrid>

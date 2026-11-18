@@ -8,6 +8,7 @@ import { Banner } from '../../../components/workspace/RecordKit'
 import { ROUTES } from '../../../config/routes'
 import { cn } from '../../../lib/cn'
 import { usePayroll } from '../context/usePayroll'
+import StartRunPanel from './StartRunPanel'
 
 const STEPS = [
   { label: 'Payroll period', to: ROUTES.payrollRun },
@@ -20,11 +21,14 @@ const STEPS = [
 ]
 
 const BATCH_TONES = { Draft: 'warning', Approved: 'info', Processed: 'success' }
+// Adjustments and advances are kept between runs, so their pages work without an open run.
+const OUTSIDE_RUN = [ROUTES.payrollRunAdjustments, ROUTES.payrollRunAdvances]
 
 // Header and step tracker shared by every step of a payroll run; steps render in the outlet.
 export default function RunPayrollLayout() {
   const { pathname } = useLocation()
-  const { cycle, batch } = usePayroll()
+  const { cycle, batch, open } = usePayroll()
+  const needsRun = !open && pathname === ROUTES.payrollRun ? true : !cycle && !OUTSIDE_RUN.some((path) => pathname.startsWith(path))
   const current = STEPS.findLastIndex((step) => (step.to === ROUTES.payrollRun ? pathname === step.to : pathname.startsWith(step.to)))
 
   return (
@@ -32,13 +36,15 @@ export default function RunPayrollLayout() {
       <Breadcrumb items={[{ label: 'Payroll', to: ROUTES.payroll }, { label: 'Run payroll' }]} />
       <PageIntro
         eyebrow={
-          <>
-            <StatusPill tone="brand">Batch ID: {cycle.batchId}</StatusPill>
-            <StatusPill tone={BATCH_TONES[batch.status]}>{batch.status}</StatusPill>
-          </>
+          cycle && (
+            <>
+              <StatusPill tone="brand">Batch ID: {cycle.batchId}</StatusPill>
+              <StatusPill tone={BATCH_TONES[batch.status]}>{batch.status}</StatusPill>
+            </>
+          )
         }
         title="Run payroll"
-        description={`Set up the ${cycle.label} payroll period and verify the data required for this payroll run.`}
+        description={cycle ? `Set up the ${cycle.label} payroll period and verify the data required for this payroll run.` : 'Start a payroll period and verify the data required for the run.'}
         note="Regulatory window · Monthly regular cycle (India)"
         className="border-b border-slate-200"
       />
@@ -78,7 +84,8 @@ export default function RunPayrollLayout() {
         </Banner>
       )}
 
-      <Outlet />
+      {needsRun && <div className="mb-5"><StartRunPanel /></div>}
+      {(!needsRun || (cycle && pathname === ROUTES.payrollRun)) && <Outlet />}
     </WorkspacePage>
   )
 }

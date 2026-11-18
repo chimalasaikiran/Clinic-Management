@@ -5,12 +5,11 @@ import Panel from '../../../../components/workspace/Panel'
 import { Banner } from '../../../../components/workspace/RecordKit'
 import StatusPill from '../../../../components/workspace/StatusPill'
 import { ROUTES } from '../../../../config/routes'
-import { OWNER } from '../../../../config/workspace'
 import { cn } from '../../../../lib/cn'
 import { SummaryLine, ToggleChip } from '../../components/PayrollKit'
 import StepFooter from '../../components/StepFooter'
 import { usePayroll } from '../../context/usePayroll'
-import { EMPLOYMENT_TYPES, PAYROLL_BRANCHES } from '../../data/seed'
+import { EMPLOYMENT_TYPES, PAYROLL_BRANCHES } from '../../constants'
 import { minus, rupees, signed } from '../../format'
 import { branchSummary } from '../../payrollLogic'
 
@@ -25,7 +24,7 @@ function DateBox({ label, value, hint, highlight }) {
 }
 
 export default function PeriodStep() {
-  const { cycle, employees, scopedEmployees, scope, updateScope, slips, summary, adjustments, advances, locked } = usePayroll()
+  const { cycle, employees, scopedEmployees, scope, updateScope, slips, summary, adjustments, advances, locked, batch } = usePayroll()
   const branches = branchSummary(slips)
   const included = scopedEmployees.filter((employee) => employee.included)
 
@@ -35,13 +34,13 @@ export default function PeriodStep() {
     updateScope({ ...scope, [key]: value === null ? [] : current.includes(value) ? current.filter((entry) => entry !== value) : [...current, value] })
   }
 
-  const needsReview = included.filter((employee) => employee.status === 'Needs review')
+  const needsReview = included.filter((employee) => employee.status !== 'Ready')
   const unverifiedBank = included.filter((employee) => !employee.bankVerified)
   const includedIds = new Set(included.map((employee) => employee.id))
-  const pendingAdjustments = adjustments.filter((entry) => includedIds.has(entry.employeeId) && entry.status === 'Pending approval')
+  const pendingAdjustments = adjustments.filter((entry) => includedIds.has(entry.employeeId) && entry.status === 'Pending approval' && entry.month <= cycle.month)
   const activeAdvances = advances.filter((advance) => advance.status === 'Active' && includedIds.has(advance.employeeId))
   const checks = [
-    { label: 'Attendance verified for included staff', ok: !needsReview.length, issue: `${needsReview.length} staff need attendance or leave review`, to: ROUTES.payrollRunStaff, action: 'Review staff' },
+    { label: 'Attendance verified for included staff', ok: !needsReview.length, issue: `${needsReview.length} staff need attendance, leave or unit review`, to: ROUTES.payrollRunStaff, action: 'Review staff' },
     { label: 'Bank details verified', ok: !unverifiedBank.length, issue: `Unverified bank details: ${unverifiedBank.map((employee) => employee.name).join(', ')}`, to: ROUTES.payrollRunStaff, action: 'Review staff' },
     { label: 'Adjustments approved', ok: !pendingAdjustments.length, issue: `${pendingAdjustments.length} adjustment${pendingAdjustments.length === 1 ? '' : 's'} awaiting approval`, to: ROUTES.payrollRunAdjustments, action: 'Review adjustments' },
     { label: `${activeAdvances.length} advance repayment schedules active`, ok: true },
@@ -62,7 +61,7 @@ export default function PeriodStep() {
               <DateBox label="Disbursement date" value={cycle.payDate} hint="Bank transfer via NEFT / RTGS" highlight />
             </div>
             <Banner tone="warning" title="Cutoff notice">
-              Attendance and service logs lock on {cycle.cutoff}. Later corrections go into the next cycle as adjustments.
+              Figures follow the attendance and appointment records until the run is processed. Approval is withdrawn if they change; corrections after processing go into the next cycle as adjustments.
             </Banner>
           </Panel>
 
@@ -173,9 +172,9 @@ export default function PeriodStep() {
 
           <Panel title="Governance & authorization" icon={ShieldCheck}>
             <dl className="space-y-2.5">
-              <SummaryLine label="Initiator" value={OWNER.name} />
-              <SummaryLine label="Approver" value="Owner or Finance admin" />
-              <SummaryLine label="Next step" value="Review staff" />
+              <SummaryLine label="Status" value={batch.status} />
+              <SummaryLine label="Approver" value={batch.approvedBy ?? 'A role with payroll permission'} />
+              <SummaryLine label="Next step" value={locked ? 'Start the next run' : 'Review staff'} />
             </dl>
             <p className="mt-3 flex items-center gap-1.5 text-[11px] text-outline">
               <Lock className="size-3" aria-hidden="true" /> Every change to this run is logged.

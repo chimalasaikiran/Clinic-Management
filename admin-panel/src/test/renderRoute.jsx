@@ -31,6 +31,13 @@ export async function renderBillingRoute(path, state, options) {
   return router
 }
 
+// Renders a payroll route and waits until the (faked) payroll state has loaded.
+export async function renderPayrollRoute(path, state, options) {
+  const router = renderRoute(path, state, options)
+  await waitFor(() => expect(screen.queryByText('Loading payroll records…')).not.toBeInTheDocument())
+  return router
+}
+
 // Renders an inventory or pharmacy route and waits until the (faked) stock state has loaded.
 export async function renderStockRoute(path, state, options) {
   const router = renderRoute(path, state, options)

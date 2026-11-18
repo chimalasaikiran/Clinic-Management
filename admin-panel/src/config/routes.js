@@ -162,6 +162,7 @@ export const ROUTES = {
   payroll: '/payroll',
   payrollHistory: '/payroll/history',
   payrollLedger: '/payroll/ledger',
+  payrollSetup: '/payroll/setup',
   payrollRun: '/payroll/run',
   payrollRunStaff: '/payroll/run/staff',
   payrollRunCalculations: '/payroll/run/calculations',

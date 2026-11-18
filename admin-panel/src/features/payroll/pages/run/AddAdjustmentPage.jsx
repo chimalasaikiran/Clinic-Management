@@ -8,13 +8,13 @@ import Panel from '../../../../components/workspace/Panel'
 import { Banner } from '../../../../components/workspace/RecordKit'
 import StatusPill from '../../../../components/workspace/StatusPill'
 import { ROUTES } from '../../../../config/routes'
-import { OWNER } from '../../../../config/workspace'
 import { useFormFields } from '../../../../hooks/useFormFields'
+import { useAuth } from '../../../auth/context/useAuth'
 import { EmployeeCell, SummaryLine, ToggleChip } from '../../components/PayrollKit'
 import { usePayroll } from '../../context/usePayroll'
-import { ADJUSTMENT_CATEGORIES } from '../../data/seed'
+import { ADJUSTMENT_CATEGORIES } from '../../constants'
 import { minus, rupees, signed } from '../../format'
-import { payslip, validateAdjustment } from '../../payrollLogic'
+import { monthLabel, validateAdjustment } from '../../payrollLogic'
 
 const OVERTIME = ADJUSTMENT_CATEGORIES.addition[0]
 const optionFor = (employee) => `${employee.name} (${employee.id})`
@@ -22,7 +22,10 @@ const optionFor = (employee) => `${employee.name} (${employee.id})`
 export default function AddAdjustmentPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { cycle, employees, adjustments, advances, addAdjustment, getEmployee, locked } = usePayroll()
+  const { user } = useAuth()
+  const { cycle, open, today, employees, slips, addAdjustment, getEmployee } = usePayroll()
+  // Adjustments belong to the open run's month, or to the current month between runs.
+  const month = open ? cycle.month : today.slice(0, 7)
   const [values, handleChange, setValues] = useFormFields({
     employee: getEmployee(location.state?.employeeId) ? optionFor(getEmployee(location.state.employeeId)) : '',
     direction: 'addition',
@@ -35,31 +38,34 @@ export default function AddAdjustmentPage() {
     reference: '',
   })
   const [submitted, setSubmitted] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   const employee = employees.find((entry) => optionFor(entry) === values.employee)
   const overtime = values.category === OVERTIME
   const amount = overtime ? Math.round(Number(values.hours) * Number(values.hourlyRate)) || 0 : Number(values.amount) || 0
   const fields = { employeeId: employee?.id, direction: values.direction, category: values.category, amount, reason: values.reason }
   const errors = submitted ? validateAdjustment(fields) : {}
-  const current = employee && payslip(employee, { adjustments, advances })
+  const current = employee && slips.find((slip) => slip.employee.id === employee.id)
   const delta = values.direction === 'addition' ? amount : -amount
 
   const setDirection = (event) => setValues((current) => ({ ...current, direction: event.target.value, category: '' }))
   const setCategory = (category) => setValues((current) => ({ ...current, category }))
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
     setSubmitted(true)
-    if (locked || Object.keys(validateAdjustment(fields)).length) return
-    addAdjustment({ ...fields, label: values.label || (overtime ? `Overtime (${values.hours} hrs)` : ''), reference: values.reference })
-    navigate(ROUTES.payrollRunAdjustments)
+    if (Object.keys(validateAdjustment(fields)).length) return
+    setSaving(true)
+    const result = await addAdjustment({ ...fields, month, label: values.label || (overtime ? `Overtime (${values.hours} hrs)` : ''), reference: values.reference })
+    setSaving(false)
+    if (!result.error) navigate(ROUTES.payrollRunAdjustments)
   }
 
   return (
     <form onSubmit={handleSubmit} noValidate>
       <div className="mb-5">
         <h2 className="text-xl font-semibold text-on-surface">Add payroll adjustment</h2>
-        <p className="text-[13px] text-on-surface-variant">Add an approved earning or deduction to an employee's payroll for {cycle.label}.</p>
+        <p className="text-[13px] text-on-surface-variant">Add an approved earning or deduction to an employee's payroll for {monthLabel(month)}.</p>
       </div>
 
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -70,7 +76,7 @@ export default function AddAdjustmentPage() {
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200 bg-surface-lowest p-3">
                 <EmployeeCell employee={employee} withBranch />
                 <p className="text-xs text-on-surface-variant">
-                  {employee.employment} · Gross this cycle <span className="font-semibold text-on-surface">{rupees(current.gross)}</span>
+                  {employee.employment} · Gross this cycle <span className="font-semibold text-on-surface">{current ? rupees(current.gross) : 'not in the open run'}</span>
                 </p>
               </div>
             )}
@@ -150,26 +156,26 @@ export default function AddAdjustmentPage() {
           <Panel title="Payroll impact preview" icon={BadgeCheck} action={<StatusPill tone="brand">Live</StatusPill>}>
             {current ? (
               <dl className="space-y-2.5">
-                <SummaryLine label="Target payroll period" value={cycle.label} />
+                <SummaryLine label="Target payroll period" value={monthLabel(month)} />
                 <SummaryLine label="Current gross" value={rupees(current.gross + current.adjustments)} />
                 <SummaryLine label="This adjustment" value={values.direction === 'addition' ? signed(amount) : minus(amount)} tone={values.direction === 'addition' ? 'add' : 'deduct'} />
                 <SummaryLine label="Projected gross" value={rupees(current.gross + current.adjustments + delta)} strong />
                 <p className="text-[11px] text-on-surface-variant">Statutory deductions are recalculated once the adjustment is approved.</p>
               </dl>
             ) : (
-              <p className="text-xs text-on-surface-variant">Choose an employee to preview the impact.</p>
+              <p className="text-xs text-on-surface-variant">{employee ? `${employee.name} is not in an open payroll run; the adjustment is paid in the next run that includes them.` : 'Choose an employee to preview the impact.'}</p>
             )}
           </Panel>
 
           <Panel title="Audit & governance" icon={ShieldCheck}>
             <dl className="space-y-2.5">
-              <SummaryLine label="Submitted by" value={OWNER.name} />
+              <SummaryLine label="Submitted by" value={user?.fullName ?? 'You'} />
               <SummaryLine label="Status after submit" value="Pending approval" />
             </dl>
           </Panel>
 
           <div className="flex flex-col gap-2">
-            <ActionButton variant="primary" type="submit" className="w-full py-2.5" disabled={locked}>
+            <ActionButton variant="primary" type="submit" className="w-full py-2.5" disabled={saving}>
               Submit adjustment
             </ActionButton>
             <ActionButton variant="soft" to={ROUTES.payrollRunAdjustments} className="w-full bg-transparent text-on-surface-variant">

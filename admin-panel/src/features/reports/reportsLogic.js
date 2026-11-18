@@ -6,31 +6,41 @@ const inRange = (item, range) => item.date >= range.from && item.date <= range.t
 
 // ---- Operations -----------------------------------------------------------------------------------------
 
-export function operationsFigures(operations) {
-  const total = (key) => sum(operations.windows, (window) => window[key])
-  const completed = total('completed')
-  const cancelled = total('cancelled')
-  const noShow = total('noShow')
-  const rescheduled = total('rescheduled')
-  const scheduled = completed + cancelled + noShow + rescheduled
-  const assessable = completed + noShow // cancelled and rescheduled slots had no attendance to assess
-  const consult = sum(operations.doctors, (doctor) => doctor.consultMinutes)
-  const available = sum(operations.doctors, (doctor) => doctor.availableMinutes)
-  const { replaced, mature } = operations.rebooking
+// The periods the Operations report offers, as inclusive clinic-local dates ending today.
+export function operationPeriods(today) {
+  const month = today.slice(0, 7)
+  const [year, index] = month.split('-').map(Number)
+  const previous = index === 1 ? `${year - 1}-12` : `${year}-${String(index - 1).padStart(2, '0')}`
+  const lastOfPrevious = addIsoDays(`${month}-01`, -1)
+  return [
+    { id: 'last28', label: 'Last 28 days', from: addIsoDays(today, -27), to: today },
+    { id: 'last7', label: 'Last 7 days', from: addIsoDays(today, -6), to: today },
+    { id: 'month', label: 'This month to date', from: `${month}-01`, to: today },
+    { id: 'previous', label: 'Last month', from: `${previous}-01`, to: lastOfPrevious },
+  ]
+}
+
+export const windowTotal = (window) => window.completed + window.cancelled + window.noShow + window.open
+
+// Rates and denominators from the Operations report the API returns. A rate with no denominator is null, not zero.
+export function operationsFigures(report) {
+  const { scheduled, completed, cancelled, noShow, open, rescheduled } = report
+  const assessable = completed + noShow // cancelled and still-open appointments had no attendance to assess
+  const consult = sum(report.doctors, (doctor) => doctor.consultMinutes)
+  const available = sum(report.doctors, (doctor) => doctor.availableMinutes)
+  const { replaced, mature } = report.rebooking
   return {
-    scheduled, completed, cancelled, noShow, rescheduled, assessable,
+    scheduled, completed, cancelled, noShow, open, rescheduled, assessable,
     noShowRate: assessable ? round((noShow / assessable) * 100) : null,
     noShowExact: assessable ? round((noShow / assessable) * 100, 2) : null,
     cancellationRate: scheduled ? round((cancelled / scheduled) * 100) : null,
-    meanWait: operations.waitPairs ? round(operations.waitMinutes / operations.waitPairs, 0) : null,
+    meanWait: report.wait.meanMinutes,
     utilization: available ? round((consult / available) * 100, 0) : null,
     consultMinutes: consult, availableMinutes: available,
     rebookingRate: mature ? round((replaced / mature) * 100, 0) : null,
-    waitCoverage: round((operations.waitPairs / completed) * 100, 0),
+    waitCoverage: completed ? round((report.wait.pairs / completed) * 100, 0) : null,
   }
 }
-
-export const windowTotal = (window) => window.completed + window.cancelled + window.noShow + window.rescheduled
 
 // ---- Financial ------------------------------------------------------------------------------------------
 

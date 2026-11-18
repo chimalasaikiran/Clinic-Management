@@ -1,15 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { allRefunds } from '../billing/financeLogic'
 import { billingViews } from '../../test/fixtures/billingViews'
-import { OPERATIONS, REPORT_PERIOD } from './data/sampleReports'
-import { financialFigures, operationsFigures, pharmacyReport, windowTotal } from './reportsLogic'
+import { operationsReportFixture } from '../../test/fixtures/reportsApi'
+import { financialFigures, operationPeriods, operationsFigures, pharmacyReport, windowTotal } from './reportsLogic'
+
+const OCTOBER = { label: '01–25 Oct 2026', from: '2026-10-01', to: '2026-10-25' }
 
 describe('operations report', () => {
-  const figures = operationsFigures(OPERATIONS)
+  const report = operationsReportFixture()
+  const figures = operationsFigures(report)
 
-  it('adds the windows up to the closed cohort', () => {
-    expect(OPERATIONS.windows.map(windowTotal)).toEqual([50, 50, 50, 50])
-    expect(figures).toMatchObject({ scheduled: 200, completed: 150, cancelled: 20, noShow: 10, rescheduled: 20 })
+  it('adds the windows up to the scheduled appointments', () => {
+    expect(report.windows.map(windowTotal)).toEqual([50, 50, 50, 50])
+    expect(figures).toMatchObject({ scheduled: 200, completed: 150, cancelled: 20, noShow: 10, open: 20, rescheduled: 12 })
   })
 
   it('divides no-show by attendance-assessable appointments, not by everything scheduled', () => {
@@ -27,14 +30,21 @@ describe('operations report', () => {
   })
 
   it('reports an unavailable rate as null instead of zero when there is no denominator', () => {
-    const empty = operationsFigures({ ...OPERATIONS, windows: [], waitPairs: 0, doctors: [], rebooking: { replaced: 0, mature: 0, immature: 0 } })
-    expect(empty).toMatchObject({ noShowRate: null, cancellationRate: null, meanWait: null, utilization: null, rebookingRate: null })
+    const empty = operationsFigures({ ...report, scheduled: 0, completed: 0, cancelled: 0, noShow: 0, open: 0, wait: { pairs: 0, minutes: 0, meanMinutes: null }, doctors: [], rebooking: { replaced: 0, mature: 0, immature: 0 } })
+    expect(empty).toMatchObject({ noShowRate: null, cancellationRate: null, meanWait: null, utilization: null, rebookingRate: null, waitCoverage: null })
+  })
+
+  it('offers periods ending today, and last month across a year end', () => {
+    const periods = operationPeriods('2027-01-10')
+    expect(periods.map((period) => [period.id, period.from, period.to])).toEqual([
+      ['last28', '2026-12-14', '2027-01-10'], ['last7', '2027-01-04', '2027-01-10'], ['month', '2027-01-01', '2027-01-10'], ['previous', '2026-12-01', '2026-12-31'],
+    ])
   })
 })
 
 describe('financial report', () => {
   const ledger = billingViews()
-  const figures = financialFigures(ledger.records, allRefunds(ledger.records, ledger.refundRequests), REPORT_PERIOD)
+  const figures = financialFigures(ledger.records, allRefunds(ledger.records, ledger.refundRequests), OCTOBER)
 
   it('keeps billed, collected and outstanding as separate record sets for October', () => {
     expect(figures.billed.amount).toBe(8500)

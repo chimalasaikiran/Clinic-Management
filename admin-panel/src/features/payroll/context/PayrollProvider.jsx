@@ -1,192 +1,132 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Outlet } from 'react-router-dom'
-import { OWNER } from '../../../config/workspace'
-import { ACTIVITY, ADJUSTMENTS, ADVANCE_STATUSES, ADVANCES, CURRENT_CYCLE, CYCLE_HISTORY, EMPLOYEES } from '../data/seed'
-import { branchSummary, inScope, payslip, totals } from '../payrollLogic'
+import WorkspacePage from '../../../components/workspace/WorkspacePage'
+import LoadingState from '../../patients/components/LoadingState'
+import { toPayrollState } from '../adapters'
+import { payrollApi } from '../api'
+import { employmentId, setBranches, staffStatusId } from '../constants'
+import { totals } from '../payrollLogic'
 import { PayrollContext } from './payrollContext'
 
-const now = () => new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+const ADVANCE_ACTIONS = { 'Pending approval': 'approve', 'Pending disbursal': 'disburse', 'Awaiting acknowledgement': 'acknowledge' }
 
-const nextId = (prefix, list) => {
-  const highest = Math.max(0, ...list.map((entry) => Number(entry.id.split('-').at(-1))))
-  return `${prefix}-${String(highest + 1).padStart(prefix === 'ADV-2026' ? 4 : 3, '0')}`
-}
-
-// Holds the current payroll run in memory so every step of the run sees the same batch.
-// It is replaced by API calls once the payroll backend exists.
+// Loads payroll from the API (rules, pay profiles, the open run worked out from attendance and appointments,
+// processed runs, adjustments and advances) and sends every change to it, reloading afterwards. Each action
+// resolves to its result, or to { error } when the server refuses it; the refusal is also shown above the screen.
 export default function PayrollProvider({ children }) {
-  const [employees, setEmployees] = useState(() => EMPLOYEES.map((employee) => ({ ...employee, included: employee.status !== 'On hold' })))
-  const [adjustments, setAdjustments] = useState(ADJUSTMENTS)
-  const [advances, setAdvances] = useState(ADVANCES)
-  const [scope, setScope] = useState({ branchIds: [], employment: [] })
-  const [batch, setBatch] = useState({ status: 'Draft' })
-  const [activity, setActivity] = useState(ACTIVITY)
-  const [history, setHistory] = useState(CYCLE_HISTORY)
+  const [view, setView] = useState({ status: 'loading', data: null, error: null })
+  const [failure, setFailure] = useState(null)
+  const latest = useRef(0)
+  const data = useRef(null)
 
-  const log = useCallback((title) => setActivity((current) => [{ id: `a${Date.now()}${current.length}`, title, meta: `${OWNER.name} · ${now()}` }, ...current]), [])
-
-  // Any change to the batch after approval sends it back for approval.
-  const reopen = useCallback(() => setBatch((current) => (current.status === 'Approved' ? { status: 'Draft' } : current)), [])
-
-  const setIncluded = useCallback(
-    (ids, included) => {
-      setEmployees((current) => current.map((employee) => (ids.includes(employee.id) ? { ...employee, included } : employee)))
-      reopen()
+  const settle = useCallback((request, promise) => promise.then(
+    (response) => {
+      if (request !== latest.current) return
+      const mapped = toPayrollState(response)
+      data.current = mapped
+      setView({ status: 'ready', data: mapped, error: null })
     },
-    [reopen],
-  )
+    (error) => request === latest.current && setView((current) => ({ ...current, status: current.data ? 'ready' : 'error', error })),
+  ), [])
 
-  const setStaffStatus = useCallback(
-    (id, status) => {
-      setEmployees((current) => current.map((employee) => (employee.id === id ? { ...employee, status, statusNote: status === 'Ready' ? undefined : employee.statusNote } : employee)))
-      reopen()
-    },
-    [reopen],
-  )
+  const load = useCallback(() => settle(++latest.current, payrollApi.state()), [settle])
+  useEffect(() => {
+    settle(++latest.current, payrollApi.state())
+  }, [settle])
 
-  const updateScope = useCallback(
-    (next) => {
-      setScope(next)
-      reopen()
-    },
-    [reopen],
-  )
+  if (view.data) setBranches(view.data.branches)
 
-  const addAdjustment = useCallback(
-    (values) => {
-      const adjustment = {
-        id: nextId('ADJ-2026', adjustments),
-        employeeId: values.employeeId,
-        direction: values.direction,
-        category: values.category,
-        label: values.label.trim() || values.category,
-        amount: Number(values.amount),
-        reason: values.reason.trim(),
-        reference: values.reference?.trim() || undefined,
-        requestedBy: `${OWNER.name} · Owner`,
-        requestedOn: now(),
-        status: 'Pending approval',
-      }
-      setAdjustments((current) => [adjustment, ...current])
-      log(`Adjustment logged (${values.direction === 'addition' ? '+' : '−'}₹${adjustment.amount.toLocaleString('en-IN')})`)
-      reopen()
-      return adjustment
-    },
-    [adjustments, log, reopen],
-  )
+  // Runs one change against the API and reloads; resolves to the response, or { error, details }.
+  const send = useCallback(async (call) => {
+    try {
+      const result = await call(data.current)
+      setFailure(null)
+      await load()
+      return result ?? {}
+    } catch (error) {
+      const details = error.details?.map((detail) => detail.issue).filter(Boolean) ?? []
+      setFailure(details.length ? `${error.message} ${details.join(' · ')}` : error.message)
+      return { error: error.message, details }
+    }
+  }, [load])
 
-  const decideAdjustments = useCallback(
-    (ids, status, comment) => {
-      setAdjustments((current) => current.map((entry) => (ids.includes(entry.id) ? { ...entry, status, comment: comment?.trim() || undefined, decidedBy: OWNER.name } : entry)))
-      log(`${ids.length} adjustment${ids.length === 1 ? '' : 's'} ${status.toLowerCase()}`)
-      reopen()
-    },
-    [log, reopen],
-  )
+  const actions = useMemo(() => {
+    const employee = (state, code) => state.staff.find((entry) => entry.id === code)
+    const cycleId = (state) => state.cycle.id
+    return {
+      startRun: (month) => send(() => payrollApi.startCycle(month)),
+      updateScope: (next) => send((state) => payrollApi.setScope(cycleId(state), { branchIds: next.branchIds, employment: next.employment.map(employmentId), version: state.cycle.version })),
+      setIncluded: (codes, included) => send((state) => payrollApi.include(cycleId(state), codes.map((code) => employee(state, code).entryId), included)),
+      setStaffStatus: (code, status, note) => send((state) => {
+        const row = employee(state, code)
+        return payrollApi.updateEntry(row.entryId, { status: staffStatusId(status), ...(note !== undefined && { statusNote: note }), version: row.entryVersion })
+      }),
+      // Paid days or units replacing the figure from the records; null goes back to the records.
+      setQuantity: (code, entered, reason) => send((state) => {
+        const row = employee(state, code)
+        return payrollApi.updateEntry(row.entryId, { entered, enteredReason: reason ?? '', version: row.entryVersion })
+      }),
+      addAdjustment: (values) => send((state) => payrollApi.createAdjustment({
+        staffId: employee(state, values.employeeId).uuid, month: values.month ?? state.cycle?.month ?? state.today.slice(0, 7), direction: values.direction, category: values.category,
+        label: values.label?.trim() ?? '', amount: Number(values.amount), reason: values.reason.trim(), documentRef: values.reference?.trim() || undefined,
+      })),
+      decideAdjustments: (ids, status, comment) => send((state) => payrollApi.decideAdjustments({
+        ids: ids.map((id) => state.adjustments.find((entry) => entry.id === id).uuid), decision: status === 'Approved' ? 'approved' : 'rejected', comment: comment?.trim() ?? '',
+      })),
+      addAdvance: (values) => send((state) => payrollApi.createAdvance({
+        staffId: employee(state, values.employeeId).uuid, source: 'Admin created', principal: Number(values.principal), installments: Number(values.installments), startMonth: values.startMonth,
+        category: values.category, method: values.method, disbursalDate: values.disbursalDate, notes: values.notes?.trim() ?? '',
+      })),
+      // Moves an advance one step along its lifecycle, or rejects a request.
+      progressAdvance: (id, { reject = false, note = '' } = {}) => send((state) => {
+        const advance = state.advances.find((entry) => entry.id === id)
+        return payrollApi.advanceAction(advance.uuid, { action: reject ? 'reject' : ADVANCE_ACTIONS[advance.status], note, version: advance.version })
+      }),
+      approveBatch: () => send((state) => payrollApi.approve(cycleId(state), state.cycle.version)),
+      processBatch: () => send((state) => payrollApi.process(cycleId(state), state.cycle.version)),
+      recordPayment: (entryId, reference, version) => send(() => payrollApi.recordPayment(entryId, { reference: reference.trim(), version })),
+      saveSettings: (values) => send((state) => payrollApi.saveSettings({ ...values, version: state.settings.version })),
+      saveProfile: (code, values) => send((state) => {
+        const row = employee(state, code)
+        const body = { employment: values.employment, model: values.model, rate: Number(values.rate), bankName: values.bankName.trim(), ifsc: values.ifsc.trim().toUpperCase(), accountLast4: values.accountLast4.trim(), active: values.active ?? true }
+        return row.profile ? payrollApi.updateProfile(row.profile.id, { ...body, version: row.profile.version }) : payrollApi.createProfile({ staffId: row.uuid, ...body })
+      }),
+      verifyBank: (code) => send((state) => {
+        const row = employee(state, code)
+        return payrollApi.verifyBank(row.profile.id, row.profile.version)
+      }),
+    }
+  }, [send])
 
-  const addAdvance = useCallback(
-    (values) => {
-      const advance = {
-        id: nextId('ADV-2026', advances),
-        employeeId: values.employeeId,
-        principal: Number(values.principal),
-        installments: Number(values.installments),
-        startMonth: values.startMonth,
-        source: 'Admin created',
-        category: values.category,
-        method: values.method,
-        notes: values.notes?.trim() || undefined,
-        status: 'Pending disbursal',
-        approvedBy: OWNER.name,
-        disbursalDate: values.disbursalDate,
-      }
-      setAdvances((current) => [advance, ...current])
-      log(`Employee advance created (₹${advance.principal.toLocaleString('en-IN')})`)
-      return advance
-    },
-    [advances, log],
-  )
-
-  // Moves an advance one step along its lifecycle.
-  const progressAdvance = useCallback(
-    (id) => {
-      const advance = advances.find((entry) => entry.id === id)
-      const next = ADVANCE_STATUSES[ADVANCE_STATUSES.indexOf(advance.status) + 1]
-      if (!next || next === 'Settled') return
-      setAdvances((current) => current.map((entry) => (entry.id === id ? { ...entry, status: next, ...(next === 'Awaiting acknowledgement' && { disbursedOn: now() }) } : entry)))
-      log(`${id} moved to ${next.toLowerCase()}`)
-      reopen()
-    },
-    [advances, log, reopen],
-  )
-
-  const scopedEmployees = useMemo(() => employees.filter((employee) => inScope(employee, scope)), [employees, scope])
-  const slips = useMemo(
-    () => scopedEmployees.filter((employee) => employee.included).map((employee) => payslip(employee, { adjustments, advances })),
-    [scopedEmployees, adjustments, advances],
-  )
-  const summary = useMemo(() => totals(slips), [slips])
-
-  const approveBatch = useCallback(() => {
-    setBatch({ status: 'Approved', approvedBy: OWNER.name, approvedOn: now() })
-    log('Payroll batch approved for processing')
-  }, [log])
-
-  const processBatch = useCallback(() => {
-    const branches = branchSummary(slips)
-      .filter((row) => row.staff)
-      .map((row) => ({ branchId: row.branch.id, staff: row.staff, gross: row.gross, net: row.net }))
-    setHistory((current) => [
-      {
-        month: CURRENT_CYCLE.month,
-        label: CURRENT_CYCLE.label,
-        start: CURRENT_CYCLE.start,
-        end: CURRENT_CYCLE.end,
-        batchId: CURRENT_CYCLE.batchId,
-        payDate: CURRENT_CYCLE.payDate,
-        employees: summary.staff,
-        gross: summary.gross,
-        adjustments: summary.adjustments,
-        statutory: summary.statutory,
-        advances: summary.advance,
-        approvedBy: batch.approvedBy,
-        approvedOn: batch.approvedOn,
-        status: 'Processed',
-        branches,
-      },
-      ...current,
-    ])
-    setBatch((current) => ({ ...current, status: 'Processed', processedOn: now() }))
-    log('Payroll batch processed and recorded')
-  }, [slips, summary, batch, log])
-
-  const value = useMemo(
-    () => ({
-      cycle: CURRENT_CYCLE,
+  const value = useMemo(() => {
+    const state = view.data
+    if (!state) return null
+    const employees = state.staff.filter((employee) => employee.hasProfile)
+    const scopedEmployees = state.staff.filter((employee) => employee.inRun && employee.inScope)
+    return {
+      ...state,
       employees,
       scopedEmployees,
-      adjustments,
-      advances,
-      scope,
-      batch,
-      activity,
-      history,
-      slips,
-      summary,
-      locked: batch.status === 'Processed',
-      getEmployee: (id) => employees.find((employee) => employee.id === id),
-      setIncluded,
-      setStaffStatus,
-      updateScope,
-      addAdjustment,
-      decideAdjustments,
-      addAdvance,
-      progressAdvance,
-      approveBatch,
-      processBatch,
-    }),
-    [employees, scopedEmployees, adjustments, advances, scope, batch, activity, history, slips, summary, setIncluded, setStaffStatus, updateScope, addAdjustment, decideAdjustments, addAdvance, progressAdvance, approveBatch, processBatch],
-  )
+      summary: totals(state.slips),
+      locked: !state.open,
+      getEmployee: (id) => state.staff.find((employee) => employee.id === id),
+      reload: load,
+      ...actions,
+    }
+  }, [view.data, actions, load])
 
-  return <PayrollContext.Provider value={value}>{children ?? <Outlet />}</PayrollContext.Provider>
+  if (view.status !== 'ready') {
+    return <WorkspacePage><LoadingState label="Loading payroll records…" error={view.status === 'error' ? view.error : null} onRetry={load} /></WorkspacePage>
+  }
+  return (
+    <PayrollContext.Provider value={value}>
+      {failure && (
+        <div role="alert" className="mx-auto mt-4 flex max-w-7xl items-start justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800">
+          <span><strong className="font-semibold">Not saved.</strong> {failure}</span>
+          <button type="button" onClick={() => setFailure(null)} className="font-semibold hover:underline">Dismiss</button>
+        </div>
+      )}
+      {children ?? <Outlet />}
+    </PayrollContext.Provider>
+  )
 }

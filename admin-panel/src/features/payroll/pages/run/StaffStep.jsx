@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { CircleCheck, CircleX, PauseCircle, TriangleAlert, Users } from 'lucide-react'
+import { BadgeCheck, CircleCheck, CircleX, PauseCircle, Save, TriangleAlert, Users } from 'lucide-react'
 import ActionButton from '../../../../components/workspace/ActionButton'
 import { FilterSelect, SearchBox } from '../../../../components/workspace/controls'
+import { TextInput } from '../../../../components/workspace/FormControls'
 import { Cell, Table, TableFooter } from '../../../../components/workspace/DataTable'
 import StatusPill from '../../../../components/workspace/StatusPill'
 import { ROUTES } from '../../../../config/routes'
@@ -9,16 +10,54 @@ import { cn } from '../../../../lib/cn'
 import { EmployeeCell, MetricCard, MetricGrid, SummaryLine } from '../../components/PayrollKit'
 import StepFooter from '../../components/StepFooter'
 import { usePayroll } from '../../context/usePayroll'
-import { EMPLOYMENT_TYPES, PAY_MODELS, PAYROLL_BRANCHES, STAFF_STATUSES } from '../../data/seed'
+import { EMPLOYMENT_TYPES, PAY_MODELS, PAYROLL_BRANCHES, STAFF_STATUSES } from '../../constants'
 import { rupees } from '../../format'
-import { advanceProgress, branchName, grossPay } from '../../payrollLogic'
+import { advanceProgress, branchName } from '../../payrollLogic'
 import { STAFF_TONES } from '../../tones'
 
-function StaffInspector({ employee, advances, onStatus, onInclude, locked }) {
+// Paid days or units for the run: the figure from the records, or one entered in its place. Replacing a figure
+// from the records needs a reason; shifts and hours have no record, so they are always entered here.
+function QuantityEditor({ employee, locked, onSave }) {
+  const model = PAY_MODELS[employee.model]
+  const fromRecords = employee.model === 'monthly' || employee.model === 'visit'
+  const [value, setValue] = useState(employee.entered ?? employee.derived ?? '')
+  const [reason, setReason] = useState(employee.enteredReason ?? '')
+  const [error, setError] = useState('')
+  const changed = String(value) !== String(employee.entered ?? employee.derived ?? '') || reason !== (employee.enteredReason ?? '')
+
+  const save = async () => {
+    const number = Number(value)
+    if (value === '' || !Number.isInteger(number) || number < 0) return setError('Enter a whole number, zero or more.')
+    if (employee.model === 'monthly' && number > employee.days) return setError(`A month has at most ${employee.days} paid days.`)
+    const replacing = fromRecords && number !== employee.derived
+    if (replacing && reason.trim().length < 3) return setError('Give the reason for changing the figure from the records.')
+    const result = await onSave(fromRecords && !replacing ? null : number, replacing ? reason : '')
+    if (result.error) setError(result.error)
+  }
+
+  return (
+    <div>
+      <p className="mb-2 text-[11px] font-semibold tracking-wide text-outline uppercase">{model.quantity} this cycle</p>
+      <div className="flex flex-col gap-2 rounded-md border border-slate-200 p-3">
+        {fromRecords && <p className="text-xs text-on-surface-variant">From the records: <span className="font-semibold text-on-surface">{employee.derived ?? 0}</span></p>}
+        <TextInput label={model.quantity} name="quantity" type="number" min="0" value={value} disabled={locked} onChange={(event) => { setValue(event.target.value); setError('') }} />
+        {fromRecords && Number(value) !== employee.derived && value !== '' && (
+          <TextInput label="Reason for the change" name="reason" value={reason} disabled={locked} onChange={(event) => { setReason(event.target.value); setError('') }} placeholder="e.g. Absence approved as paid leave" />
+        )}
+        {error && <p role="alert" className="text-xs text-rose-600">{error}</p>}
+        <ActionButton size="sm" icon={Save} onClick={save} disabled={locked || !changed}>
+          Save {model.quantity.toLowerCase()}
+        </ActionButton>
+      </div>
+    </div>
+  )
+}
+
+function StaffInspector({ employee, cycle, advances, onStatus, onInclude, onQuantity, onVerifyBank, locked }) {
   const advance = advances.find((entry) => entry.employeeId === employee.id && entry.status === 'Active')
   const progress = advance && advanceProgress(advance)
   const checks = [
-    ['Compensation contract configured', true],
+    ['Compensation contract configured', employee.hasProfile],
     ['Bank account verified', employee.bankVerified],
     ['Attendance & leave signed off', employee.status === 'Ready'],
   ]
@@ -49,8 +88,9 @@ function StaffInspector({ employee, advances, onStatus, onInclude, locked }) {
         <div>
           <p className="mb-2 text-[11px] font-semibold tracking-wide text-outline uppercase">Verified activity</p>
           <p className="text-[13px]">{employee.volumeNote}</p>
-          <p className="mt-1 text-xs text-on-surface-variant">Gross this cycle: {rupees(grossPay(employee))}</p>
+          <p className="mt-1 text-xs text-on-surface-variant">Gross this cycle: {rupees(employee.gross)}</p>
         </div>
+        <QuantityEditor key={`${employee.id}-${employee.entryVersion}`} employee={{ ...employee, days: cycle.days }} locked={locked} onSave={onQuantity} />
         {progress && (
           <div className="rounded-md border border-red-200 bg-red-50/50 p-3">
             <p className="mb-2 text-[11px] font-semibold tracking-wide text-danger uppercase">Advance & loan recovery</p>
@@ -83,6 +123,11 @@ function StaffInspector({ employee, advances, onStatus, onInclude, locked }) {
               Put on hold
             </ActionButton>
           )}
+          {!employee.bankVerified && (
+            <ActionButton size="sm" icon={BadgeCheck} onClick={onVerifyBank} disabled={locked}>
+              Verify bank details
+            </ActionButton>
+          )}
           <ActionButton size="sm" variant={employee.included ? 'danger' : 'secondary'} icon={employee.included ? CircleX : CircleCheck} onClick={() => onInclude(!employee.included)} disabled={locked}>
             {employee.included ? 'Exclude from this run' : 'Include in this run'}
           </ActionButton>
@@ -93,7 +138,7 @@ function StaffInspector({ employee, advances, onStatus, onInclude, locked }) {
 }
 
 export default function StaffStep() {
-  const { scopedEmployees, advances, setIncluded, setStaffStatus, summary, locked } = usePayroll()
+  const { cycle, scopedEmployees, advances, setIncluded, setStaffStatus, setQuantity, verifyBank, summary, locked } = usePayroll()
   const [query, setQuery] = useState('')
   const [branch, setBranch] = useState('')
   const [employment, setEmployment] = useState('')
@@ -184,10 +229,13 @@ export default function StaffStep() {
         {selected && (
           <StaffInspector
             employee={selected}
+            cycle={cycle}
             advances={advances}
             locked={locked}
-            onStatus={(value) => setStaffStatus(selected.id, value)}
+            onStatus={(value) => setStaffStatus(selected.id, value, value === 'Ready' ? '' : undefined)}
             onInclude={(value) => setIncluded([selected.id], value)}
+            onQuantity={(entered, reason) => setQuantity(selected.id, entered, reason)}
+            onVerifyBank={() => verifyBank(selected.id)}
           />
         )}
       </div>

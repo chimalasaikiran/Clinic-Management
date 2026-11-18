@@ -1,8 +1,15 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { pathFor, ROUTES } from '../../../config/routes'
 import { renderBillingRoute, renderRoute } from '../../../test/renderRoute'
+import { billingFake } from '../../../test/fixtures/billingFake'
+import { localToday } from '../../patients/format'
+
+const addIsoDays = (iso, count) => {
+  const [year, month, day] = iso.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day + count)).toISOString().slice(0, 10)
+}
 
 const setup = () => userEvent.setup({ delay: null })
 
@@ -321,10 +328,17 @@ describe('workflows', () => {
 
 describe('reports', () => {
   it('shows the operations measures with their denominators', async () => {
+    const user = setup()
     await renderBillingRoute(ROUTES.reportsOperations)
-    expect(screen.getByText('6.3%')).toBeInTheDocument()
+    expect(await screen.findByText('6.3%')).toBeInTheDocument()
     expect(screen.getByText('10 ÷ 160 (150 completed + 10 no-show). Exact rate 6.25%.')).toBeInTheDocument()
     expect(screen.getByText('15 min')).toBeInTheDocument()
+    // The last 28 days to today, across permitted branches; choosing a branch asks for that branch only.
+    const today = localToday()
+    expect(billingFake.reports.calls[0].query).toEqual({ from: addIsoDays(today, -27), to: today, branchId: undefined })
+    await user.selectOptions(screen.getByLabelText('Branch'), 'b-west')
+    await waitFor(() => expect(billingFake.reports.calls.at(-1).query.branchId).toBe('b-west'))
+    expect(await screen.findByText(/^Appointments starting .* · West Wing$/)).toBeInTheDocument()
   })
 
   it('shows billed, collected and outstanding apart from one another', async () => {

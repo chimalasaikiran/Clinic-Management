@@ -13,7 +13,7 @@ import { cn } from '../../../lib/cn'
 import { exportCsv } from '../../../lib/exportCsv'
 import { Amount, EmployeeCell, MetricCard, MetricGrid } from '../components/PayrollKit'
 import { usePayroll } from '../context/usePayroll'
-import { STAFF_STATUSES } from '../data/seed'
+import { STAFF_STATUSES } from '../constants'
 import { minus, rupees, signed } from '../format'
 import { branchSummary, totals } from '../payrollLogic'
 import { STAFF_TONES } from '../tones'
@@ -36,9 +36,9 @@ function LedgerDetail({ slip }) {
       <div>
         <p className="font-semibold text-on-surface">Advance recovery · {minus(slip.advance)}</p>
         {slip.advanceLines.length
-          ? slip.advanceLines.map(({ advance, amount }) => (
+          ? slip.advanceLines.map(({ advance, amount, number }) => (
               <p key={advance.id}>
-                {advance.id} · {rupees(amount)} this cycle of {advance.installments} instalments
+                {advance.id} · {rupees(amount)} this cycle (instalment {number} of {advance.installments})
               </p>
             ))
           : <p>No advance instalment due.</p>}
@@ -55,8 +55,26 @@ function LedgerDetail({ slip }) {
   )
 }
 
+const STATUS_LABEL = { Draft: 'Processing', Approved: 'Approved', Processed: 'Processed' }
+
 export default function BranchLedgerPage() {
-  const { cycle, slips } = usePayroll()
+  const { cycle, slips, batch } = usePayroll()
+  if (!cycle || !branchSummary(slips).length) {
+    return (
+      <WorkspacePage>
+        <Breadcrumb items={[{ label: 'Payroll & salary', to: ROUTES.payroll }, { label: 'Detailed branch ledger' }]} />
+        <PageIntro title="Detailed branch ledger" description="Review employee earnings, adjustments and deductions for each payroll branch." />
+        <Panel title="No payroll run yet">
+          <p className="text-[13px] text-on-surface-variant">The ledger shows a run's payslips by branch once a payroll run has been started.</p>
+          <ActionButton icon={ArrowLeft} to={ROUTES.payrollRun} className="mt-3">Start a payroll run</ActionButton>
+        </Panel>
+      </WorkspacePage>
+    )
+  }
+  return <BranchLedger cycle={cycle} slips={slips} runStatus={STATUS_LABEL[batch.status]} />
+}
+
+function BranchLedger({ cycle, slips, runStatus }) {
   const branches = branchSummary(slips)
   const [branchId, setBranchId] = useState(branches.find((row) => row.staff)?.branch.id ?? branches[0].branch.id)
   const [query, setQuery] = useState('')
@@ -90,7 +108,7 @@ export default function BranchLedgerPage() {
   const exportLedger = () =>
     exportCsv(`ledger-${selected.branch.name.toLowerCase().replace(/\s+/g, '-')}-${cycle.month}.csv`, [
       ['Employee ID', 'Name', 'Paid days / units', 'Gross', 'Adjustments', 'Advance recovery', 'Statutory', 'Net', 'Status'],
-      ...branchSlips.map((slip) => [slip.employee.id, slip.employee.name, slip.employee.paidDays ?? slip.employee.units, slip.gross, slip.adjustments, slip.advance, slip.statutoryTotal, slip.net, slip.employee.status]),
+      ...branchSlips.map((slip) => [slip.employee.id, slip.employee.name, slip.employee.quantity, slip.gross, slip.adjustments, slip.advance, slip.statutoryTotal, slip.net, slip.employee.status]),
     ])
 
   return (
@@ -114,7 +132,7 @@ export default function BranchLedgerPage() {
       <section className="mb-5 flex flex-wrap items-center gap-x-8 gap-y-3 rounded-lg border border-slate-200 bg-white px-5 py-4 text-[13px]">
         <div>
           <p className="flex items-center gap-2 text-base font-semibold">
-            {cycle.label} cycle <StatusPill tone="info">Processing</StatusPill>
+            {cycle.label} cycle <StatusPill tone={runStatus === 'Processed' ? 'success' : 'info'}>{runStatus}</StatusPill>
           </p>
           <p className="text-xs text-outline">Batch ID: {cycle.batchId}</p>
         </div>
@@ -204,7 +222,7 @@ export default function BranchLedgerPage() {
                       <EmployeeCell employee={slip.employee} />
                     </button>
                   </Cell>
-                  <Cell>{slip.employee.model === 'monthly' ? `${slip.employee.paidDays} / ${cycle.days}` : `${slip.employee.units} units`}</Cell>
+                  <Cell>{slip.employee.model === 'monthly' ? `${slip.employee.quantity} / ${cycle.days}` : `${slip.employee.quantity} units`}</Cell>
                   <Cell>{rupees(slip.gross)}</Cell>
                   <Cell>
                     <Amount tone={slip.adjustments ? 'add' : undefined}>{slip.adjustments ? signed(slip.adjustments) : '—'}</Amount>
@@ -285,7 +303,7 @@ export default function BranchLedgerPage() {
               {selected.branch.name} · {selected.staff ? 'Ready for payroll review' : 'No staff in this run'}
             </p>
             <p className="text-xs text-on-surface-variant">
-              {rupees(selected.net)} net · Batch release remains pending
+              {rupees(selected.net)} net · {runStatus === 'Processed' ? 'Payslips fixed; payments are recorded in the cycle history' : 'Batch release remains pending'}
             </p>
           </div>
         </div>

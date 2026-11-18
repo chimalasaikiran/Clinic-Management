@@ -8,7 +8,7 @@ import { useBilling } from '../../billing/context/useBilling'
 import { allRefunds } from '../../billing/financeLogic'
 import ReportsFrame from '../components/ReportsFrame'
 import { DATE_RANGES } from '../../billing/constants'
-import { OPERATIONS, REPORT_PERIOD } from '../data/sampleReports'
+import { useOperationsReport } from '../useOperationsReport'
 import { usePharmacyReport } from '../usePharmacyReport'
 import { financialFigures, operationsFigures } from '../reportsLogic'
 
@@ -16,13 +16,14 @@ export default function ReportsOverviewPage() {
   const { records, refundRequests } = useBilling()
   const month = DATE_RANGES[1]
   const [query, setQuery] = useState('')
-  const operations = operationsFigures(OPERATIONS)
+  const operationsReport = useOperationsReport()
+  const operations = operationsReport.report ? operationsFigures(operationsReport.report) : null
   const financial = financialFigures(records, allRefunds(records, refundRequests), month)
   const { report: pharmacy, restricted: noStock } = usePharmacyReport()
   const show = (text) => !query.trim() || text.toLowerCase().includes(query.trim().toLowerCase())
   const cards = [
-    { id: 'operations', title: 'Operations', tag: 'Closed sample cohort', text: 'Main Surgical Pavilion only. A separate reporting sample, not organization totals.', to: ROUTES.reportsOperations, link: 'View Operations → RPT-02',
-      stats: [[String(operations.scheduled), 'scheduled records'], [String(operations.completed), 'completed'], [`${operations.meanWait} min`, `mean wait · ${OPERATIONS.waitPairs} valid timestamp pairs`]], note: `${REPORT_PERIOD.label.replace(' 2026', '')} appointment starts. No reconciliation with the conflicting 14 Oct Appointments snapshot.` },
+    { id: 'operations', title: 'Operations', tag: !operationsReport.allowed ? 'Not available to your role' : `Live appointments · ${operationsReport.period.label}`, text: operations ? `${operations.scheduled} appointment${operations.scheduled === 1 ? '' : 's'} starting in the period across ${operationsReport.report.branches.length} permitted branch${operationsReport.report.branches.length === 1 ? '' : 'es'}.` : operationsReport.allowed ? 'Loading appointment records…' : 'Your role has no reports permission.', to: ROUTES.reportsOperations, link: 'View Operations → RPT-02',
+      stats: operations ? [[String(operations.scheduled), 'scheduled records'], [String(operations.completed), 'completed'], [operations.meanWait === null ? '—' : `${operations.meanWait} min`, `mean wait · ${operationsReport.report.wait.pairs} check-in pairs`]] : [], note: operations ? `No-show ${operations.noShowRate === null ? '—' : `${operations.noShowRate}%`} of attendance-assessable appointments · ${operations.open} not yet closed.` : '' },
     { id: 'financial', title: 'Financial', tag: `Live ledger · ${month.label}`, text: `${financial.billed.invoices.length} invoice${financial.billed.invoices.length === 1 ? '' : 's'} issued and ${financial.collected.payments.length} payment${financial.collected.payments.length === 1 ? '' : 's'} received this month.`, to: ROUTES.reportsFinancial, link: 'View Financial → RPT-03',
       stats: [[formatINR(financial.billed.amount), 'billed invoice value · not recognized revenue'], [formatINR(financial.collected.amount), `collected · ${financial.collected.payments.length} payment`], [formatINR(financial.outstanding.amount), 'outstanding on those invoices']], note: 'Independent record sets. Do not add or subtract these amounts into a net value.' },
     { id: 'pharmacy', title: 'Pharmacy & Inventory', tag: noStock ? 'Not available to your role' : 'Live stock ledger · last 30 days', text: pharmacy ? `${pharmacy.dispensed.toLocaleString('en-IN')} base units dispensed, ${pharmacy.stockouts} item${pharmacy.stockouts === 1 ? '' : 's'} out of stock, and ${formatINR(pharmacy.nearExpiryValue)} of stock expiring within 30 days at unit price.` : noStock ? 'Your role has no inventory or pharmacy permission.' : 'Loading stock records…', to: ROUTES.reportsPharmacy, link: 'View Pharmacy & Inventory → RPT-04',
@@ -30,7 +31,7 @@ export default function ReportsOverviewPage() {
   ].filter((card) => show(`${card.title} ${card.text} ${card.tag}`))
 
   return (
-    <ReportsFrame code="RPT-01" title="Reports overview" description="Operational and financial source coverage, with a clear path into each owner report." query={query} onQuery={setQuery}>
+    <ReportsFrame code="RPT-01" title="Reports overview" description="Operational and financial source coverage, with a clear path into each owner report." query={query} onQuery={setQuery} notes={{ title: 'Live records', text: 'Each report reads the records when it opens, within the branches your role covers.' }}>
       <div className="mb-6 grid gap-5 lg:grid-cols-3">
         {cards.map((card) => (
           <article key={card.id} className="flex flex-col rounded-md border border-slate-200 bg-white p-5">
@@ -44,8 +45,8 @@ export default function ReportsOverviewPage() {
       </div>
       {cards.length === 0 && <p className="mb-6 rounded-md border border-slate-200 bg-white px-6 py-10 text-center text-sm text-on-surface-variant">No reports or measures match this search.</p>}
       <Section title="Source health & coverage" aside="" className="mb-6">
-        <p className="-mt-3 mb-4 text-xs text-outline">Expected services · local sample evidence only · none live-refreshed</p>
-        <div className="grid gap-6 text-xs sm:grid-cols-3">{[['Appointments reporting service', 'Local sample cohort · Main Surgical Pavilion only.', 'Attendance, check-in pairs and clinical capacity samples.'], ['Billing, payments & refunds', 'Local source slice · incomplete branch mapping.', 'Not a recognized-revenue or organization ledger.'], ['Pharmacy & inventory services', 'Capability and report-read access not verified.', 'Current source query not performed; not a zero result.']].map(([title, line, note]) => <div key={title}><p className="text-[13px] font-semibold">{title}</p><p className="mt-1 leading-5">{line}</p><p className="mt-1 text-outline">{note}</p></div>)}</div>
+        <p className="-mt-3 mb-4 text-xs text-outline">Where each report reads from · live when the page opens</p>
+        <div className="grid gap-6 text-xs sm:grid-cols-3">{[['Appointments', 'Appointment records and history, check-in and consultation-start times, therapist consulting hours, leave and blocks.', 'Needs the reports permission; branches follow your role.'], ['Billing, payments & refunds', 'The billing ledger: invoices, payments and refunds.', 'Billed, collected and refunded are kept apart; not recognized revenue.'], ['Pharmacy & inventory', 'Stock batches, movements and dispensing.', 'Valued at unit price; no margin is calculated.']].map(([title, line, note]) => <div key={title}><p className="text-[13px] font-semibold">{title}</p><p className="mt-1 leading-5">{line}</p><p className="mt-1 text-outline">{note}</p></div>)}</div>
       </Section>
     </ReportsFrame>
   )

@@ -7,19 +7,22 @@ import Panel from '../../../../components/workspace/Panel'
 import { Banner } from '../../../../components/workspace/RecordKit'
 import StatusPill from '../../../../components/workspace/StatusPill'
 import { ROUTES } from '../../../../config/routes'
-import { OWNER } from '../../../../config/workspace'
+import { useAuth } from '../../../auth/context/useAuth'
+import { RECOVERY_CAP } from '../../constants'
 import { EmployeeCell, ScheduleTable, SummaryLine } from '../../components/PayrollKit'
 import { usePayroll } from '../../context/usePayroll'
 import { rupees } from '../../format'
-import { RECOVERY_CAP, addMonths, advanceExposure, advanceSchedule, monthLabel, monthlyBase, validateAdvance } from '../../payrollLogic'
+import { advanceExposure, monthLabel, previewSchedule, recoveryStart, validateAdvance } from '../../payrollLogic'
 
 const STAGES = ['Advance details', 'Repayment plan', 'Review & create', 'Employee acknowledgement']
 
 export default function ReviewAdvancePage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { cycle, employees, advances, addAdvance, locked } = usePayroll()
+  const { user } = useAuth()
+  const { cycle, open, history, today, settings, employees, advances, addAdvance } = usePayroll()
   const [confirming, setConfirming] = useState(false)
+  const [saving, setSaving] = useState(false)
   const draft = location.state?.draft
   const employee = draft && employees.find((entry) => `${entry.name} (${entry.id})` === draft.employee)
   if (!draft || !employee) return <Navigate to={ROUTES.payrollAdvanceNew} replace />
@@ -27,14 +30,17 @@ export default function ReviewAdvancePage() {
   const exposure = advanceExposure(employee, advances)
   const principal = Number(draft.principal)
   const installments = Number(draft.installments)
-  const startMonth = addMonths(cycle.month, 1)
-  const schedule = advanceSchedule({ principal, installments, startMonth, status: 'Pending disbursal' })
-  const share = Math.round((schedule[0].amount / monthlyBase(employee)) * 1000) / 10
+  const startMonth = recoveryStart({ cycle, open, history, today })
+  const schedule = previewSchedule({ principal, installments, startMonth }, settings.payDay)
+  const share = employee.monthlyBase ? Math.round((schedule[0].amount / employee.monthlyBase) * 1000) / 10 : 0
   const valid = Object.keys(validateAdvance({ employee, principal: draft.principal, installments, disbursalDate: draft.disbursalDate, category: draft.category, outstanding: exposure.outstanding })).length === 0
 
-  const create = () => {
-    addAdvance({ employeeId: employee.id, principal, installments, startMonth, category: draft.category, method: draft.method, disbursalDate: draft.disbursalDate, notes: draft.notes })
-    navigate(ROUTES.payrollRunAdvances)
+  const create = async () => {
+    setSaving(true)
+    const result = await addAdvance({ employeeId: employee.id, principal, installments, startMonth, category: draft.category, method: draft.method, disbursalDate: draft.disbursalDate, notes: draft.notes })
+    setSaving(false)
+    setConfirming(false)
+    if (!result.error) navigate(ROUTES.payrollRunAdvances)
   }
 
   return (
@@ -71,7 +77,7 @@ export default function ReviewAdvancePage() {
           <Panel title="Employee profile" icon={UserRound}>
             <EmployeeCell employee={employee} withBranch />
             <dl className="mt-4 grid gap-3 sm:grid-cols-4">
-              <SummaryLine label="Monthly gross" value={rupees(monthlyBase(employee))} />
+              <SummaryLine label="Monthly gross" value={rupees(employee.monthlyBase)} />
               <SummaryLine label="Limit" value={rupees(exposure.limit)} />
               <SummaryLine label="Open advances" value={exposure.open.length} />
               <SummaryLine label="Available" value={rupees(exposure.available)} tone="add" />
@@ -120,7 +126,7 @@ export default function ReviewAdvancePage() {
               <li>Instalments are deducted from {monthLabel(startMonth)} payroll.</li>
             </ol>
           </Panel>
-          <ActionButton variant="primary" icon={CircleCheck} className="w-full py-2.5" onClick={() => setConfirming(true)} disabled={locked || !valid}>
+          <ActionButton variant="primary" icon={CircleCheck} className="w-full py-2.5" onClick={() => setConfirming(true)} disabled={!valid}>
             Create advance
           </ActionButton>
           {!valid && <p className="text-xs text-rose-600">These details no longer pass validation. Go back to edit them.</p>}
@@ -136,7 +142,7 @@ export default function ReviewAdvancePage() {
         footer={
           <div className="flex justify-end gap-2">
             <ActionButton onClick={() => setConfirming(false)}>Cancel</ActionButton>
-            <ActionButton variant="primary" icon={CircleCheck} onClick={create}>
+            <ActionButton variant="primary" icon={CircleCheck} onClick={create} disabled={saving}>
               Confirm & create
             </ActionButton>
           </div>
@@ -145,7 +151,7 @@ export default function ReviewAdvancePage() {
         <dl className="space-y-2 px-6 py-4">
           <SummaryLine label="Beneficiary" value={`${employee.name} (${employee.id})`} />
           <SummaryLine label="Repayment plan" value={`${installments} × ${rupees(schedule[0].amount)} / month`} />
-          <SummaryLine label="Created by" value={OWNER.name} />
+          <SummaryLine label="Created by" value={user?.fullName ?? 'You'} />
           <SummaryLine label="Payment state" value="Pending disbursal" />
         </dl>
       </Modal>

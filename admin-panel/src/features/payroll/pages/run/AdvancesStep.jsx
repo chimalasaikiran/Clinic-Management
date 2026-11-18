@@ -11,7 +11,7 @@ import { cn } from '../../../../lib/cn'
 import { EmployeeCell, MetricCard, MetricGrid, SummaryLine } from '../../components/PayrollKit'
 import StepFooter from '../../components/StepFooter'
 import { usePayroll } from '../../context/usePayroll'
-import { ADVANCE_STATUSES, PAYROLL_BRANCHES } from '../../data/seed'
+import { ADVANCE_STATUSES, PAYROLL_BRANCHES } from '../../constants'
 import { rupees } from '../../format'
 import { advanceProgress, branchName, sum } from '../../payrollLogic'
 import { ADVANCE_TONES } from '../../tones'
@@ -24,8 +24,14 @@ const NEXT_ACTION = {
 
 const SCHEDULE_TONES = { Recovered: 'success', 'This cycle': 'warning', Upcoming: 'neutral' }
 
-function AdvanceDetail({ advance, employee, locked, onProgress }) {
+function AdvanceDetail({ advance, employee, onProgress }) {
+  const [busy, setBusy] = useState(false)
   const progress = advanceProgress(advance)
+  const step = async () => {
+    setBusy(true)
+    await onProgress()
+    setBusy(false)
+  }
   const percent = Math.round((progress.repaid / advance.principal) * 100)
   return (
     <div className="flex flex-col gap-5 p-5">
@@ -94,6 +100,8 @@ function AdvanceDetail({ advance, employee, locked, onProgress }) {
           <p>
             {rupees(progress.current.amount)} is deducted in this cycle's payroll as instalment {progress.current.number} of {advance.installments}.
           </p>
+        ) : advance.status === 'Rejected' ? (
+          <p>Rejected{advance.decisionNote ? `: ${advance.decisionNote}` : ''}. Nothing is recovered.</p>
         ) : advance.status === 'Active' || advance.status === 'Settled' ? (
           <p>No instalment falls in this cycle.</p>
         ) : (
@@ -102,7 +110,7 @@ function AdvanceDetail({ advance, employee, locked, onProgress }) {
       </section>
 
       {NEXT_ACTION[advance.status] && (
-        <ActionButton variant="primary" icon={CircleCheck} onClick={onProgress} disabled={locked}>
+        <ActionButton variant="primary" icon={CircleCheck} onClick={step} disabled={busy}>
           {NEXT_ACTION[advance.status]}
         </ActionButton>
       )}
@@ -111,7 +119,7 @@ function AdvanceDetail({ advance, employee, locked, onProgress }) {
 }
 
 export default function AdvancesStep() {
-  const { advances, getEmployee, progressAdvance, slips, locked } = usePayroll()
+  const { advances, getEmployee, progressAdvance, slips } = usePayroll()
   const [query, setQuery] = useState('')
   const [branch, setBranch] = useState('')
   const [status, setStatus] = useState('all')
@@ -154,7 +162,7 @@ export default function AdvancesStep() {
         <div className="flex flex-wrap items-center gap-3">
           <SearchBox value={query} onChange={setQuery} label="Search advances" placeholder="Search employee name, staff ID or advance ID" className="min-w-56 flex-1" />
           <FilterSelect label="Branch" value={branch} onChange={setBranch} allLabel="All branches" options={PAYROLL_BRANCHES.map((entry) => entry.name)} />
-          <ActionButton variant="primary" icon={Plus} to={locked ? undefined : ROUTES.payrollAdvanceNew} disabled={locked}>
+          <ActionButton variant="primary" icon={Plus} to={ROUTES.payrollAdvanceNew}>
             New advance
           </ActionButton>
         </div>
@@ -204,7 +212,7 @@ export default function AdvancesStep() {
 
       {viewing && (
         <Drawer open onClose={() => setViewId(null)} eyebrow={viewing.status} title={viewing.id} description={`${rupees(viewing.principal)} · ${viewing.installments} monthly instalments`}>
-          <AdvanceDetail advance={viewing} employee={getEmployee(viewing.employeeId)} locked={locked} onProgress={() => progressAdvance(viewing.id)} />
+          <AdvanceDetail key={`${viewing.id}-${viewing.version}`} advance={viewing} employee={getEmployee(viewing.employeeId)} onProgress={() => progressAdvance(viewing.id)} />
         </Drawer>
       )}
 

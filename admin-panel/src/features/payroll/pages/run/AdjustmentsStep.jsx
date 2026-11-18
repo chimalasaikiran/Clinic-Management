@@ -11,26 +11,33 @@ import { cn } from '../../../../lib/cn'
 import { Amount, EmployeeCell, MetricCard, MetricGrid, SummaryLine } from '../../components/PayrollKit'
 import StepFooter from '../../components/StepFooter'
 import { usePayroll } from '../../context/usePayroll'
-import { ADJUSTMENT_STATUSES, PAYROLL_BRANCHES } from '../../data/seed'
+import { ADJUSTMENT_STATUSES, PAYROLL_BRANCHES } from '../../constants'
 import { minus, rupees, signed } from '../../format'
-import { branchName, payslip, sum } from '../../payrollLogic'
+import { branchName, monthLabel, projectedNet, sum } from '../../payrollLogic'
 import { ADJUSTMENT_TONES } from '../../tones'
 
 const DIRECTIONS = { Addition: 'addition', Deduction: 'deduction' }
 
-function AdjustmentDetail({ adjustment, employee, records, locked, onDecide }) {
+function AdjustmentDetail({ adjustment, employee, slip, settings, onDecide }) {
   const [comment, setComment] = useState('')
   const [error, setError] = useState('')
-  const current = payslip(employee, records)
-  const projected = payslip(employee, { ...records, adjustments: records.adjustments.map((entry) => (entry.id === adjustment.id ? { ...entry, status: 'Approved' } : entry)) })
   const pending = adjustment.status === 'Pending approval'
+  const signedAmount = adjustment.direction === 'addition' ? adjustment.amount : -adjustment.amount
+  // The payslip already counts an approved adjustment that is still unpaid; a pending one is projected.
+  const counted = slip?.approvedAdjustments.some((entry) => entry.id === adjustment.id)
+  const without = slip && (counted ? projectedNet(slip, -signedAmount, settings) : slip.net)
+  const withIt = slip && (counted ? slip.net : projectedNet(slip, signedAmount, settings))
 
+  const decide = async (value) => {
+    const result = await onDecide(value, comment)
+    if (result.error) setError(result.error)
+  }
   const reject = () => {
-    if (!comment.trim()) {
+    if (comment.trim().length < 3) {
       setError('Add a comment explaining the rejection.')
       return
     }
-    onDecide('Rejected', comment)
+    decide('Rejected')
   }
 
   return (
@@ -70,6 +77,7 @@ function AdjustmentDetail({ adjustment, employee, records, locked, onDecide }) {
           <dl className="space-y-2">
             <SummaryLine label="Submitted by" value={adjustment.requestedBy} />
             <SummaryLine label="Submitted on" value={adjustment.requestedOn} />
+            <SummaryLine label="Payroll month" value={adjustment.appliedIn ? `Paid in ${monthLabel(adjustment.appliedIn)}` : monthLabel(adjustment.month)} />
             {adjustment.decidedBy && <SummaryLine label={`${adjustment.status} by`} value={adjustment.decidedBy} />}
           </dl>
           {adjustment.comment && <p className="mt-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-800">{adjustment.comment}</p>}
@@ -77,11 +85,15 @@ function AdjustmentDetail({ adjustment, employee, records, locked, onDecide }) {
 
         <section className="rounded-md border border-slate-200 bg-surface-lowest p-4">
           <h3 className="mb-2 text-[13px] font-semibold">Cycle earnings impact</h3>
-          <dl className="space-y-2">
-            <SummaryLine label="Gross this cycle" value={rupees(current.gross)} />
-            <SummaryLine label="Net pay without this item" value={rupees(pending ? current.net : payslip(employee, { ...records, adjustments: records.adjustments.filter((entry) => entry.id !== adjustment.id) }).net)} />
-            <SummaryLine label="Projected net pay if approved" value={rupees(projected.net)} strong />
-          </dl>
+          {slip && !adjustment.appliedIn && adjustment.status !== 'Rejected' ? (
+            <dl className="space-y-2">
+              <SummaryLine label="Gross this cycle" value={rupees(slip.gross)} />
+              <SummaryLine label="Net pay without this item" value={rupees(without)} />
+              <SummaryLine label="Projected net pay if approved" value={rupees(withIt)} strong />
+            </dl>
+          ) : (
+            <p className="text-xs text-on-surface-variant">{adjustment.appliedIn ? `Paid in the ${monthLabel(adjustment.appliedIn)} run.` : adjustment.status === 'Rejected' ? 'Rejected, so it is not paid.' : 'This person is not in the open payroll run.'}</p>
+          )}
         </section>
 
         {pending && (
@@ -108,10 +120,10 @@ function AdjustmentDetail({ adjustment, employee, records, locked, onDecide }) {
       </div>
       {pending && (
         <div className="sticky bottom-0 flex gap-2 border-t border-slate-200 bg-white px-5 py-3">
-          <ActionButton variant="danger" icon={Ban} onClick={reject} disabled={locked} className="flex-1">
+          <ActionButton variant="danger" icon={Ban} onClick={reject} className="flex-1">
             Reject with comment
           </ActionButton>
-          <ActionButton variant="primary" icon={CircleCheck} onClick={() => onDecide('Approved', comment)} disabled={locked} className="flex-1">
+          <ActionButton variant="primary" icon={CircleCheck} onClick={() => decide('Approved')} className="flex-1">
             Approve adjustment
           </ActionButton>
         </div>
@@ -121,7 +133,7 @@ function AdjustmentDetail({ adjustment, employee, records, locked, onDecide }) {
 }
 
 export default function AdjustmentsStep() {
-  const { adjustments, advances, getEmployee, decideAdjustments, locked } = usePayroll()
+  const { adjustments, slips, settings, getEmployee, decideAdjustments } = usePayroll()
   const [query, setQuery] = useState('')
   const [branch, setBranch] = useState('')
   const [direction, setDirection] = useState('')
@@ -149,9 +161,8 @@ export default function AdjustmentsStep() {
   const selectedPending = selected.filter((id) => pending.some((entry) => entry.id === id))
 
   const toggle = (id) => setSelected((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id]))
-  const approveSelected = () => {
-    decideAdjustments(selectedPending, 'Approved')
-    setSelected([])
+  const approveSelected = async () => {
+    if (!(await decideAdjustments(selectedPending, 'Approved')).error) setSelected([])
   }
 
   return (
@@ -177,10 +188,10 @@ export default function AdjustmentsStep() {
         <StatusPill tone="warning" dot>
           Pending review ({pending.length})
         </StatusPill>
-        <ActionButton icon={CheckCheck} onClick={approveSelected} disabled={locked || !selectedPending.length}>
+        <ActionButton icon={CheckCheck} onClick={approveSelected} disabled={!selectedPending.length}>
           Approve selected
         </ActionButton>
-        <ActionButton variant="primary" icon={Plus} to={locked ? undefined : ROUTES.payrollAdjustmentNew} disabled={locked}>
+        <ActionButton variant="primary" icon={Plus} to={ROUTES.payrollAdjustmentNew}>
           Add adjustment
         </ActionButton>
       </section>
@@ -193,7 +204,7 @@ export default function AdjustmentsStep() {
             return (
               <tr key={entry.id} className={cn('border-b border-slate-100 align-top last:border-0', selected.includes(entry.id) ? 'bg-teal-50/40' : 'hover:bg-surface-lowest')}>
                 <Cell>
-                  <input type="checkbox" checked={selected.includes(entry.id)} disabled={!isPending || locked} onChange={() => toggle(entry.id)} aria-label={`Select ${entry.id}`} className="mt-1 accent-[#006a61]" />
+                  <input type="checkbox" checked={selected.includes(entry.id)} disabled={!isPending} onChange={() => toggle(entry.id)} aria-label={`Select ${entry.id}`} className="mt-1 accent-[#006a61]" />
                 </Cell>
                 <Cell>
                   <EmployeeCell employee={employee} />
@@ -244,11 +255,12 @@ export default function AdjustmentsStep() {
             key={viewing.id}
             adjustment={viewing}
             employee={getEmployee(viewing.employeeId)}
-            records={{ adjustments, advances }}
-            locked={locked}
-            onDecide={(value, comment) => {
-              decideAdjustments([viewing.id], value, comment)
-              setViewId(null)
+            slip={slips.find((slip) => slip.employee.id === viewing.employeeId)}
+            settings={settings}
+            onDecide={async (value, comment) => {
+              const result = await decideAdjustments([viewing.id], value, comment)
+              if (!result.error) setViewId(null)
+              return result
             }}
           />
         </Drawer>

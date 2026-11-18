@@ -111,6 +111,7 @@ import RunPayrollLayout from '../features/payroll/components/RunPayrollLayout'
 import PayrollOverviewPage from '../features/payroll/pages/PayrollOverviewPage'
 import CycleHistoryPage from '../features/payroll/pages/CycleHistoryPage'
 import BranchLedgerPage from '../features/payroll/pages/BranchLedgerPage'
+import PayrollSetupPage from '../features/payroll/pages/PayrollSetupPage'
 import PeriodStep from '../features/payroll/pages/run/PeriodStep'
 import StaffStep from '../features/payroll/pages/run/StaffStep'
 import CalculationsStep from '../features/payroll/pages/run/CalculationsStep'
@@ -420,6 +421,7 @@ export const routes = [
               { path: ROUTES.payroll, element: <PayrollOverviewPage /> },
               { path: ROUTES.payrollHistory, element: <CycleHistoryPage /> },
               { path: ROUTES.payrollLedger, element: <BranchLedgerPage /> },
+              { path: ROUTES.payrollSetup, element: <PayrollSetupPage /> },
               {
                 element: <RunPayrollLayout />,
                 children: [
