@@ -248,6 +248,22 @@ CHECK constraints keep stock quantities, levels and prices non-negative, reserve
 posted units, a transfer between two different locations, received quantities within those sent or ordered, and an
 adjustment's decision time in step with its status.
 
+`prisma/migrations/20261119090000_payroll` adds:
+
+| Table | Holds |
+| --- | --- |
+| `payroll_settings` | the organisation's statutory rules: EPF, ESIC, professional tax (state and slabs) and TDS, each switchable with its rate, cap or ceiling, and the pay day |
+| `pay_profiles` | how each staff member is paid: employment type, pay model (monthly, per visit, per shift, hourly), rate, and bank name, IFSC and the last 4 digits of the account (never the full number), with who verified them |
+| `payroll_cycles` | one run per month: draft → approved → processed, its branch and employment scope, and the totals fixed when processed |
+| `payroll_entries` | a person's line in a run: included, review status, any paid days or units entered in place of the records (with the reason), and the payslip fixed at processing with its bank reference (UTR) once paid |
+| `payroll_adjustments` | additions and deductions for a month: pending → approved or rejected, and the run that paid them |
+| `payroll_advances`, `advance_recoveries` | salary advances (pending approval → pending disbursal → awaiting acknowledgement → active → settled, or rejected) and each instalment taken from a payslip |
+| `payroll_events` | the payroll activity log |
+
+Amounts are stored in whole paise and rates in basis points. CHECK constraints keep rates between 0 and 100%, the pay day
+between 1 and 28, an IFSC and four-digit account ending, months as `YYYY-MM`, positive amounts, 1 to 12 instalments, and
+status, decision, processing and payment timestamps in step with each other.
+
 The database itself refuses double booking. Two exclusion constraints (using the `btree_gist` extension) reject an
 open appointment (`pending`, `confirmed`, `arrived`, `in_progress`) that overlaps another open appointment with the
 same therapist, or with the same patient. Another rejects overlapping weekly windows for one therapist. CHECK
@@ -576,6 +592,68 @@ Dispensing rules:
   are never used. The prescription is completed when nothing remains to dispense.
 - **Numbering.** SR-, TR-, PO-, GRN-, DSC-, ADJ-, DSP- and RET- / DIS- numbers come from per-organisation,
   gap-free counters.
+
+### Payroll (`/v1/payroll`)
+
+Every route needs `staff.payroll`, a locked permission only organisation-wide system roles hold. Amounts are rupees with at
+most two decimals and rates are percentages; the server works in paise and basis points. Changes that can race take a
+`version` and return `409 STALE_RECORD` if the record changed in the meantime.
+
+| Method & path | Body / rules |
+| --- | --- |
+| `GET /payroll/state` | rules, branches, staff with their pay profiles, the open run with every line worked out from the records (and its blockers), processed runs with their payslips, adjustments, advances and recent activity |
+| `PUT /payroll/settings` | `epfEnabled`, `epfRate`, `epfCap` (0 for none), `esicEnabled`, `esicRate`, `esicCeiling`, `ptEnabled`, `ptState`, `ptSlabs[]` (`above`, `amount`), `tdsEnabled`, `tdsRate`, `payDay` (1–28), `version` (`null` the first time) |
+| `POST /payroll/profiles`, `PATCH /payroll/profiles/:id` | `staffId` (create only), `employment` (`full_time`, `part_time`, `contract_locum`, `consultant`), `model` (`monthly`, `visit`, `shift`, `hourly`), `rate`, `bankName`, `ifsc`, `accountLast4`, `active`; changing bank details clears their verification |
+| `POST /payroll/profiles/:id/verify-bank` | `version` |
+| `POST /payroll/cycles` | `month` (`YYYY-MM`, not in the future); `409 CYCLE_OPEN` while another run is open, `409 CYCLE_EXISTS` for a month already run. Everyone active with an active pay profile joins the run |
+| `PUT /payroll/cycles/:id/scope` | `branchIds[]`, `employment[]` (empty = all), `version` |
+| `POST /payroll/cycles/:id/include` | `entryIds[]`, `included` |
+| `PATCH /payroll/entries/:id` | `status` (`ready`, `needs_review`, `on_hold`), `statusNote`, `entered` (paid days or units; `null` goes back to the records), `enteredReason` (required when replacing a figure from the records), `version` |
+| `POST /payroll/cycles/:id/approve` | `version`; `409 RUN_BLOCKED` with one detail per open issue |
+| `POST /payroll/cycles/:id/process` | `version`; fixes the payslips (PSL- numbers), records advance instalments, marks adjustments paid; `409 RUN_CHANGED` if the figures differ from the approved ones |
+| `POST /payroll/entries/:id/payment` | `reference` (the transfer's UTR), `version`; once per payslip of a processed run |
+| `POST /payroll/adjustments` | `staffId`, `month`, `direction`, `category` (one of that direction's), `label`, `amount`, `reason`, `documentRef?` |
+| `POST /payroll/adjustments/decide` | `ids[]`, `decision` (`approved`, `rejected`), `comment` (required to reject) |
+| `POST /payroll/advances` | `staffId`, `source` (`Admin created` is approved by raising it and needs `method` and `disbursalDate`; `Employee request` waits for approval), `principal`, `installments` (1–12), `startMonth`, `category`, `notes` |
+| `POST /payroll/advances/:id/action` | `action` (`approve`, `reject`, `disburse`, `acknowledge`), `note` (required to reject), `version` |
+
+How a run pays:
+
+- **Paid days and units.** Monthly salaries are prorated by the days of the month not marked absent in attendance (a
+  person at two branches counts once a day; leave is paid, unpaid leave is entered as a deduction). Per-visit pay counts
+  the completed appointments of the person's linked login. Shifts and hours are entered in the run. Any figure from the
+  records can be replaced with a reason, which is kept on the line.
+- **Order of calculation.** Gross, plus approved additions, less approved deductions; statutory deductions on that total
+  (TDS for consultants and contract locums, EPF, PT and ESIC for everyone else, as the settings say); then one instalment
+  from each active advance whose first month has come. Approved adjustments of the run's month or earlier are paid by the
+  first processed run that includes the person.
+- **Approval.** Every included line must be marked ready, have verified bank details and its units entered, and no
+  adjustment for it may be pending. Changing a line, the scope, a pay profile, the rules or an adjustment withdraws an
+  approval. Attendance or appointments can change without touching the run, so processing works the figures out again
+  and withdraws the approval if they differ.
+- **Advances.** At most twice the monthly base outstanding (the salary for monthly pay, the latest processed gross
+  otherwise), each instalment at most 35% of it. An advance is recovered only once active and is settled by its last
+  instalment.
+- **Payments.** No money moves from ClinicOS. Release the transfers through the bank, then record each one's reference.
+- **Numbering.** PAY-YYYY-MM per run; PSL-, PAD- and ADV- numbers come from per-organisation, gap-free counters.
+
+### Reports (`/v1/reports`)
+
+Needs `reports.view`. Branches follow the person's role: an organisation-wide role sees every branch, a branch-scoped
+role only its own.
+
+| Method & path | Query / rules |
+| --- | --- |
+| `GET /reports/operations` | `from`, `to` (clinic-local dates, inclusive, at most a year), `branchId?` (`403 BRANCH_OUT_OF_SCOPE` outside the role). Appointments starting in the period with their status now: completed, cancelled, no-show and not yet closed, by 7-day window; how many were rescheduled; the check-in → consultation-start wait; rebooking within 7 days; therapist utilization; completed visits by appointment type; and the permitted branches |
+
+How the measures are worked out:
+
+- **No-show rate** divides no-shows by completed plus no-show appointments, the ones whose attendance can be judged.
+- **Wait** is the mean of check-in to the consultation's start event, over completed visits that have both.
+- **Rebooking** counts a cancellation or no-show as replaced when the same patient books again within 7 days of it;
+  events less than a week old are reported apart. Bookings are not linked to the appointment they replace.
+- **Utilization** sets the booked length of completed appointments against the therapists' weekly consulting windows at
+  the branches in scope, less scheduled leave and blocks, over the days of the period that have passed.
 
 ### Health (no version prefix)
 

@@ -12,6 +12,8 @@ import { ClinicalModule } from './modules/clinical/clinical.module'
 import { SessionGuard } from './modules/auth/session.guard'
 import { HealthModule } from './modules/health/health.module'
 import { InventoryModule } from './modules/inventory/inventory.module'
+import { PayrollModule } from './modules/payroll/payroll.module'
+import { ReportsModule } from './modules/reports/reports.module'
 import { InvitationsModule } from './modules/invitations/invitations.module'
 import { MembersModule } from './modules/members/members.module'
 import { OrganisationsModule } from './modules/organisations/organisations.module'
@@ -50,6 +52,8 @@ export class AppModule {
         ClinicalModule,
         BillingModule,
         InventoryModule,
+        PayrollModule,
+        ReportsModule,
       ],
       providers: [
         // Order matters: authenticate the session first, then check organisation access.

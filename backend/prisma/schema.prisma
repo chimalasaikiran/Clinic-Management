@@ -98,6 +98,18 @@ model User {
   assignedCases         PharmacyCase[]         @relation("CaseAssignee")
   reportedCases         PharmacyCase[]         @relation("CaseReportedBy")
 
+  payrollSettings         PayrollSettings[]   @relation("PayrollSettingsUpdatedBy")
+  verifiedPayProfiles     PayProfile[]        @relation("PayProfileBankVerifiedBy")
+  createdPayrollCycles    PayrollCycle[]      @relation("PayrollCycleCreatedBy")
+  approvedPayrollCycles   PayrollCycle[]      @relation("PayrollCycleApprovedBy")
+  processedPayrollCycles  PayrollCycle[]      @relation("PayrollCycleProcessedBy")
+  recordedPayrollPayments PayrollEntry[]      @relation("PayrollEntryPaidBy")
+  requestedPayAdjustments PayrollAdjustment[] @relation("PayAdjustmentRequestedBy")
+  decidedPayAdjustments   PayrollAdjustment[] @relation("PayAdjustmentDecidedBy")
+  createdAdvances         PayrollAdvance[]    @relation("AdvanceCreatedBy")
+  approvedAdvances        PayrollAdvance[]    @relation("AdvanceApprovedBy")
+  payrollEvents           PayrollEvent[]      @relation("PayrollEventActor")
+
   @@map("users")
 }
 
@@ -215,6 +227,13 @@ model Organisation {
   dispenses        Dispense[]
   pharmacyCases    PharmacyCase[]
 
+  payrollSettings    PayrollSettings?
+  payProfiles        PayProfile[]
+  payrollCycles      PayrollCycle[]
+  payrollAdjustments PayrollAdjustment[]
+  payrollAdvances    PayrollAdvance[]
+  payrollEvents      PayrollEvent[]
+
   @@map("organisations")
 }
 
@@ -256,6 +275,7 @@ model Branch {
   invoices       Invoice[]
   payments       Payment[]
   stockLocations StockLocation[]
+  payrollEntries PayrollEntry[]
 
   @@unique([orgId, code])
   @@map("branches")
@@ -734,6 +754,11 @@ model StaffMember {
   branches     StaffBranch[]
   attendance   AttendanceRecord[]
   leaves       StaffLeave[]
+
+  payProfile         PayProfile?
+  payrollEntries     PayrollEntry[]
+  payrollAdjustments PayrollAdjustment[]
+  payrollAdvances    PayrollAdvance[]
 
   @@unique([orgId, staffCode])
   @@index([orgId, status])
@@ -2437,4 +2462,297 @@ model PharmacyCase {
 
   @@unique([orgId, reference])
   @@map("pharmacy_cases")
+}
+
+// ── Payroll ──────────────────────────────────────────────────────────────────────────────────────────────
+// Amounts are whole paise and rates basis points (1200 = 12%), so every figure is exact.
+
+enum PayEmployment {
+  full_time
+  part_time
+  contract_locum
+  consultant
+
+  @@map("pay_employment")
+}
+
+enum PayModel {
+  monthly
+  visit
+  shift
+  hourly
+
+  @@map("pay_model")
+}
+
+enum PayrollCycleStatus {
+  draft
+  approved
+  processed
+
+  @@map("payroll_cycle_status")
+}
+
+enum PayrollEntryStatus {
+  ready
+  needs_review
+  on_hold
+
+  @@map("payroll_entry_status")
+}
+
+enum PayAdjustmentStatus {
+  pending
+  approved
+  rejected
+
+  @@map("pay_adjustment_status")
+}
+
+enum AdvanceStatus {
+  pending_approval
+  pending_disbursal
+  awaiting_acknowledgement
+  active
+  settled
+  rejected
+
+  @@map("advance_status")
+}
+
+// The organisation's statutory deduction rules. Professional-tax slabs are [{ above, amount }] in paise:
+// the amount of the highest slab whose `above` the month's gross exceeds.
+model PayrollSettings {
+  orgId       String   @id @map("org_id") @db.Uuid
+  epfEnabled  Boolean  @default(true) @map("epf_enabled")
+  epfRateBp   Int      @default(1200) @map("epf_rate_bp")
+  epfCap      Int      @default(180000) @map("epf_cap")
+  esicEnabled Boolean  @default(true) @map("esic_enabled")
+  esicRateBp  Int      @default(75) @map("esic_rate_bp")
+  esicCeiling Int      @default(2100000) @map("esic_ceiling")
+  ptEnabled   Boolean  @default(true) @map("pt_enabled")
+  ptState     String   @default("Telangana") @map("pt_state") @db.VarChar(60)
+  ptSlabs     Json     @map("pt_slabs")
+  tdsEnabled  Boolean  @default(true) @map("tds_enabled")
+  tdsRateBp   Int      @default(1000) @map("tds_rate_bp")
+  // Salaries for a month are paid on this day of the following month.
+  payDay      Int      @default(5) @map("pay_day")
+  updatedById String?  @map("updated_by") @db.Uuid
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  version     Int      @default(1)
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+  updatedBy    User?        @relation("PayrollSettingsUpdatedBy", fields: [updatedById], references: [id])
+
+  @@map("payroll_settings")
+}
+
+// How a staff member is paid. Only the bank name, IFSC and last four digits are kept, never the account number.
+model PayProfile {
+  id               String        @id @default(uuid(7)) @db.Uuid
+  orgId            String        @map("org_id") @db.Uuid
+  staffId          String        @unique @map("staff_id") @db.Uuid
+  employment       PayEmployment
+  model            PayModel
+  rate             Int
+  bankName         String        @map("bank_name") @db.VarChar(80)
+  ifsc             String        @db.VarChar(11)
+  accountLast4     String        @map("account_last4") @db.VarChar(4)
+  bankVerified     Boolean       @default(false) @map("bank_verified")
+  bankVerifiedById String?       @map("bank_verified_by") @db.Uuid
+  bankVerifiedAt   DateTime?     @map("bank_verified_at") @db.Timestamptz(6)
+  active           Boolean       @default(true)
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version          Int           @default(1)
+
+  organisation   Organisation @relation(fields: [orgId], references: [id])
+  staff          StaffMember  @relation(fields: [staffId], references: [id])
+  bankVerifiedBy User?        @relation("PayProfileBankVerifiedBy", fields: [bankVerifiedById], references: [id])
+
+  @@index([orgId])
+  @@map("pay_profiles")
+}
+
+// One payroll run per month: draft → approved → processed. Totals are filled in when it is processed.
+model PayrollCycle {
+  id              String             @id @default(uuid(7)) @db.Uuid
+  orgId           String             @map("org_id") @db.Uuid
+  month           String             @db.VarChar(7)
+  reference       String             @db.VarChar(20)
+  status          PayrollCycleStatus @default(draft)
+  scopeBranchIds  String[]           @map("scope_branch_ids") @db.Uuid
+  scopeEmployment PayEmployment[]    @map("scope_employment")
+  payDate         DateTime           @map("pay_date") @db.Date
+  createdById     String             @map("created_by") @db.Uuid
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  approvedById    String?            @map("approved_by") @db.Uuid
+  approvedAt      DateTime?          @map("approved_at") @db.Timestamptz(6)
+  processedById   String?            @map("processed_by") @db.Uuid
+  processedAt     DateTime?          @map("processed_at") @db.Timestamptz(6)
+  staffCount      Int?               @map("staff_count")
+  gross           Int?
+  additions       Int?
+  deductions      Int?
+  statutory       Int?
+  advances        Int?
+  net             Int?
+  version         Int                @default(1)
+
+  organisation Organisation        @relation(fields: [orgId], references: [id])
+  createdBy    User                @relation("PayrollCycleCreatedBy", fields: [createdById], references: [id])
+  approvedBy   User?               @relation("PayrollCycleApprovedBy", fields: [approvedById], references: [id])
+  processedBy  User?               @relation("PayrollCycleProcessedBy", fields: [processedById], references: [id])
+  entries      PayrollEntry[]
+  adjustments  PayrollAdjustment[]
+  recoveries   AdvanceRecovery[]
+
+  @@unique([orgId, month])
+  @@unique([orgId, reference])
+  @@map("payroll_cycles")
+}
+
+// A staff member's line in a cycle. While the cycle is open its figures are worked out from the records on every
+// read; `entered` replaces the derived paid days or units (with a reason). Processing fixes the payslip columns.
+model PayrollEntry {
+  id            String             @id @default(uuid(7)) @db.Uuid
+  cycleId       String             @map("cycle_id") @db.Uuid
+  staffId       String             @map("staff_id") @db.Uuid
+  included      Boolean            @default(true)
+  status        PayrollEntryStatus @default(ready)
+  statusNote    String             @default("") @map("status_note") @db.VarChar(300)
+  entered       Int?
+  enteredReason String?            @map("entered_reason") @db.VarChar(300)
+  // The payslip, fixed when the cycle is processed.
+  payslipRef    String?            @map("payslip_ref") @db.VarChar(20)
+  branchId      String?            @map("branch_id") @db.Uuid
+  employment    PayEmployment?
+  model         PayModel?
+  rate          Int?
+  quantity      Int?
+  quantityNote  String?            @map("quantity_note") @db.VarChar(300)
+  gross         Int?
+  additions     Int?
+  deductions    Int?
+  statutory     Json?
+  advance       Int?
+  net           Int?
+  paymentRef    String?            @map("payment_ref") @db.VarChar(60)
+  paidAt        DateTime?          @map("paid_at") @db.Timestamptz(6)
+  paidById      String?            @map("paid_by") @db.Uuid
+  version       Int                @default(1)
+
+  cycle      PayrollCycle      @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  staff      StaffMember       @relation(fields: [staffId], references: [id])
+  branch     Branch?           @relation(fields: [branchId], references: [id])
+  paidBy     User?             @relation("PayrollEntryPaidBy", fields: [paidById], references: [id])
+  recoveries AdvanceRecovery[]
+
+  @@unique([cycleId, staffId])
+  @@map("payroll_entries")
+}
+
+// An addition or deduction for a month. Approved ones are applied by the first cycle processed for that month or
+// later, which records itself in `cycleId`.
+model PayrollAdjustment {
+  id            String              @id @default(uuid(7)) @db.Uuid
+  orgId         String              @map("org_id") @db.Uuid
+  reference     String              @db.VarChar(20)
+  staffId       String              @map("staff_id") @db.Uuid
+  month         String              @db.VarChar(7)
+  direction     String              @db.VarChar(10)
+  category      String              @db.VarChar(60)
+  label         String              @db.VarChar(120)
+  amount        Int
+  reason        String              @db.VarChar(1000)
+  documentRef   String?             @map("document_ref") @db.VarChar(80)
+  status        PayAdjustmentStatus @default(pending)
+  requestedById String              @map("requested_by") @db.Uuid
+  decidedById   String?             @map("decided_by") @db.Uuid
+  decidedAt     DateTime?           @map("decided_at") @db.Timestamptz(6)
+  comment       String?             @db.VarChar(500)
+  cycleId       String?             @map("cycle_id") @db.Uuid
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  version       Int                 @default(1)
+
+  organisation Organisation  @relation(fields: [orgId], references: [id])
+  staff        StaffMember   @relation(fields: [staffId], references: [id])
+  requestedBy  User          @relation("PayAdjustmentRequestedBy", fields: [requestedById], references: [id])
+  decidedBy    User?         @relation("PayAdjustmentDecidedBy", fields: [decidedById], references: [id])
+  cycle        PayrollCycle? @relation(fields: [cycleId], references: [id])
+
+  @@unique([orgId, reference])
+  @@index([orgId, month])
+  @@map("payroll_adjustments")
+}
+
+// A salary advance, recovered in equal monthly instalments (the last takes the remainder) once active.
+model PayrollAdvance {
+  id             String        @id @default(uuid(7)) @db.Uuid
+  orgId          String        @map("org_id") @db.Uuid
+  reference      String        @db.VarChar(20)
+  staffId        String        @map("staff_id") @db.Uuid
+  principal      Int
+  installments   Int
+  startMonth     String        @map("start_month") @db.VarChar(7)
+  source         String        @db.VarChar(30)
+  category       String        @db.VarChar(60)
+  method         String?       @db.VarChar(40)
+  notes          String        @default("") @db.VarChar(1000)
+  status         AdvanceStatus
+  disbursalDate  DateTime?     @map("disbursal_date") @db.Date
+  decisionNote   String?       @map("decision_note") @db.VarChar(500)
+  createdById    String        @map("created_by") @db.Uuid
+  approvedById   String?       @map("approved_by") @db.Uuid
+  approvedAt     DateTime?     @map("approved_at") @db.Timestamptz(6)
+  disbursedAt    DateTime?     @map("disbursed_at") @db.Timestamptz(6)
+  acknowledgedAt DateTime?     @map("acknowledged_at") @db.Timestamptz(6)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  version        Int           @default(1)
+
+  organisation Organisation      @relation(fields: [orgId], references: [id])
+  staff        StaffMember       @relation(fields: [staffId], references: [id])
+  createdBy    User              @relation("AdvanceCreatedBy", fields: [createdById], references: [id])
+  approvedBy   User?             @relation("AdvanceApprovedBy", fields: [approvedById], references: [id])
+  recoveries   AdvanceRecovery[]
+
+  @@unique([orgId, reference])
+  @@map("payroll_advances")
+}
+
+// An instalment taken from a payslip.
+model AdvanceRecovery {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  advanceId String   @map("advance_id") @db.Uuid
+  cycleId   String   @map("cycle_id") @db.Uuid
+  entryId   String   @map("entry_id") @db.Uuid
+  number    Int
+  amount    Int
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  advance PayrollAdvance @relation(fields: [advanceId], references: [id])
+  cycle   PayrollCycle   @relation(fields: [cycleId], references: [id])
+  entry   PayrollEntry   @relation(fields: [entryId], references: [id])
+
+  @@unique([advanceId, cycleId])
+  @@unique([advanceId, number])
+  @@map("advance_recoveries")
+}
+
+model PayrollEvent {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  entityType String   @map("entity_type") @db.VarChar(30)
+  entityId   String   @map("entity_id") @db.Uuid
+  action     String   @db.VarChar(120)
+  note       String   @default("") @db.VarChar(1000)
+  actorId    String?  @map("actor_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+  actor        User?        @relation("PayrollEventActor", fields: [actorId], references: [id])
+
+  @@index([orgId, createdAt])
+  @@index([orgId, entityType, entityId])
+  @@map("payroll_events")
 }
