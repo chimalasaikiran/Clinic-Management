@@ -1,0 +1,13 @@
+# Safety net for the whole repository; each app also has its own .gitignore.
+# Secrets and local settings: only the *.example files are committed.
+backend.env
+*.env
+.env
+.env.*
+!.env.example
+!*.env.example
+
+node_modules/
+
+# Reference documents kept locally, not part of the code.
+*.pdf
