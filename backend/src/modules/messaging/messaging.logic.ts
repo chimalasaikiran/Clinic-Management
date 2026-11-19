@@ -104,3 +104,28 @@ export function retryAt(attempts: number, now = new Date()): Date | null {
 }
 
 export const preview = (text: string) => (text.length > 140 ? `${text.slice(0, 137)}…` : text)
+
+// Automated messages (broadcasts and workflows) wait outside 9 pm – 9 am clinic time. People replying in the inbox
+// are not held back.
+export const QUIET_HOURS = { from: 21 * 60, to: 9 * 60 }
+export const inQuietHours = (localMinuteOfDay: number) => localMinuteOfDay >= QUIET_HOURS.from || localMinuteOfDay < QUIET_HOURS.to
+
+// Why an automated message to one person was not queued.
+export type AutomatedSkip = SendBlock | 'NO_ADDRESS' | 'VARIABLES_MISSING' | 'WEEKLY_CAP'
+
+// Reasons recorded against a skipped person: the sending checks, plus workflow events that no longer apply.
+export type SkipReason = AutomatedSkip | 'ALREADY_BOOKED' | 'LEAD_CLOSED' | 'CONVERTED' | 'PATIENT_INACTIVE'
+
+export const SKIP_LABELS: Record<SkipReason, string> = {
+  CONSENT_WITHDRAWN: 'Opted out on this channel',
+  CONSENT_REQUIRED: 'No recorded permission',
+  TEMPLATE_REQUIRED: 'Needs an approved template',
+  TEMPLATE_NOT_APPROVED: 'Template not approved',
+  NO_ADDRESS: 'No valid mobile or email',
+  VARIABLES_MISSING: 'A template value is missing',
+  WEEKLY_CAP: 'Weekly message limit reached',
+  ALREADY_BOOKED: 'Already booked again',
+  LEAD_CLOSED: 'Lead closed',
+  CONVERTED: 'Lead already converted',
+  PATIENT_INACTIVE: 'Patient record inactive',
+}

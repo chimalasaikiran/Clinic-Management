@@ -22,6 +22,8 @@ const contact = {
   interest: optionalText(120),
   branchId: uuid,
   ownerMembershipId: uuid,
+  // The campaign the enquiry came from. Once set it is never changed or removed.
+  campaignId: uuid.nullish().transform((value) => value ?? null),
   // Set after staff have looked at another lead with the same mobile number and decided to keep both.
   confirmedNotDuplicate: z.boolean().default(false),
 }

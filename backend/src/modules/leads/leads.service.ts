@@ -24,6 +24,7 @@ const leadSelect = {
   branch: { select: { id: true, name: true } },
   owner: { select: { id: true, user: { select: { fullName: true } } } },
   patient: { select: { id: true, mrn: true, fullName: true } },
+  campaign: { select: { id: true, code: true, name: true } },
 } as const satisfies Prisma.LeadSelect
 
 type LeadRow = Prisma.LeadGetPayload<{ select: typeof leadSelect }>
@@ -34,7 +35,7 @@ const activitySelect = {
   owner: { select: { user: { select: { fullName: true } } } },
 } as const satisfies Prisma.LeadActivitySelect
 
-const EDIT_LABELS = { fullName: 'Name', mobile: 'Mobile', email: 'Email', interest: 'Interest', branch: 'Branch', owner: 'Owner', stage: 'Stage' }
+const EDIT_LABELS = { fullName: 'Name', mobile: 'Mobile', email: 'Email', interest: 'Interest', branch: 'Branch', owner: 'Owner', stage: 'Stage', campaign: 'Campaign' }
 
 interface Owner {
   membershipId: string
@@ -127,7 +128,7 @@ export class LeadsService {
     const where: Prisma.LeadWhereInput = {
       AND: [this.scopeWhere(access, query.branchId), { createdAt: cohortWindow(query.from, query.to, this.zone) }, query.source ? { source: query.source } : {}],
     }
-    const leads = await this.prisma.lead.findMany({ where, select: { source: true, stage: true, patientId: true, convertedAt: true } })
+    const leads = await this.prisma.lead.findMany({ where, select: { source: true, stage: true, patientId: true, convertedAt: true, campaign: { select: { id: true, code: true, name: true } } } })
     const patientIds = [...new Set(leads.flatMap((lead) => (lead.patientId ? [lead.patientId] : [])))]
     const earliest = leads.reduce<Date | null>((min, lead) => (lead.convertedAt && (!min || lead.convertedAt < min) ? lead.convertedAt : min), null)
     const appointments = patientIds.length && earliest
@@ -135,7 +136,16 @@ export class LeadsService {
       : []
     const bySource = Object.fromEntries(Object.keys(SOURCE_LABELS).map((source) => [source, leads.filter((lead) => lead.source === source).length]))
     const byStage = Object.fromEntries(Object.keys(STAGE_LABELS).map((stage) => [stage, leads.filter((lead) => lead.stage === stage).length]))
-    return { from: query.from, to: query.to, branchId: query.branchId ?? null, total: leads.length, bySource, byStage, ...funnel(leads, appointments) }
+    // Leads recorded against each campaign in this cohort, and how far they got.
+    const campaigns = new Map<string, { id: string; code: string; name: string; leads: typeof leads }>()
+    for (const lead of leads) {
+      if (!lead.campaign) continue
+      const entry = campaigns.get(lead.campaign.id) ?? { ...lead.campaign, leads: [] }
+      entry.leads.push(lead)
+      campaigns.set(lead.campaign.id, entry)
+    }
+    const byCampaign = [...campaigns.values()].map(({ leads: tagged, ...campaign }) => ({ ...campaign, total: tagged.length, ...funnel(tagged, appointments) })).sort((a, b) => b.total - a.total)
+    return { from: query.from, to: query.to, branchId: query.branchId ?? null, total: leads.length, bySource, byStage, ...funnel(leads, appointments), byCampaign, untagged: leads.filter((lead) => !lead.campaign).length }
   }
 
   // ─── Changes ────────────────────────────────────────────────────────────────
@@ -144,6 +154,7 @@ export class LeadsService {
     await this.assertBranch(access, input.branchId)
     await this.assertOwner(access.orgId, input.ownerMembershipId, input.branchId)
     if (!input.confirmedNotDuplicate) await this.assertNoDuplicate(access, input.mobile)
+    const campaign = input.campaignId ? await this.campaign(access.orgId, input.campaignId) : null
     const nextDueAt = input.nextDueDate ? this.futureDue(input.nextDueDate, input.nextDueTime) : null
 
     const id = await this.prisma.transaction(async (tx) => {
@@ -152,12 +163,13 @@ export class LeadsService {
       const lead = await tx.lead.create({
         data: {
           orgId: access.orgId, number, branchId: input.branchId, fullName: input.fullName, mobile: input.mobile, email: input.email, interest: input.interest, source: input.source,
-          stage: input.stage, ownerMembershipId: input.ownerMembershipId, nextAction: nextDueAt ? input.nextAction : null, nextDueAt, lastActivityAt: now, createdById: actorUserId,
+          stage: input.stage, ownerMembershipId: input.ownerMembershipId, nextAction: nextDueAt ? input.nextAction : null, nextDueAt, lastActivityAt: now, createdById: actorUserId, campaignId: campaign?.id ?? null,
         },
         select: { id: true },
       })
       const about = input.interest ? ` about ${input.interest}` : ''
-      await this.activity(tx, access.orgId, lead.id, 'created', `${SOURCE_LABELS[input.source]} recorded`, `New enquiry${about}.`, actorUserId, now)
+      const from = campaign ? ` Recorded against campaign ${campaign.code} “${campaign.name}”.` : ''
+      await this.activity(tx, access.orgId, lead.id, 'created', `${SOURCE_LABELS[input.source]} recorded`, `New enquiry${about}.${from}`, actorUserId, now)
       await this.audit.record({ action: 'lead.created', entityType: 'lead', entityId: lead.id, orgId: access.orgId, actorUserId, details: { number } }, client, tx)
       return lead.id
     })
@@ -172,13 +184,17 @@ export class LeadsService {
     await this.assertBranch(access, input.branchId)
     if (input.ownerMembershipId !== lead.owner.id || input.branchId !== lead.branch.id) await this.assertOwner(access.orgId, input.ownerMembershipId, input.branchId)
     if (input.mobile !== lead.mobile && !input.confirmedNotDuplicate) await this.assertNoDuplicate(access, input.mobile, id)
+    // A campaign tag is part of where the lead came from: it can be added once, never moved or removed (an empty
+    // value keeps it).
+    if (lead.campaign && input.campaignId && input.campaignId !== lead.campaign.id) throw unprocessable('CAMPAIGN_LOCKED', 'This lead’s campaign is part of its original source and cannot be changed.')
+    const campaign = !lead.campaign && input.campaignId ? await this.campaign(access.orgId, input.campaignId) : lead.campaign
 
     const [branch, owner] = await Promise.all([
       this.prisma.branch.findUniqueOrThrow({ where: { id: input.branchId }, select: { name: true } }),
       this.prisma.membership.findUniqueOrThrow({ where: { id: input.ownerMembershipId }, select: { user: { select: { fullName: true } } } }),
     ])
-    const before = { fullName: lead.fullName, mobile: lead.mobile, email: lead.email, interest: lead.interest, branch: lead.branch.name, owner: lead.owner.user.fullName, stage: STAGE_LABELS[lead.stage] }
-    const after = { fullName: input.fullName, mobile: input.mobile, email: input.email, interest: input.interest, branch: branch.name, owner: owner.user.fullName, stage: STAGE_LABELS[input.stage] }
+    const before = { fullName: lead.fullName, mobile: lead.mobile, email: lead.email, interest: lead.interest, branch: lead.branch.name, owner: lead.owner.user.fullName, stage: STAGE_LABELS[lead.stage], campaign: lead.campaign ? `${lead.campaign.code} ${lead.campaign.name}` : null }
+    const after = { fullName: input.fullName, mobile: input.mobile, email: input.email, interest: input.interest, branch: branch.name, owner: owner.user.fullName, stage: STAGE_LABELS[input.stage], campaign: campaign ? `${campaign.code} ${campaign.name}` : null }
     const { changed, text } = describeChanges(before, after, EDIT_LABELS)
     // Closing a lead ends its open follow-up.
     const closing = input.stage === 'closed' && lead.stage !== 'closed'
@@ -188,7 +204,7 @@ export class LeadsService {
       const { count } = await tx.lead.updateMany({
         where: { id, orgId: access.orgId, version: input.version },
         data: {
-          fullName: input.fullName, mobile: input.mobile, email: input.email, interest: input.interest, branchId: input.branchId, ownerMembershipId: input.ownerMembershipId, stage: input.stage,
+          fullName: input.fullName, mobile: input.mobile, email: input.email, interest: input.interest, branchId: input.branchId, ownerMembershipId: input.ownerMembershipId, stage: input.stage, campaignId: campaign?.id ?? null,
           ...(closing ? { nextDueAt: null, nextAction: null } : {}), lastActivityAt: now, version: { increment: 1 },
         },
       })
@@ -357,6 +373,12 @@ export class LeadsService {
     // Out of scope and missing look the same, so lead ids cannot be probed.
     if (!row) throw notFound('Lead not found.')
     return row
+  }
+
+  private async campaign(orgId: string, id: string) {
+    const campaign = await this.prisma.campaign.findFirst({ where: { id, orgId }, select: { id: true, code: true, name: true } })
+    if (!campaign) throw unprocessable('CAMPAIGN_UNKNOWN', 'Choose a campaign of this organisation.')
+    return campaign
   }
 
   private async assertBranch(access: AccessContext, branchId: string) {

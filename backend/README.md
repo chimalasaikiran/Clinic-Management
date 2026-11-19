@@ -264,6 +264,19 @@ Amounts are stored in whole paise and rates in basis points. CHECK constraints k
 between 1 and 28, an IFSC and four-digit account ending, months as `YYYY-MM`, positive amounts, 1 to 12 instalments, and
 status, decision, processing and payment timestamps in step with each other.
 
+`prisma/migrations/20261121090000_campaigns` adds:
+
+| Table | Holds |
+| --- | --- |
+| `audiences`, `audience_versions` | rule-based audiences and the append-only history of their rules |
+| `campaigns`, `campaign_spend`, `campaign_events` | campaign plans, spend entered by hand, and the campaign history |
+| `campaign_broadcasts`, `broadcast_recipients` | confirmed broadcasts, and each address they reached or skipped (with the reason) |
+| `workflows`, `workflow_runs` | automatic workflows and each event they acted on |
+
+It also adds `leads.campaign_id` (the campaign a lead was recorded against) and `messages.origin` (`manual`,
+`broadcast` or `workflow`, for the weekly limit). CHECK constraints keep budgets positive, dates ordered, weekly
+limits between 1 and 14, an active workflow with a template, and every recipient or run either sent or skipped.
+
 `prisma/migrations/20261120090000_messaging` adds:
 
 | Table | Holds |
@@ -366,7 +379,7 @@ same, so it never reveals whether an email address has an account.
 | `TRUST_PROXY` | | `0` | number of proxies in front (set `1` behind a load balancer) |
 | `CLINIC_TIMEZONE` | | `Asia/Kolkata` | IANA zone used for appointment dates, slots and daily queue tokens |
 | `MESSAGING_SECRET_KEY` | to connect channels | | 32 random bytes, base64: encrypts each organisation's WhatsApp, SMS and email credentials. Changing it makes saved credentials unreadable |
-| `MESSAGING_WORKER` | | `true` | Send queued messages from this process |
+| `MESSAGING_WORKER` | | `true` | Send queued messages, start due broadcasts and run workflows from this process |
 | `PUBLIC_API_URL` | for webhooks | | Public https address of this API, shown as the webhook URL (a tunnel in development) |
 | `REALTIME_DATABASE_URL` | | | Neon **direct** connection string, so live inbox updates reach every API instance |
 
@@ -738,9 +751,9 @@ clinic zone (`CLINIC_TIMEZONE`); a lead's `dueState` is `overdue`, `due_today`, 
 | `GET /v1/leads/:id` | One lead with its activity history and, once converted, the patient's first appointment and first completed visit since conversion (for roles with `bookings.view`) |
 | `GET /v1/leads/owners` | Members who may own a lead: an active login holding `growth.leads`, with the branches they cover (`branchId?` narrows it) |
 | `GET /v1/leads/duplicates` | Other leads in scope with the same `mobile` |
-| `GET /v1/leads/performance` | For leads recorded `from`–`to`: totals by source and stage, how many converted, booked an appointment on or after conversion, and completed one |
-| `POST /v1/leads` | Records a lead (`LD-000001`). Another lead with the same mobile is `409 POSSIBLE_DUPLICATE` unless `confirmedNotDuplicate`; the owner must cover the branch (`422 OWNER_NOT_ELIGIBLE`) |
-| `PATCH /v1/leads/:id` | Edits contact details, branch, owner and stage (`version` required, `409 LEAD_CHANGED` if stale). Converted is reached only by converting; closing ends the open follow-up |
+| `GET /v1/leads/performance` | For leads recorded `from`–`to`: totals by source and stage, how many converted, booked an appointment on or after conversion, and completed one; the same per campaign (`byCampaign`) and how many have no campaign (`untagged`) |
+| `POST /v1/leads` | Records a lead (`LD-000001`), optionally against a campaign (`campaignId`). Another lead with the same mobile is `409 POSSIBLE_DUPLICATE` unless `confirmedNotDuplicate`; the owner must cover the branch (`422 OWNER_NOT_ELIGIBLE`) |
+| `PATCH /v1/leads/:id` | Edits contact details, branch, owner and stage (`version` required, `409 LEAD_CHANGED` if stale). Converted is reached only by converting; closing ends the open follow-up. A campaign can be added once; moving it to another is `422 CAMPAIGN_LOCKED`, and an empty `campaignId` keeps it |
 | `POST /v1/leads/:id/interactions` | Logs a call, message or visit (not in the future) and `keep`s, `complete`s or `reschedule`s the open follow-up (a reschedule needs the next action, date and reason) |
 | `POST /v1/leads/:id/disposition` | Re-engagement: `defer` to a later contact, or close as `unresponsive` / `not_interested` |
 | `POST /v1/leads/:id/convert` | Links a patient the member can see (also needs `patients.view`). No appointment is booked |
@@ -785,6 +798,38 @@ Not done yet: incoming SMS and email, email delivery receipts (SMTP only reports
 credentials before the first send (MSG91 has no read-only check). The MSG91 delivery-report format accepted is
 `requestId` plus `status` (`1` delivered, `2` / `16` failed, `8` submitted, or the words); confirm it against your
 MSG91 webhook settings when connecting.
+
+### Audiences, campaigns and workflows (`/v1/audiences`, `/v1/campaigns`, `/v1/workflows`)
+
+Reading needs `growth.view`; every change, broadcast and workflow switch needs `growth.manage`. Branch-limited roles
+work with records at their branches; audiences and workflows covering every branch are for organisation-wide roles.
+
+| Endpoint | Does |
+| --- | --- |
+| `GET`, `POST /v1/audiences`, `GET`, `PATCH /:id` | Rules over leads (stage, source, interest, recorded within N days) and active patients (visited within / not for N days, age, gender), for one branch or all. Members are never stored. Changing the rules needs `changeNote` and adds an append-only version |
+| `POST /v1/audiences/count` | How many leads and patients the rules (saved or not) match now, and per channel how many addresses have recorded permission, opted out, have no permission or no address |
+| `GET`, `POST /v1/campaigns`, `GET`, `PATCH /:id` | Plans (`CMP-0001`) with channel, status, branch, owner, audience, budget, dates, call to action and landing page. A budget or status change needs `changeNote`; every change is kept in the campaign history. Details include spend, broadcasts and attribution |
+| `GET /v1/campaigns/options`, `/owners` | Campaigns a lead can be recorded against; members holding `growth.manage` |
+| `POST /v1/campaigns/:id/spend` | Spend entered by hand from an invoice or ad platform (a negative amount corrects an entry) |
+| `POST /v1/campaigns/:id/broadcasts/preview` | For an approved template on the campaign's channel: who the audience reaches now, who is skipped and why, and an example message |
+| `POST /v1/campaigns/:id/broadcasts` | Confirms a broadcast (`confirm: true` and the `expectedRecipients` shown; a different number now is `409 AUDIENCE_CHANGED`). The campaign must be Scheduled or Active |
+| `POST /v1/campaigns/:id/broadcasts/:broadcastId/cancel` | Stops a scheduled or running broadcast; messages already queued still go |
+| `GET`, `POST /v1/workflows`, `GET`, `PATCH /:id` | Sends one template a set time after an appointment is marked no-show, a lead is recorded and not converted, or a visit is completed. Edits need the workflow to be off (`409 WORKFLOW_ACTIVE`); `problems` lists what stops it being switched on |
+| `POST /v1/workflows/:id/activate`, `/pause` | Switches it on (`confirm: true`; `422 WORKFLOW_NOT_READY` until the template is approved, its channel connected and every variable filled) or off |
+| `GET /v1/workflows/runs` | Every event a workflow acted on: the queued message and its delivery, or the reason it was skipped (`problem=true` for exceptions) |
+
+Attribution counts leads recorded against the campaign, those converted, those whose patient booked on or after
+conversion and completed a visit, and (with `accounting.revenue`) invoices to those patients from the day they
+converted.
+
+Broadcasts and workflows send through the messaging queue with the same checks as the inbox (opt-out, recorded
+permission for marketing, approved template, every variable filled) plus a limit on automated messages to one person
+in 7 days (counting both). Neither sends between 9 pm and 9 am clinic time; a broadcast that reaches quiet hours stops
+and carries on at 9 am. A broadcast works out its recipients when it starts and records each address once, so a
+restart never sends twice; it stops if its audience rules or template changed since it was confirmed. A workflow acts
+only on events falling due after it was switched on, records each event once, skips a patient who has booked again or
+a lead already converted or closed, and pauses itself if its template or channel stops being usable. The worker runs
+every 30 seconds with the messaging worker (`MESSAGING_WORKER`).
 
 ### Search (`/v1/search`)
 
