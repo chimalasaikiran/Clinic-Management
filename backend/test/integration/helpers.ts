@@ -20,6 +20,10 @@ export const testEnv = () =>
     CORS_ORIGINS: WEB_ORIGIN,
     APP_URL: WEB_ORIGIN,
     TOKEN_PEPPER: 'test-pepper-0123456789-0123456789-abcdef',
+    MESSAGING_SECRET_KEY: Buffer.alloc(32, 7).toString('base64'),
+    // Tests run the sending worker by hand, so each step is deterministic.
+    MESSAGING_WORKER: 'false',
+    PUBLIC_API_URL: 'https://api.clinic.test',
   })
 
 // Records outgoing email so tests can read the codes and links a person would receive.
@@ -57,9 +61,10 @@ export interface TestContext {
   browser: () => Browser
 }
 
-export async function startApp(): Promise<TestContext> {
+// `overrides` replace further providers, for example the messaging transport with fake WhatsApp / SMS / email.
+export async function startApp(overrides: Array<{ provide: unknown; useValue: unknown }> = []): Promise<TestContext> {
   const mail = new CaptureMailSender()
-  const app = await createTestApp(testEnv(), [{ provide: MailSender, useValue: mail }])
+  const app = await createTestApp(testEnv(), [{ provide: MailSender, useValue: mail }, ...overrides])
   return {
     app,
     mail,
@@ -74,7 +79,7 @@ export async function stopApp(ctx: TestContext) {
 
 export async function resetState(ctx: TestContext) {
   await ctx.prisma.$executeRaw`
-    truncate table lead_activities, leads, advance_recoveries, payroll_advances, payroll_adjustments, payroll_entries, payroll_cycles, pay_profiles, payroll_settings, payroll_events,
+    truncate table conversation_notes, messages, conversations, contact_consents, message_templates, messaging_channels, lead_activities, leads, advance_recoveries, payroll_advances, payroll_adjustments, payroll_entries, payroll_cycles, pay_profiles, payroll_settings, payroll_events,
       dispense_lines, dispenses, pharmacy_cases, stock_adjustments, receipt_discrepancies, goods_receipt_lines, goods_receipts,
       purchase_order_lines, purchase_orders, stock_reservations, stock_transfer_lines, stock_transfers, stock_request_lines, stock_requests,
       inventory_events, stock_movements, stock_batches, stock_item_suppliers, stock_items, suppliers, stock_locations,

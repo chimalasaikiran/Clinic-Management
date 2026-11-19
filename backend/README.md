@@ -264,6 +264,20 @@ Amounts are stored in whole paise and rates in basis points. CHECK constraints k
 between 1 and 28, an IFSC and four-digit account ending, months as `YYYY-MM`, positive amounts, 1 to 12 instalments, and
 status, decision, processing and payment timestamps in step with each other.
 
+`prisma/migrations/20261120090000_messaging` adds:
+
+| Table | Holds |
+| --- | --- |
+| `messaging_channels` | each organisation's WhatsApp, SMS and email connection: status, non-secret settings, encrypted credentials, the random webhook token, last check and error |
+| `message_templates` | versioned wording with category, channel, language, approval status and the provider's template reference |
+| `contact_consents` | append-only permission per address and channel: granted or withdrawn, how, by whom and when |
+| `conversations` | one per address and channel, optionally linked to a lead or patient and a branch, with status, owner, read state and the last inbound time |
+| `messages` | inbound and outbound messages with the rendered text, template version and parameters, provider id, status, attempts and receipt times |
+| `conversation_notes` | internal notes |
+
+CHECK constraints keep addresses in their channel's format, a connected channel with credentials, and inbound messages
+in the `received` state only.
+
 `prisma/migrations/20261119120000_leads` adds:
 
 | Table | Holds |
@@ -351,6 +365,10 @@ same, so it never reveals whether an email address has an account.
 | `SMTP_URL`, `MAIL_FROM` | production (or EmailJS) | | SMTP delivery; with neither option set, emails print to the console |
 | `TRUST_PROXY` | | `0` | number of proxies in front (set `1` behind a load balancer) |
 | `CLINIC_TIMEZONE` | | `Asia/Kolkata` | IANA zone used for appointment dates, slots and daily queue tokens |
+| `MESSAGING_SECRET_KEY` | to connect channels | | 32 random bytes, base64: encrypts each organisation's WhatsApp, SMS and email credentials. Changing it makes saved credentials unreadable |
+| `MESSAGING_WORKER` | | `true` | Send queued messages from this process |
+| `PUBLIC_API_URL` | for webhooks | | Public https address of this API, shown as the webhook URL (a tunnel in development) |
+| `REALTIME_DATABASE_URL` | | | Neon **direct** connection string, so live inbox updates reach every API instance |
 
 The backend refuses to start with a missing, placeholder or unsafe value and names the variable.
 In production it also requires HTTPS for `APP_URL` and `CORS_ORIGINS`, `COOKIE_SECURE=true`, and EmailJS or SMTP.
@@ -729,6 +747,44 @@ clinic zone (`CLINIC_TIMEZONE`); a lead's `dueState` is `overdue`, `due_today`, 
 | `POST /v1/leads/:id/convert/new-patient` | Registers the patient (the `POST /v1/patients` body plus `leadVersion`, also needs `patients.create`) and converts the lead in the same transaction |
 
 Every change adds an entry to the lead's activity history (who, when, old → new values) and the audit log.
+
+### Messaging (`/v1/messaging`, `/v1/conversations`, `/v1/webhooks`)
+
+WhatsApp (Meta Cloud API), SMS (MSG91 Flow, DLT templates) and email (any SMTP server). Each organisation connects its
+own accounts; the credentials are encrypted with AES-256-GCM using `MESSAGING_SECRET_KEY` and never returned.
+
+| Endpoint | Permission | Does |
+| --- | --- | --- |
+| `GET`, `PUT /v1/messaging/channels/:channel`, `DELETE` | `settings.organisation` | Lists, saves (and checks with the provider) or disconnects WhatsApp, SMS or email. A blank secret keeps the saved one. Shows the webhook address and verify token |
+| `GET`, `POST`, `PATCH /v1/messaging/templates` | read `growth.view`, change `growth.manage` | Versioned templates with `{{variables}}`. Approving a WhatsApp or SMS template needs the provider's template name / ID |
+| `GET`, `POST /v1/messaging/consents` | read `growth.view`, record `growth.leads` or `growth.manage` | Append-only permission per address and channel; the latest entry wins |
+| `GET /v1/conversations`, `GET /:id` | `growth.view` | Inbox and thread. Branch-limited roles see their branches; conversations not yet linked to a branch are for organisation-wide roles |
+| `POST /v1/conversations` | `growth.manage` | Opens (or reuses) the conversation with a lead's or patient's mobile / email on a channel |
+| `PATCH /:id`, `POST /:id/link`, `POST /:id/notes` | `growth.leads` or `growth.manage` | Status, read state and owner; link an unknown contact to a lead or patient; internal notes |
+| `POST /v1/conversations/:id/messages` | `growth.manage` | Queues a message after every check (below) |
+| `GET /v1/messaging/messages`, `POST /:id/retry`, `POST /:id/resolve` | read `growth.view`, act `growth.manage` | Failed and unknown-outcome messages; retry a failed one; record what the provider shows for an unknown one |
+| `GET /v1/messaging/stream?orgId=` | `growth.view` | Server-Sent Events saying which conversation or message changed (no content), for the conversations the person may see |
+| `GET`, `POST /v1/webhooks/whatsapp/:token`, `POST /v1/webhooks/msg91/:token` | none (provider callbacks) | Meta's subscription check, WhatsApp receipts and incoming messages (checked against `X-Hub-Signature-256`), MSG91 delivery reports |
+
+Sending is refused (`422`) when the channel is not connected; the contact opted out (`CONSENT_WITHDRAWN`); a marketing
+template has no recorded permission (`CONSENT_REQUIRED`; a `Reminder` to a patient may instead use their WhatsApp / SMS
+notification setting); the template is not approved or has no provider reference; a variable is empty; or free text
+is used outside a WhatsApp reply (within 24 hours of the contact's last message) or by SMS (`TEMPLATE_REQUIRED`).
+
+Queued messages are sent by a worker in the API process (every 3 seconds; `MESSAGING_WORKER=false` turns it off).
+Rows are claimed with `FOR UPDATE SKIP LOCKED`, so several instances never send one message twice. A temporary
+provider error is retried after 1, 4, 9 and 16 minutes; a rejection fails the message; refused credentials also mark
+the channel as needing attention; a timeout after sending is recorded as *unknown* and never resent until someone
+records the outcome. Receipts only move a message forward (a late "delivered" never undoes "read"). A `STOP` reply
+records an opt-out, `START` an opt-in.
+
+Live updates use Postgres `NOTIFY` / `LISTEN` when `REALTIME_DATABASE_URL` (Neon's direct connection) is set, so
+every API instance hears them; without it they reach the browsers connected to the same instance.
+
+Not done yet: incoming SMS and email, email delivery receipts (SMTP only reports acceptance), and checking MSG91
+credentials before the first send (MSG91 has no read-only check). The MSG91 delivery-report format accepted is
+`requestId` plus `status` (`1` delivered, `2` / `16` failed, `8` submitted, or the words); confirm it against your
+MSG91 webhook settings when connecting.
 
 ### Search (`/v1/search`)
 

@@ -14,6 +14,7 @@ import { HealthModule } from './modules/health/health.module'
 import { InventoryModule } from './modules/inventory/inventory.module'
 import { DashboardModule } from './modules/dashboard/dashboard.module'
 import { LeadsModule } from './modules/leads/leads.module'
+import { MessagingModule } from './modules/messaging/messaging.module'
 import { SearchModule } from './modules/search/search.module'
 import { PayrollModule } from './modules/payroll/payroll.module'
 import { ReportsModule } from './modules/reports/reports.module'
@@ -60,6 +61,7 @@ export class AppModule {
         DashboardModule,
         SearchModule,
         LeadsModule,
+        MessagingModule,
       ],
       providers: [
         // Order matters: authenticate the session first, then check organisation access.

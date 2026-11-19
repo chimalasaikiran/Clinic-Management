@@ -80,6 +80,7 @@ export function configureHttp(app: NestExpressApplication, env: Env, logger: pin
     }),
   )
   app.use(cookieParser())
+  // rawBody (set when the app is created) keeps the exact bytes, so webhook signatures can be checked.
   app.useBodyParser('json', { limit: '100kb' })
   app.use(originCheck(env.CORS_ORIGINS, sessionCookieName(env)))
   app.enableVersioning({ type: VersioningType.URI })
@@ -89,7 +90,7 @@ export function configureHttp(app: NestExpressApplication, env: Env, logger: pin
 
 export async function createApp(env: Env): Promise<INestApplication> {
   const logger = createLogger(env)
-  const app = await NestFactory.create<NestExpressApplication>(AppModule.register(env), { bodyParser: false, logger: nestLogger(logger) })
+  const app = await NestFactory.create<NestExpressApplication>(AppModule.register(env), { bodyParser: false, rawBody: true, logger: nestLogger(logger) })
   return configureHttp(app, env, logger)
 }
 
@@ -99,7 +100,7 @@ export async function createTestApp(env: Env, overrides: Array<{ provide: unknow
   for (const override of overrides) builder = builder.overrideProvider(override.provide).useValue(override.useValue)
   const moduleRef = await builder.compile()
   const logger = createLogger(env)
-  const app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false, logger: nestLogger(logger) })
+  const app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false, rawBody: true, logger: nestLogger(logger) })
   configureHttp(app, env, logger)
   await app.init()
   return app

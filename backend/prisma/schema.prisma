@@ -114,6 +114,12 @@ model User {
   convertedLeads Lead[]         @relation("LeadConvertedBy")
   leadActivities LeadActivity[] @relation("LeadActivityActor")
 
+  updatedChannels   MessagingChannel[] @relation("ChannelUpdatedBy")
+  updatedTemplates  MessageTemplate[]  @relation("TemplateUpdatedBy")
+  recordedConsents  ContactConsent[]   @relation("ConsentRecordedBy")
+  sentMessages      Message[]          @relation("MessageSentBy")
+  conversationNotes ConversationNote[] @relation("ConversationNoteAuthor")
+
   @@map("users")
 }
 
@@ -241,6 +247,12 @@ model Organisation {
   leads          Lead[]
   leadActivities LeadActivity[]
 
+  messagingChannels MessagingChannel[]
+  messageTemplates  MessageTemplate[]
+  contactConsents   ContactConsent[]
+  conversations     Conversation[]
+  messages          Message[]
+
   @@map("organisations")
 }
 
@@ -284,6 +296,7 @@ model Branch {
   stockLocations StockLocation[]
   payrollEntries PayrollEntry[]
   leads          Lead[]
+  conversations  Conversation[]
 
   @@unique([orgId, code])
   @@map("branches")
@@ -316,6 +329,7 @@ model Membership {
   staff          StaffMember?
   ownedLeads     Lead[]           @relation("LeadOwner")
   leadActivities LeadActivity[]   @relation("LeadActivityOwner")
+  conversations  Conversation[]   @relation("ConversationOwner")
 
   @@unique([orgId, userId])
   @@index([userId, status])
@@ -537,6 +551,8 @@ model Patient {
   payments      Payment[]
   refunds       Refund[]
   leads         Lead[]
+  conversations Conversation[]
+  consents      ContactConsent[]
 
   @@unique([orgId, mrn])
   @@index([orgId, mobile])
@@ -2825,13 +2841,15 @@ model Lead {
   createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organisation Organisation   @relation(fields: [orgId], references: [id])
-  branch       Branch         @relation(fields: [branchId], references: [id])
-  owner        Membership     @relation("LeadOwner", fields: [ownerMembershipId], references: [id])
-  patient      Patient?       @relation(fields: [patientId], references: [id], onDelete: Restrict)
-  convertedBy  User?          @relation("LeadConvertedBy", fields: [convertedById], references: [id])
-  createdBy    User           @relation("LeadCreatedBy", fields: [createdById], references: [id])
-  activities   LeadActivity[]
+  organisation  Organisation     @relation(fields: [orgId], references: [id])
+  branch        Branch           @relation(fields: [branchId], references: [id])
+  owner         Membership       @relation("LeadOwner", fields: [ownerMembershipId], references: [id])
+  patient       Patient?         @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  convertedBy   User?            @relation("LeadConvertedBy", fields: [convertedById], references: [id])
+  createdBy     User             @relation("LeadCreatedBy", fields: [createdById], references: [id])
+  activities    LeadActivity[]
+  conversations Conversation[]
+  consents      ContactConsent[]
 
   @@unique([orgId, number])
   @@index([orgId, branchId, stage])
@@ -2864,4 +2882,230 @@ model LeadActivity {
 
   @@index([leadId, occurredAt])
   @@map("lead_activities")
+}
+
+// ─── Growth: messaging ──────────────────────────────────────────────────────
+
+enum MessageChannel {
+  whatsapp
+  sms
+  email
+
+  @@map("message_channel")
+}
+
+enum ChannelStatus {
+  not_connected
+  connected
+  error
+
+  @@map("channel_status")
+}
+
+// One provider connection per channel per organisation: WhatsApp Cloud API, MSG91 or SMTP.
+model MessagingChannel {
+  id           String         @id @default(uuid(7)) @db.Uuid
+  orgId        String         @map("org_id") @db.Uuid
+  channel      MessageChannel
+  status       ChannelStatus  @default(not_connected)
+  // Non-secret settings (phone number id, sender id, SMTP host); shown back to administrators.
+  config       Json           @default("{}")
+  // AES-256-GCM ciphertext of the access token, app secret, auth key or SMTP password. Never returned by the API.
+  secret       String?        @db.Text
+  // Random values the provider echoes back, proving a webhook call is for this channel.
+  webhookToken String         @map("webhook_token") @db.VarChar(64)
+  verifiedAt   DateTime?      @map("verified_at") @db.Timestamptz(6)
+  lastError    String?        @map("last_error") @db.VarChar(500)
+  updatedById  String?        @map("updated_by") @db.Uuid
+  version      Int            @default(1)
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+  updatedBy    User?        @relation("ChannelUpdatedBy", fields: [updatedById], references: [id])
+
+  @@unique([orgId, channel])
+  @@unique([webhookToken])
+  @@map("messaging_channels")
+}
+
+enum TemplateStatus {
+  draft
+  approved
+  retired
+
+  @@map("template_status")
+}
+
+model MessageTemplate {
+  id          String         @id @default(uuid(7)) @db.Uuid
+  orgId       String         @map("org_id") @db.Uuid
+  code        String         @db.VarChar(20)
+  name        String         @db.VarChar(120)
+  category    String         @db.VarChar(40)
+  channel     MessageChannel
+  locale      String         @db.VarChar(10)
+  subject     String?        @db.VarChar(160)
+  body        String         @db.VarChar(2000)
+  status      TemplateStatus @default(draft)
+  // The provider's approved template: WhatsApp template name, or the MSG91 flow / DLT template id.
+  providerRef String?        @map("provider_ref") @db.VarChar(120)
+  version     Int            @default(1)
+  changeNote  String?        @map("change_note") @db.VarChar(500)
+  updatedById String?        @map("updated_by") @db.Uuid
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+  updatedBy    User?        @relation("TemplateUpdatedBy", fields: [updatedById], references: [id])
+  messages     Message[]
+
+  @@unique([orgId, code])
+  @@map("message_templates")
+}
+
+enum ConsentStatus {
+  granted
+  withdrawn
+
+  @@map("consent_status")
+}
+
+// Append-only: the latest entry for an address and channel is the current permission to send marketing.
+model ContactConsent {
+  id           String         @id @default(uuid(7)) @db.Uuid
+  orgId        String         @map("org_id") @db.Uuid
+  channel      MessageChannel
+  // A 10-digit mobile for WhatsApp and SMS, or a lower-cased email address.
+  address      String         @db.VarChar(254)
+  status       ConsentStatus
+  source       String         @db.VarChar(40)
+  note         String?        @db.VarChar(500)
+  leadId       String?        @map("lead_id") @db.Uuid
+  patientId    String?        @map("patient_id") @db.Uuid
+  recordedById String?        @map("recorded_by") @db.Uuid
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+  lead         Lead?        @relation(fields: [leadId], references: [id])
+  patient      Patient?     @relation(fields: [patientId], references: [id])
+  recordedBy   User?        @relation("ConsentRecordedBy", fields: [recordedById], references: [id])
+
+  @@index([orgId, channel, address, createdAt])
+  @@map("contact_consents")
+}
+
+enum ConversationStatus {
+  open
+  resolved
+
+  @@map("conversation_status")
+}
+
+// Every message with one address on one channel. Linked to a lead or patient when staff start it from one, or
+// when someone links it; an enquiry from an unknown number stays unlinked.
+model Conversation {
+  id                String             @id @default(uuid(7)) @db.Uuid
+  orgId             String             @map("org_id") @db.Uuid
+  number            String             @db.VarChar(20)
+  channel           MessageChannel
+  address           String             @db.VarChar(254)
+  branchId          String?            @map("branch_id") @db.Uuid
+  leadId            String?            @map("lead_id") @db.Uuid
+  patientId         String?            @map("patient_id") @db.Uuid
+  status            ConversationStatus @default(open)
+  ownerMembershipId String?            @map("owner_membership_id") @db.Uuid
+  unread            Boolean            @default(false)
+  lastMessageAt     DateTime?          @map("last_message_at") @db.Timestamptz(6)
+  // When the contact last wrote: WhatsApp allows free-text replies for 24 hours after it.
+  lastInboundAt     DateTime?          @map("last_inbound_at") @db.Timestamptz(6)
+  preview           String?            @db.VarChar(160)
+  version           Int                @default(1)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation       @relation(fields: [orgId], references: [id])
+  branch       Branch?            @relation(fields: [branchId], references: [id])
+  lead         Lead?              @relation(fields: [leadId], references: [id])
+  patient      Patient?           @relation(fields: [patientId], references: [id])
+  owner        Membership?        @relation("ConversationOwner", fields: [ownerMembershipId], references: [id])
+  messages     Message[]
+  notes        ConversationNote[]
+
+  @@unique([orgId, channel, address])
+  @@unique([orgId, number])
+  @@index([orgId, lastMessageAt])
+  @@map("conversations")
+}
+
+enum MessageDirection {
+  inbound
+  outbound
+
+  @@map("message_direction")
+}
+
+// queued → sending → sent → delivered → read, or failed. `unknown` means the provider may or may not have
+// accepted it (for example a timeout after sending): it is never resent automatically.
+enum MessageStatus {
+  queued
+  sending
+  sent
+  delivered
+  read
+  failed
+  unknown
+  received
+
+  @@map("message_status")
+}
+
+model Message {
+  id                String           @id @default(uuid(7)) @db.Uuid
+  orgId             String           @map("org_id") @db.Uuid
+  conversationId    String           @map("conversation_id") @db.Uuid
+  direction         MessageDirection
+  status            MessageStatus
+  body              String           @db.VarChar(4000)
+  subject           String?          @db.VarChar(160)
+  templateId        String?          @map("template_id") @db.Uuid
+  templateVersion   Int?             @map("template_version")
+  // Template variable values in order, as sent to the provider.
+  parameters        Json?
+  providerMessageId String?          @map("provider_message_id") @db.VarChar(200)
+  errorCode         String?          @map("error_code") @db.VarChar(80)
+  errorMessage      String?          @map("error_message") @db.VarChar(500)
+  attempts          Int              @default(0)
+  nextAttemptAt     DateTime?        @map("next_attempt_at") @db.Timestamptz(6)
+  sentAt            DateTime?        @map("sent_at") @db.Timestamptz(6)
+  deliveredAt       DateTime?        @map("delivered_at") @db.Timestamptz(6)
+  readAt            DateTime?        @map("read_at") @db.Timestamptz(6)
+  failedAt          DateTime?        @map("failed_at") @db.Timestamptz(6)
+  sentById          String?          @map("sent_by") @db.Uuid
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation     @relation(fields: [orgId], references: [id])
+  conversation Conversation     @relation(fields: [conversationId], references: [id])
+  template     MessageTemplate? @relation(fields: [templateId], references: [id])
+  sentBy       User?            @relation("MessageSentBy", fields: [sentById], references: [id])
+
+  @@unique([orgId, providerMessageId])
+  @@index([conversationId, createdAt])
+  @@index([status, nextAttemptAt])
+  @@map("messages")
+}
+
+// Staff notes on a conversation; never sent to the contact.
+model ConversationNote {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  conversationId String   @map("conversation_id") @db.Uuid
+  text           String   @db.VarChar(2000)
+  authorId       String   @map("author_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+  author       User         @relation("ConversationNoteAuthor", fields: [authorId], references: [id])
+
+  @@index([conversationId, createdAt])
+  @@map("conversation_notes")
 }

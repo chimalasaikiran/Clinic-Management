@@ -49,6 +49,18 @@ const schema = z
 
     TRUST_PROXY: z.coerce.number().int().min(0).default(0),
 
+    // Messaging (Growth). The key encrypts each organisation's WhatsApp, SMS and email credentials: 32 random bytes,
+    // base64. Without it no channel can be connected. The worker sends queued messages; tests turn it off.
+    MESSAGING_SECRET_KEY: z
+      .string()
+      .optional()
+      .refine((value) => !value || Buffer.from(value, 'base64').length === 32, 'must be 32 random bytes, base64-encoded'),
+    MESSAGING_WORKER: bool.default(true),
+    // Where providers reach this API, shown on the Channels screen as the webhook address (an https tunnel in development).
+    PUBLIC_API_URL: z.url().optional(),
+    // Neon's direct (unpooled) connection, used only to LISTEN for live updates from other API instances.
+    REALTIME_DATABASE_URL: postgresUrl.optional(),
+
     // Local time zone of the clinics: appointment slots and dates are shown and generated in this zone.
     CLINIC_TIMEZONE: z
       .string()

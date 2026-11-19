@@ -3,7 +3,7 @@ import { Reflector } from '@nestjs/core'
 import { z } from 'zod'
 import { badRequest, forbidden } from '../../common/errors/app-error'
 import type { AppRequest } from '../../common/utils/request'
-import { ACCESS_KEY, AccessRequirement } from './access.decorators'
+import { ACCESS_KEY, AccessRequirement, ORG_FROM_QUERY_KEY } from './access.decorators'
 import { AccessService } from './access.service'
 
 const orgIdSchema = z.uuid()
@@ -24,7 +24,8 @@ export class AccessGuard implements CanActivate {
     const req = context.switchToHttp().getRequest<AppRequest>()
     if (!req.auth) throw forbidden('PERMISSION_DENIED', 'You do not have access to this.')
 
-    const orgId = orgIdSchema.safeParse(req.get('x-org-id'))
+    const fromQuery = req.method === 'GET' && this.reflector.getAllAndOverride<boolean>(ORG_FROM_QUERY_KEY, [context.getHandler(), context.getClass()])
+    const orgId = orgIdSchema.safeParse(req.get('x-org-id') ?? (fromQuery ? req.query.orgId : undefined))
     if (!orgId.success) throw badRequest('ORG_REQUIRED', 'Choose an organisation first.')
 
     const [membership] = await this.access.forUser(req.auth.userId, orgId.data)
