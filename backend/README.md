@@ -655,6 +655,57 @@ How the measures are worked out:
 - **Utilization** sets the booked length of completed appointments against the therapists' weekly consulting windows at
   the branches in scope, less scheduled leave and blocks, over the days of the period that have passed.
 
+### Dashboard (`/v1/dashboard`)
+
+Needs `dashboard.view`. One clinic-local day across the branches the person's role covers. Each part is included
+only when the person also holds the permission for the records behind it; otherwise it is `null`.
+
+| Method & path | Query / rules |
+| --- | --- |
+| `GET /dashboard` | `date?` (today or one of the 6 days before it; `400 DATE_IN_FUTURE`, `400 DATE_TOO_OLD`), `branchId?` (`403 BRANCH_OUT_OF_SCOPE` outside the role) |
+
+| Part | Permission | What it holds |
+| --- | --- | --- |
+| `appointments` | `bookings.view` | The day's appointments by status (cancelled ones are not counted as scheduled), no-show rate, check-in → start wait, no-shows not yet rebooked, and morning / afternoon sessions split at 14:00 |
+| `collections`, `refunds` | `accounting.payments` | Money received, its digital share and the same weekday a week earlier; refunds processed on the day and refunds awaiting approval |
+| `outstanding` | `accounting.invoices` | Invoice balances now, by payer |
+| `reconciliation` | `accounting.settlements`, organisation-wide role | Statement lines awaiting confirmation and open exceptions |
+| `orders` | `clinical.read` | Results awaiting clinician review, urgent and flagged |
+| `lowStock` | `inventory.view` | Items below the reorder level at a store or the safety level at a pharmacy (the inventory screens' rule) |
+| `team` | `staff.view` | Active staff at the branches and their attendance for the day; whole-day leave counts as leave |
+| `approvals` | `staff.attendance`, `staff.payroll` | Attendance not yet marked; payroll adjustments and advances awaiting a decision |
+| `locations` | as above | Appointments, collections and items needing attention per branch |
+| `activity` | organisation-wide role | The latest operational audit entries (payments, appointments, dispensing, results, attendance and so on) with the names they refer to |
+| `setup` | `settings.organisation` | Configuration steps, each done once its records exist |
+
+### Alerts (`/v1/alerts`)
+
+Open to every member of the organisation; it feeds the header's alerts. `branchId?` narrows it like the dashboard
+(`403 BRANCH_OUT_OF_SCOPE`, `404` for an unknown branch). Only items with something outstanding are listed, each as
+`{ id, count }`, and each needs the same permission as the matching dashboard part. There is no read / unread
+state: an item leaves the list once it is handled.
+
+| Item | Permission | Counts |
+| --- | --- | --- |
+| `waiting` | `bookings.view` | Patients checked in today and not yet called in |
+| `results` | `clinical.read` | Results awaiting review (`urgent` alongside) |
+| `low_stock` | `inventory.view` | Items below their level, by the dashboard's rule |
+| `reconciliation` | `accounting.settlements`, organisation-wide role | Statement lines awaiting confirmation plus open exceptions |
+| `refunds` | `accounting.payments` | Refunds awaiting approval |
+| `attendance` | `staff.attendance` | Active staff without attendance marked today |
+| `payroll` | `staff.payroll` | Payroll adjustments and advances awaiting a decision |
+
+### Search (`/v1/search`)
+
+Open to every member; `q` is 2–100 characters (`400` otherwise). Returns up to 5 of each, newest first; a group
+is `null` when the person may not read those records.
+
+| Group | Permission | Matches on | Scope |
+| --- | --- | --- | --- |
+| `patients` | `patients.view` | Name, MRN, ABHA number, mobile | The member's care scope, as on the patient directory |
+| `appointments` | `bookings.view` | Reference, patient name or MRN | Care scope and branches, as on the schedule |
+| `invoices` | `accounting.invoices` | Reference, patient name or MRN | Organisation-wide, as on the billing pages |
+
 ### Health (no version prefix)
 
 `GET /health/live` answers 200 while the process runs. `GET /health/ready` answers 200 only when Neon is reachable, otherwise 503.
