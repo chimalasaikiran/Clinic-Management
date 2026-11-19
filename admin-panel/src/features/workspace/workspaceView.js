@@ -30,6 +30,7 @@ const ALERTS = {
   refunds: { title: (n) => `${plural(n, 'refund')} awaiting approval`, detail: () => 'Requested refunds that need a decision', to: ROUTES.billingRefunds },
   attendance: { title: (n) => `${plural(n, 'staff member')} without attendance`, detail: () => 'Not yet marked present, late, absent or on leave today', to: ROUTES.staffDirectory },
   payroll: { title: (n) => `${plural(n, 'payroll request')} to decide`, detail: () => 'Adjustments and salary advances', to: ROUTES.payroll },
+  lead_follow_ups: { title: (n) => `${plural(n, 'lead follow-up')} due`, detail: () => 'Overdue or due before the end of today', to: ROUTES.leads },
 }
 
 export function alertItems(alerts) {

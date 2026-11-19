@@ -1,55 +1,7 @@
-import { GROWTH_NOW, GROWTH_TODAY, LEAD_STAGES } from './constants'
+import { GROWTH_TODAY } from './constants'
 
 const stamp = ({ date, time }) => `${date} ${time ?? '00:00'}`
 const matches = (text, query) => !query.trim() || text.toLowerCase().includes(query.trim().toLowerCase())
-
-// ---- Leads ------------------------------------------------------------------------------------------------
-
-export const CLOSED_STAGES = ['Converted', 'Closed']
-
-export function dueState(lead) {
-  if (!lead.due || CLOSED_STAGES.includes(lead.stage)) return 'None'
-  if (stamp(lead.due) < `${GROWTH_TODAY} ${GROWTH_NOW}`) return 'Overdue'
-  return lead.due.date === GROWTH_TODAY ? 'Due today' : 'Upcoming'
-}
-
-export function leadRows(leads, { query = '', stage = '', source = '', campaign = '', owner = '', due = '', sort = 'follow-up' }) {
-  const rows = leads
-    .filter((lead) => (!stage || lead.stage === stage) && (!source || lead.source === source) && (!campaign || lead.campaign === campaign) && (!owner || lead.owner === owner) && (!due || dueState(lead) === due))
-    .filter((lead) => matches(`${lead.name} ${lead.id} ${lead.phone} ${lead.interest}`, query))
-  const byDue = (a, b) => stamp(a.due ?? { date: '9999-12-31' }).localeCompare(stamp(b.due ?? { date: '9999-12-31' }))
-  return rows.sort(sort === 'name' ? (a, b) => a.name.localeCompare(b.name) : sort === 'newest' ? (a, b) => stamp(b.created).localeCompare(stamp(a.created)) : byDue)
-}
-
-export function leadSummary(leads) {
-  const count = (test) => leads.filter(test).length
-  return { new: count((lead) => lead.stage === 'New'), followUpsDue: count((lead) => ['Overdue', 'Due today'].includes(dueState(lead))), overdue: count((lead) => dueState(lead) === 'Overdue'), qualified: count((lead) => lead.stage === 'Qualified'), converted: count((lead) => lead.stage === 'Converted') }
-}
-
-export const pipelineCounts = (leads) => Object.fromEntries(LEAD_STAGES.map((stage) => [stage, leads.filter((lead) => lead.stage === stage).length]))
-
-export function validateLead(values) {
-  const errors = {}
-  if (!values.name.trim()) errors.name = 'Enter the lead’s full name.'
-  const digits = values.phone.replace(/\D/g, '')
-  if (digits.length !== 10) errors.phone = 'Enter a 10-digit phone number.'
-  if (values.email.trim() && !/^\S+@\S+\.\S+$/.test(values.email.trim())) errors.email = 'Enter a valid email address or leave it empty.'
-  if (!values.branch) errors.branch = 'Choose a branch.'
-  if (!values.owner) errors.owner = 'Choose an owner.'
-  return errors
-}
-
-export function validateInteraction(values) {
-  const errors = {}
-  if (!values.outcome) errors.outcome = 'Choose one outcome.'
-  if (!values.notes.trim()) errors.notes = 'Add notes for this interaction.'
-  if (values.decision === 'reschedule') {
-    if (!values.nextAction.trim()) errors.nextAction = 'Describe the next action.'
-    if (!values.nextDate) errors.nextDate = 'Choose the next follow-up date.'
-    if (!values.reason.trim()) errors.reason = 'Give a reschedule reason.'
-  }
-  return errors
-}
 
 // ---- Campaigns, segments, content, workflows ----------------------------------------------------------------
 

@@ -115,6 +115,7 @@ export const PERMISSION_GROUPS = [
     label: 'Growth & communication',
     permissions: [
       { id: 'growth.view', label: 'View leads, campaigns & reviews' },
+      { id: 'growth.leads', label: 'Add leads & record follow-ups' },
       { id: 'growth.manage', label: 'Run campaigns & patient messaging' },
     ],
   },

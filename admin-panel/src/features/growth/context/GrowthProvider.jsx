@@ -2,13 +2,14 @@ import { useCallback, useMemo, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { nextId } from '../../patients/format'
 import {
-  SEED_CAMPAIGNS, SEED_CHANNELS, SEED_CONTENT, SEED_CONTENT_TEMPLATES, SEED_CONVERSATIONS, SEED_ESCALATIONS, SEED_EXECUTIONS, SEED_LEADS, SEED_MESSAGES, SEED_MESSAGE_TEMPLATES,
+  SEED_CAMPAIGNS, SEED_CHANNELS, SEED_CONTENT, SEED_CONTENT_TEMPLATES, SEED_CONVERSATIONS, SEED_ESCALATIONS, SEED_EXECUTIONS, SEED_MESSAGES, SEED_MESSAGE_TEMPLATES,
   SEED_PROFILE, SEED_REVIEW_REQUEST, SEED_REVIEWS, SEED_SCENARIOS, SEED_SEGMENTS, SEED_WORKFLOWS,
 } from '../data/seed'
 import { GrowthContext } from './growthContext'
 
 const SEED = {
-  leads: SEED_LEADS,
+  // Leads live in the API (useLeads); sample campaigns are not linked to any.
+  leads: [],
   campaigns: SEED_CAMPAIGNS,
   segments: SEED_SEGMENTS,
   content: SEED_CONTENT,
@@ -26,8 +27,8 @@ const SEED = {
   reviewRequest: SEED_REVIEW_REQUEST,
 }
 
-// Holds every Growth OS record in memory so a change in one screen shows up in the next.
-// It is replaced by API calls once the CRM, campaign and messaging services exist.
+// Holds the Growth OS sample records (campaigns, content, reviews, messaging, workflows) in memory so a change in
+// one screen shows up in the next. Leads are read from the API instead.
 export default function GrowthProvider({ children }) {
   const [data, setData] = useState(SEED)
 

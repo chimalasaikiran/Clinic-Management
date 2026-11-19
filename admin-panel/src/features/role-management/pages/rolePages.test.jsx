@@ -50,7 +50,7 @@ describe('role management page', () => {
     await openRoles()
 
     expect(screen.getByText('7 roles')).toBeInTheDocument()
-    expect(within(inspector('Branch Manager')).getByText('18/33 permissions enabled')).toBeInTheDocument()
+    expect(within(inspector('Branch Manager')).getByText('18/34 permissions enabled')).toBeInTheDocument()
     expect(fake.api.roles).toHaveBeenCalled()
   })
 
@@ -79,7 +79,7 @@ describe('role management page', () => {
     await user.click(within(panel).getByRole('switch', { name: 'Assign & dispatch therapist' }))
     await user.click(within(panel).getByRole('button', { name: 'Save role changes' }))
 
-    expect(await within(inspector('Front Desk & Reception')).findByText('7/33 permissions enabled')).toBeInTheDocument()
+    expect(await within(inspector('Front Desk & Reception')).findByText('7/34 permissions enabled')).toBeInTheDocument()
     expect(within(inspector('Front Desk & Reception')).queryByRole('switch')).not.toBeInTheDocument()
     expect(fake.api.updateRole).toHaveBeenCalledWith('front-desk', expect.objectContaining({ version: 1, permissions: expect.arrayContaining(['bookings.assign']) }))
   })
@@ -171,14 +171,14 @@ describe('create role page', () => {
     await user.selectOptions(screen.getByLabelText(/Staff category/), 'Physiotherapy')
     await user.click(screen.getByRole('checkbox', { name: 'Main Clinic' }))
     await user.click(screen.getByRole('button', { name: 'Select all Bookings & appointments' }))
-    expect(screen.getByText('6 of 33 permissions selected')).toBeInTheDocument()
+    expect(screen.getByText('6 of 34 permissions selected')).toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: 'View revenue metrics' })).toBeDisabled()
 
     await user.click(screen.getByRole('button', { name: 'Create role' }))
 
     expect(await screen.findByRole('region', { name: 'Clinical Lead inspector' })).toBeInTheDocument()
     expect(router.state.location.pathname).toBe(ROUTES.roles)
-    expect(within(inspector('Clinical Lead')).getByText('6/33 permissions enabled')).toBeInTheDocument()
+    expect(within(inspector('Clinical Lead')).getByText('6/34 permissions enabled')).toBeInTheDocument()
     expect(screen.getByText('8 roles')).toBeInTheDocument()
     expect(fake.api.createRole).toHaveBeenCalledWith(expect.objectContaining({ name: 'Clinical Lead', scope: 'branch', branchIds: ['main'], status: 'active' }))
   })
@@ -226,6 +226,6 @@ describe('create role page', () => {
     await user.click(screen.getByRole('button', { name: 'Duplicate Branch Manager' }))
     expect(screen.getByLabelText(/Role name/)).toHaveValue('Branch Manager (Copy)')
     expect(screen.getByRole('checkbox', { name: 'Kondapur Clinic' })).toBeChecked()
-    expect(screen.getByText('18 of 33 permissions selected')).toBeInTheDocument()
+    expect(screen.getByText('18 of 34 permissions selected')).toBeInTheDocument()
   })
 })

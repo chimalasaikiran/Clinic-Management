@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Landmark, Lock, ShieldCheck } from 'lucide-react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import ActionButton from '../../../components/workspace/ActionButton'
 import { InfoNote, Toggle } from '../../../components/workspace/controls'
 import { SelectInput, TextInput } from '../../../components/workspace/FormControls'
@@ -18,6 +18,8 @@ import PatientNotFound from '../components/PatientNotFound'
 import { KeyValueRows } from '../components/parts'
 import { usePatient } from '../context/usePatient'
 import { usePatientLedger } from '../../billing/usePatientLedger'
+import { leadsApi } from '../../growth/leadsApi'
+import { useLead } from '../../growth/useLeads'
 import { BLOOD_GROUPS, CONSULT_LANGUAGES, INTAKE_UNITS, RELATIONSHIPS, TITLE_PREFIXES } from '../data/patients'
 import { ageFrom, digitsOf, formatDate, formatINR, localToday } from '../format'
 import { validatePatient } from '../validation'
@@ -34,6 +36,25 @@ const formErrors = (error) => Object.fromEntries(Object.entries(error.fieldError
 
 export default function RegisterPatientPage() {
   const { patientId } = useParams()
+  const fromLead = useSearchParams()[0].get('fromLead')
+  if (!patientId && fromLead) return <RegisterFromLead leadId={fromLead} />
+  return <RegisterOrEdit patientId={patientId} />
+}
+
+// Registration opened from a lead's conversion: the lead's details are filled in, and saving converts it.
+function RegisterFromLead({ leadId }) {
+  const { lead, loading, error, reload } = useLead(leadId)
+  if (loading || error) {
+    return (
+      <WorkspacePage>
+        <LoadingState label="Loading lead…" error={error} onRetry={reload} />
+      </WorkspacePage>
+    )
+  }
+  return <PatientForm key={lead.id} lead={lead} />
+}
+
+function RegisterOrEdit({ patientId }) {
   const { patient: editing, loading, refresh } = usePatient()
   if (patientId && loading) {
     return (
@@ -52,9 +73,9 @@ export default function RegisterPatientPage() {
   return <PatientForm key={editing?.id ?? 'new'} editing={editing} refresh={refresh} />
 }
 
-function PatientForm({ editing, refresh }) {
+function PatientForm({ editing, refresh, lead }) {
   const navigate = useNavigate()
-  const [values, setValues] = useState(() => (editing ? formValuesFromPatient(editing.record, BLANK) : BLANK))
+  const [values, setValues] = useState(() => (editing ? formValuesFromPatient(editing.record, BLANK) : lead ? { ...BLANK, fullName: lead.name, mobile: lead.phone, email: lead.email, branchId: lead.branchId } : BLANK))
   const [submitted, setSubmitted] = useState(false)
   const [saving, setSaving] = useState(false)
   const [serverErrors, setServerErrors] = useState({})
@@ -91,7 +112,13 @@ function PatientForm({ editing, refresh }) {
     setSaving(true)
     try {
       const body = patientPayload({ ...values, branchId })
-      const saved = editing ? await patientsApi.update(editing.id, { ...body, version: editing.version }) : await patientsApi.create({ ...body, confirmedNotDuplicate: dismissedMatch === duplicate?.id })
+      const confirmedNotDuplicate = dismissedMatch === duplicate?.id
+      if (lead) {
+        await leadsApi.convertToNewPatient(lead.id, { ...body, confirmedNotDuplicate, leadVersion: lead.version })
+        navigate(pathFor(ROUTES.lead, { leadId: lead.id }))
+        return
+      }
+      const saved = editing ? await patientsApi.update(editing.id, { ...body, version: editing.version }) : await patientsApi.create({ ...body, confirmedNotDuplicate })
       if (editing) await refresh()
       navigate(pathFor(ROUTES.patientHub, { patientId: saved.id }))
     } catch (error) {
@@ -128,6 +155,12 @@ function PatientForm({ editing, refresh }) {
         </InfoNote>
       </div>
 
+      {lead && (
+        <InfoNote tone="brand" icon={Landmark} className="mb-5">
+          <strong className="text-on-surface">Registering from lead {lead.number} · {lead.name}</strong>
+          <br />Saving registers this patient and converts the lead in one step. No appointment is booked.
+        </InfoNote>
+      )}
       <form onSubmit={handleSubmit} noValidate className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="flex flex-col gap-5">
           <FormSection number="01" title="Patient identity" tag="Authoritative Master Identity">

@@ -7,11 +7,7 @@ export const TODAY_LABEL = 'Today · 22 Oct 2026 · IST'
 
 export const OWNERS = ['Meera Shah', 'Priya Nair', 'Arjun Desai', 'Aditi Rao']
 export const LEAD_STAGES = ['New', 'Contacted', 'Qualified', 'Converted', 'Closed']
-export const LEAD_SOURCES = ['Website inquiry', 'Phone inquiry', 'Front desk referral', 'Walk-in']
-export const LEAD_INTERESTS = ['Preventive health screening', 'Dental consultation', 'Health check inquiry', 'Family wellness', 'General consultation']
 export const GROWTH_BRANCHES = ['Jubilee Hills Clinic', 'Banjara Hills Clinic', 'Kondapur Clinic']
-export const INTERACTION_TYPES = ['Phone call', 'WhatsApp message', 'SMS', 'Email', 'In person']
-export const INTERACTION_OUTCOMES = ['Connected', 'No answer', 'Interested', 'Not interested']
 
 export const CAMPAIGN_CHANNELS = ['Paid search / Google Search', 'WhatsApp', 'Phone', 'Email', 'Meta Ads']
 export const CAMPAIGN_STATUSES = ['Draft', 'Scheduled', 'Active', 'Paused']

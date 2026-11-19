@@ -1,22 +1,8 @@
-// Sample Growth OS records standing in for the CRM, campaign, content and messaging APIs.
+// Sample Growth OS records standing in for the campaign, content and messaging APIs. Leads come from the API.
 const at = (date, time) => ({ date, time })
 
-export const SEED_LEADS = [
-  {
-    id: 'LD1048', name: 'Ananya Rao', phone: '90000 00001', email: '', interest: 'Preventive health screening', source: 'Website inquiry', campaignId: 'CMP2041', campaign: 'Google Search campaign', channel: 'Paid search · illustrative',
-    stage: 'Qualified', owner: 'Meera Shah', branch: 'Jubilee Hills Clinic', created: at('2026-10-18', '10:30'), lastActivity: at('2026-10-21', '16:20'), nextAction: 'Call to discuss available slots', due: at('2026-10-21', '16:00'), summary: 'Health check inquiry',
-    activities: [
-      { id: 'a3', at: at('2026-10-21', '16:20'), title: 'Lead qualified', text: 'Qualification event · Meera Shah. Current stage: Qualified. Open follow-up remains overdue.' },
-      { id: 'a2', at: at('2026-10-21', '15:45'), title: 'Call attempted', text: 'Call attempt · Meera Shah. Outcome not captured; no completed follow-up or booking is implied.' },
-      { id: 'a1', at: at('2026-10-18', '10:30'), title: 'Website inquiry received', text: 'Website inquiry for preventive health screening. Google Search campaign recorded; attribution unverified.' },
-    ],
-  },
-  { id: 'LD1049', name: 'Rohan Mehta', phone: '90000 00002', email: '', interest: 'Dental consultation', source: 'Phone inquiry', campaignId: null, campaign: 'Organic', channel: 'Phone', stage: 'New', owner: 'Priya Nair', branch: 'Jubilee Hills Clinic', created: at('2026-10-21', '11:15'), lastActivity: at('2026-10-21', '11:15'), nextAction: 'Confirm preferred appointment time', due: at('2026-10-22', '11:30'), summary: 'Dental consultation', activities: [{ id: 'a1', at: at('2026-10-21', '11:15'), title: 'Phone inquiry received', text: 'Phone inquiry about a dental consultation.' }] },
-  { id: 'LD1050', name: 'Kavya Iyer', phone: '90000 00003', email: '', interest: 'Preventive health screening', source: 'Front desk referral', campaignId: null, campaign: 'Preventive Care campaign', channel: 'Front desk', stage: 'Contacted', owner: 'Meera Shah', branch: 'Jubilee Hills Clinic', created: at('2026-10-21', '15:40'), lastActivity: at('2026-10-21', '15:40'), nextAction: 'Share screening information', due: at('2026-10-22', '14:00'), summary: 'Preventive screening', activities: [{ id: 'a1', at: at('2026-10-21', '15:40'), title: 'Front desk referral', text: 'Referred at the front desk for preventive screening information.' }] },
-]
-
 export const SEED_CAMPAIGNS = [
-  { id: 'CMP2041', name: 'Google Search campaign', objective: 'Preventive health screening inquiries', channel: 'Paid search / Google Search', status: 'Draft', branch: 'Jubilee Hills Clinic', owner: 'Meera Shah', budget: 45000, start: '2026-11-01', end: '2026-11-30', segmentId: 'SEG301', cta: 'Enquire about screening', landing: 'https://example.com/jubilee-hills/screening', headline: 'Plan your preventive health check', updated: '2026-10-21', leadIds: ['LD1048'] },
+  { id: 'CMP2041', name: 'Google Search campaign', objective: 'Preventive health screening inquiries', channel: 'Paid search / Google Search', status: 'Draft', branch: 'Jubilee Hills Clinic', owner: 'Meera Shah', budget: 45000, start: '2026-11-01', end: '2026-11-30', segmentId: 'SEG301', cta: 'Enquire about screening', landing: 'https://example.com/jubilee-hills/screening', headline: 'Plan your preventive health check', updated: '2026-10-21', leadIds: [] },
   { id: 'CMP2042', name: 'Dental care awareness', objective: 'Adult dental care inquiries', channel: 'WhatsApp', status: 'Scheduled', branch: 'Jubilee Hills Clinic', owner: 'Priya Nair', budget: 24000, start: '2026-11-05', end: '2026-11-20', segmentId: 'SEG302', cta: 'Book a dental consultation', landing: 'https://example.com/jubilee-hills/dental', headline: 'Care for your smile', updated: '2026-10-20', leadIds: [] },
   { id: 'CMP2043', name: 'Phone follow-up review', objective: 'Review adult inquiry follow-ups', channel: 'Phone', status: 'Active', branch: 'Jubilee Hills Clinic', owner: 'Meera Shah', budget: 8000, start: '2026-10-15', end: '2026-10-31', segmentId: 'SEG303', cta: 'Call the clinic', landing: 'https://example.com/jubilee-hills/contact', headline: 'We are here to help', updated: '2026-10-19', leadIds: [] },
   { id: 'CMP2044', name: 'Family wellness outreach', objective: 'Adult family wellness inquiries', channel: 'Email', status: 'Paused', branch: 'Jubilee Hills Clinic', owner: 'Arjun Desai', budget: 30000, start: '2026-10-10', end: '2026-10-31', segmentId: 'SEG304', cta: 'Plan a family check', landing: 'https://example.com/jubilee-hills/family', headline: 'Wellness for the whole family', updated: '2026-10-18', leadIds: [] },

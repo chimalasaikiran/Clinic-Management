@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom'
 import WorkspacePage from '../../../components/workspace/WorkspacePage'
 import { GROWTH_BRANCH, TODAY_LABEL } from '../constants'
 
-// Page frame for the Growth OS screens: back link and trail, workflow code, title, return-context card, sample-data note.
-export default function GrowthFrame({ back, crumb, code, title, badge, description, actions, actionNote, context, sample = 'Sample records · Live role and branch permissions are not verified', children }) {
+// Page frame for the Growth OS screens: back link and trail, workflow code, title, return-context card, data-source note.
+export default function GrowthFrame({ back, crumb, code, title, badge, description, actions, actionNote, context, today = TODAY_LABEL, sample = 'Sample records · Live role and branch permissions are not verified', children }) {
   return (
     <WorkspacePage>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -24,7 +24,7 @@ export default function GrowthFrame({ back, crumb, code, title, badge, descripti
         </div>
       </div>
       <div className="mb-4 rounded-md border border-slate-200 bg-white px-4 py-3 text-xs">
-        <p className="flex flex-wrap justify-between gap-2"><strong className="text-[13px]">{context?.[0] ?? `Record branch · ${GROWTH_BRANCH.name} · ${GROWTH_BRANCH.code}`}</strong><span className="text-outline">{TODAY_LABEL}</span></p>
+        <p className="flex flex-wrap justify-between gap-2"><strong className="text-[13px]">{context?.[0] ?? `Record branch · ${GROWTH_BRANCH.name} · ${GROWTH_BRANCH.code}`}</strong><span className="text-outline">{today}</span></p>
         {(context?.slice(1) ?? ['Global shell: All locations (3) · Asia/Kolkata (UTC+05:30)']).map((line) => <p key={line} className="mt-1 text-outline">{line}</p>)}
       </div>
       <p className="mb-6 flex items-center gap-2 rounded-md bg-teal-50 px-4 py-2.5 text-xs text-on-surface-variant"><Info className="size-3.5 shrink-0 text-brand" aria-hidden="true" />{sample}</p>

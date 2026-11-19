@@ -3,40 +3,55 @@ import ActionButton from '../../../components/workspace/ActionButton'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { Section } from '../../../components/workspace/RecordKit'
 import { pathFor, ROUTES } from '../../../config/routes'
+import { useApiResource } from '../../../hooks/useApiResource'
+import { useAuth } from '../../auth/context/useAuth'
 import GrowthFrame, { GrowthFooter } from '../components/GrowthFrame'
-import { LEAD_STAGES } from '../constants'
 import { useGrowth } from '../context/growthContext'
 import { day, TONES, when } from '../format'
-import { dueState, leadRows, pipelineCounts } from '../growthLogic'
+import { leadsApi } from '../leadsApi'
+import { clinicNow, leadSummary, STAGES, toLeadView } from '../leadsView'
+import { useLeadContext } from '../useLeads'
 
 const QUICK = [['Add Lead', ROUTES.leadNew, true], ['Create Campaign', ROUTES.campaignNew], ['Create Content', ROUTES.contentNew], ['Conversations', ROUTES.conversations], ['Reviews', ROUTES.reviews]]
 
+const FOLLOW_UPS = 10
+
 export default function GrowthHomePage() {
   const { data } = useGrowth()
-  const counts = pipelineCounts(data.leads)
-  const followUps = leadRows(data.leads, {}).filter((lead) => dueState(lead) !== 'None')
-  const overdue = followUps.filter((lead) => dueState(lead) === 'Overdue').length
+  const { can } = useAuth()
+  const context = useLeadContext()
+  const branchId = context.branchId || undefined
+  const today = clinicNow().date
+  const monthStart = `${today.slice(0, 8)}01`
+  const open = useApiResource(() => leadsApi.list({ branchId, due: 'open', sort: 'follow-up', pageSize: FOLLOW_UPS }), `home:${branchId}`)
+  const month = useApiResource(() => leadsApi.performance({ branchId, from: monthStart, to: today }), `home-month:${branchId}:${today}`).data
+  const summary = leadSummary(open.data?.meta)
+  const counts = summary.pipeline
+  const followUps = (open.data?.data ?? []).map(toLeadView)
+  const openTotal = open.data?.meta?.total ?? 0
+  const overdue = summary.overdue
+  const quick = QUICK.filter(([label]) => label !== 'Add Lead' || can('growth.leads'))
   const needsAttention = data.reviews.filter((review) => review.rating <= 3 && review.responseState !== 'Response approved')
   const unread = data.conversations.filter((thread) => thread.unread).length
 
   return (
-    <GrowthFrame back={{ to: ROUTES.dashboard, label: 'Back to Owner Panel' }} crumb="Owner Panel / Growth" code="GO-01" title="Growth OS" description="Prioritize inquiries, follow-ups and patient relationships across Aura Health." sample="Sample work items, not clinic records. Live Growth data has not been connected; channel connection states are unverified." context={['Organization / branch · Aura Health · All locations (3)', 'Date range · Month to date · 01–22 Oct 2026']}>
-      <p className="mb-6 flex flex-wrap items-center gap-2 text-xs"><span className="text-[10px] font-semibold tracking-wide text-outline uppercase">Quick actions</span>{QUICK.map(([label, to, primary]) => <ActionButton key={label} to={to} variant={primary ? 'brand' : 'secondary'}>{label}</ActionButton>)}</p>
+    <GrowthFrame back={{ to: ROUTES.dashboard, label: 'Back to Owner Panel' }} crumb="Owner Panel / Growth" code="GO-01" title="Growth OS" description="Prioritize inquiries, follow-ups and patient relationships across Aura Health." sample="Leads and follow-ups are live. Campaigns, conversations, reviews and workflows below are still sample records; channel connection states are unverified." context={[context.line, `Month to date · ${day(monthStart)} – ${day(today)} · Asia/Kolkata`]} today={context.today}>
+      <p className="mb-6 flex flex-wrap items-center gap-2 text-xs"><span className="text-[10px] font-semibold tracking-wide text-outline uppercase">Quick actions</span>{quick.map(([label, to, primary]) => <ActionButton key={label} to={to} variant={primary ? 'brand' : 'secondary'}>{label}</ActionButton>)}</p>
 
       <dl className="mb-2 grid gap-4 sm:grid-cols-4">
-        {[['New Leads', String(counts.New), 'Lead records in the sample'], ['Follow-ups Due', String(followUps.length), `${overdue} overdue`], ['Attributed Appointments', '—', 'Attribution unavailable'], ['Campaign Performance', '—', 'Performance data unavailable']].map(([label, value, hint]) => (
+        {[['New Leads', open.data ? String(counts.New) : '—', 'Leads at the New stage'], ['Follow-ups Due', open.data ? String(summary.followUpsDue) : '—', `${overdue} overdue · due by end of today`], ['Booked After Conversion', month ? String(month.booked) : '—', month ? `${month.converted} converted this month` : 'Loading'], ['Campaign Performance', '—', 'Campaigns are not linked to leads yet']].map(([label, value, hint]) => (
           <div key={label} className="rounded-md border border-slate-200 bg-white p-5"><dt className="text-[13px] font-medium">{label}</dt><dd className="mt-3 text-2xl font-semibold">{value}</dd><p className="mt-2 text-[11px] text-outline">{hint}</p></div>
         ))}
       </dl>
       <p className="mb-6 text-[11px] text-outline">“—” means unavailable, not zero. Comparisons appear only with reliable data for both periods.</p>
 
-      <h2 className="mb-3 flex items-baseline justify-between text-[17px] font-semibold">Lead pipeline <span className="text-xs font-normal text-outline">Counts from the sample leads</span></h2>
+      <h2 className="mb-3 flex items-baseline justify-between text-[17px] font-semibold">Lead pipeline <span className="text-xs font-normal text-outline">All leads in this location</span></h2>
       <div className="mb-6 overflow-hidden rounded-md border border-slate-200 bg-white">
-        <ul className="grid divide-slate-200 sm:grid-cols-5 sm:divide-x">{LEAD_STAGES.map((stage) => <li key={stage} className="p-4"><Link to={`${ROUTES.leads}?stage=${stage}`} className="text-xs hover:underline">{stage} ›</Link><p className="mt-2 text-xl font-semibold">{counts[stage]}</p></li>)}</ul>
+        <ul className="grid divide-slate-200 sm:grid-cols-5 sm:divide-x">{Object.values(STAGES).map((stage) => <li key={stage} className="p-4"><Link to={`${ROUTES.leads}?stage=${stage}`} className="text-xs hover:underline">{stage} ›</Link><p className="mt-2 text-xl font-semibold">{counts[stage]}</p></li>)}</ul>
         <p className="flex justify-between border-t border-slate-200 px-4 py-2.5 text-xs text-outline"><span>Overdue follow-ups: {overdue}</span><span>Priority work below ↓</span></p>
       </div>
 
-      <Section title="Prioritized follow-ups" aside="Overdue first, then next due" className="mb-6">
+      <Section title="Prioritized follow-ups" aside={openTotal > FOLLOW_UPS ? <Link to={ROUTES.leads} className="font-semibold text-brand hover:underline">{openTotal} open · Lead Register ↗</Link> : 'Overdue first, then next due'} className="mb-6">
         <div className="-mx-6 overflow-x-auto"><table className="w-full min-w-[820px] text-left text-xs">
           <thead className="bg-surface-low text-[10px] font-semibold tracking-wide text-on-surface-variant uppercase"><tr>{['Lead / inquiry', 'Source', 'Last contact · IST', 'Next action', 'Due · IST', 'Owner'].map((heading) => <th key={heading} scope="col" className="px-6 py-3">{heading}</th>)}</tr></thead>
           <tbody>{followUps.map((lead) => (
@@ -44,11 +59,11 @@ export default function GrowthHomePage() {
               <td className="px-6 py-4"><Link to={pathFor(ROUTES.lead, { leadId: lead.id })} className="font-semibold text-brand hover:underline">{lead.name} ↗</Link><br /><span className="text-outline">{lead.summary}</span></td>
               <td className="px-6 py-4">{lead.source}</td>
               <td className="px-6 py-4">{when(lead.lastActivity)}</td>
-              <td className="px-6 py-4">{lead.nextAction}<br /><Link to={pathFor(ROUTES.leadFollowUp, { leadId: lead.id })} className="text-[11px] text-brand hover:underline">Record follow-up →</Link></td>
-              <td className="px-6 py-4">{when(lead.due)}<br /><StatusPill tone={TONES[dueState(lead)]} className="mt-1">{dueState(lead)}</StatusPill></td>
+              <td className="px-6 py-4">{lead.nextAction}{can('growth.leads') && <><br /><Link to={pathFor(ROUTES.leadFollowUp, { leadId: lead.id })} className="text-[11px] text-brand hover:underline">Record follow-up →</Link></>}</td>
+              <td className="px-6 py-4">{when(lead.due)}<br /><StatusPill tone={TONES[lead.dueState]} className="mt-1">{lead.dueState}</StatusPill></td>
               <td className="px-6 py-4">{lead.owner}</td>
             </tr>))}</tbody>
-        </table>{followUps.length === 0 && <p className="px-6 py-8 text-center text-sm text-on-surface-variant">No open follow-ups.</p>}</div>
+        </table>{open.data && followUps.length === 0 && <p className="px-6 py-8 text-center text-sm text-on-surface-variant">No open follow-ups.</p>}{open.error && !open.data && <p role="alert" className="px-6 py-8 text-center text-sm text-danger">{open.error.message}</p>}</div>
       </Section>
 
       <Section title="Recent campaigns" aside={<Link to={ROUTES.campaigns} className="font-semibold text-brand hover:underline">Campaign Details ↗</Link>} className="mb-6">

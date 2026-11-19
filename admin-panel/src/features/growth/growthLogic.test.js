@@ -1,48 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { SEED_CONTENT, SEED_ESCALATIONS, SEED_LEADS, SEED_REVIEWS } from './data/seed'
-import { contentRows, dueState, leadRows, leadSummary, monthGrid, pipelineCounts, privacyFindings, renderTemplate, reviewMetrics, reviewRows, shiftMonth, templateVariables, unknownVariables, validateCampaign, validateContent, validateInteraction, validateLead, validateSegment, validateWorkflow } from './growthLogic'
-
-describe('lead follow-ups', () => {
-  it('marks a follow-up overdue, due today or upcoming against the sample day', () => {
-    const [overdue, today] = SEED_LEADS
-    expect(dueState(overdue)).toBe('Overdue')
-    expect(dueState(today)).toBe('Due today')
-    expect(dueState({ stage: 'New', due: { date: '2026-10-30', time: '09:00' } })).toBe('Upcoming')
-  })
-
-  it('ignores the follow-up of a converted or closed lead', () => {
-    expect(dueState({ ...SEED_LEADS[0], stage: 'Converted' })).toBe('None')
-    expect(dueState({ ...SEED_LEADS[0], stage: 'Closed' })).toBe('None')
-    expect(dueState({ ...SEED_LEADS[0], due: null })).toBe('None')
-  })
-
-  it('sorts by the next follow-up and filters by stage, owner and due state', () => {
-    expect(leadRows(SEED_LEADS, {}).map((lead) => lead.id)).toEqual(['LD1048', 'LD1049', 'LD1050'])
-    expect(leadRows(SEED_LEADS, { stage: 'Qualified' }).map((lead) => lead.id)).toEqual(['LD1048'])
-    expect(leadRows(SEED_LEADS, { owner: 'Priya Nair' }).map((lead) => lead.id)).toEqual(['LD1049'])
-    expect(leadRows(SEED_LEADS, { due: 'Due today' }).map((lead) => lead.id)).toEqual(['LD1049', 'LD1050'])
-    expect(leadRows(SEED_LEADS, { query: 'dental' }).map((lead) => lead.id)).toEqual(['LD1049'])
-    expect(leadRows(SEED_LEADS, { sort: 'name' }).map((lead) => lead.name)).toEqual(['Ananya Rao', 'Kavya Iyer', 'Rohan Mehta'])
-  })
-
-  it('summarises the pipeline from the lead records', () => {
-    expect(leadSummary(SEED_LEADS)).toEqual({ new: 1, followUpsDue: 3, overdue: 1, qualified: 1, converted: 0 })
-    expect(pipelineCounts(SEED_LEADS)).toEqual({ New: 1, Contacted: 1, Qualified: 1, Converted: 0, Closed: 0 })
-  })
-})
+import { SEED_CONTENT, SEED_ESCALATIONS, SEED_REVIEWS } from './data/seed'
+import { contentRows, monthGrid, privacyFindings, renderTemplate, reviewMetrics, reviewRows, shiftMonth, templateVariables, unknownVariables, validateCampaign, validateContent, validateSegment, validateWorkflow } from './growthLogic'
 
 describe('validation', () => {
-  it('requires a name, a 10-digit phone, a branch and an owner for a lead', () => {
-    expect(validateLead({ name: '', phone: '123', email: 'x', branch: '', owner: '' })).toEqual({ name: expect.any(String), phone: expect.any(String), email: expect.any(String), branch: expect.any(String), owner: expect.any(String) })
-    expect(validateLead({ name: 'Nisha Menon', phone: '90000 00004', email: '', branch: 'Jubilee Hills Clinic', owner: 'Meera Shah' })).toEqual({})
-  })
-
-  it('requires an outcome and notes, and a date and reason only when rescheduling', () => {
-    expect(validateInteraction({ outcome: '', notes: '', decision: 'keep' })).toEqual({ outcome: expect.any(String), notes: expect.any(String) })
-    expect(Object.keys(validateInteraction({ outcome: 'Connected', notes: 'Spoke', decision: 'reschedule', nextAction: '', nextDate: '', reason: '' }))).toEqual(['nextAction', 'nextDate', 'reason'])
-    expect(validateInteraction({ outcome: 'Connected', notes: 'Spoke', decision: 'complete' })).toEqual({})
-  })
-
   it('checks a campaign for a positive budget, ordered dates and an https landing page', () => {
     const valid = { name: 'Campaign', objective: 'Objective', budget: '48000', start: '2026-11-01', end: '2026-11-30', cta: 'Enquire', landing: 'https://example.com/page' }
     expect(validateCampaign(valid)).toEqual({})
