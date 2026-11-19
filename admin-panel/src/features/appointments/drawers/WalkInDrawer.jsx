@@ -47,14 +47,14 @@ export default function WalkInDrawer({ date, branchId, branchName, columns, wait
     const next = { ...form, option }
     if (option === 'queue') set('option', 'queue')
     if (Object.keys(validateWalkIn(next, { hasSlot: Boolean(freeSlot) })).length) return
-    onCreate({ ...next, slot: option === 'slot' ? freeSlot : undefined, patient })
+    onCreate({ ...next, slot: option === 'slot' ? freeSlot : undefined, patient, emergency: Boolean(preset?.emergency) })
   }
 
   return (
     <Drawer
       open
       onClose={onClose}
-      eyebrow="Reception walk-in"
+      eyebrow={preset?.emergency ? 'Emergency intake' : 'Reception walk-in'}
       title="Add Walk-In Patient"
       description="Allocate the next free slot with a therapist or place the patient in the live OPD arrival queue."
       width="max-w-2xl"
@@ -70,7 +70,7 @@ export default function WalkInDrawer({ date, branchId, branchName, columns, wait
     >
       <div className="flex flex-col gap-5 p-5">
         <p className="flex flex-wrap gap-2 text-[11px]">
-          <StatusPill>{branchName}</StatusPill><StatusPill>{formatLongDate(date)}</StatusPill><StatusPill tone="success" dot>{formatTime(localClock())}</StatusPill>
+          {preset?.emergency && <StatusPill tone="danger">Emergency · booked into the earliest free slot</StatusPill>}<StatusPill>{branchName}</StatusPill><StatusPill>{formatLongDate(date)}</StatusPill><StatusPill tone="success" dot>{formatTime(localClock())}</StatusPill>
         </p>
 
         <section className="rounded-md border border-slate-200 p-4">

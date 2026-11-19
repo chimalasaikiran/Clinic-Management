@@ -1,15 +1,26 @@
 import { dashboardIcons as icons } from '../../../../assets/icons/dashboard'
 
-function FilterButton({ icon, children }) {
+// Looks like the filter buttons of the design; a native select laid over it does the choosing.
+function FilterSelect({ icon, value, options, onChange, name }) {
+  const current = options.find((option) => option.value === value) ?? options[0]
   return (
-    <button
-      type="button"
-      className="flex items-center gap-1.5 rounded border border-slate-200 bg-white px-[13px] py-[7px] text-xs leading-4 font-medium text-slate-700 shadow-[0_1px_1px_rgba(0,0,0,0.05)] transition-colors hover:bg-slate-50"
-    >
+    <label className="relative flex items-center gap-1.5 rounded border border-slate-200 bg-white px-[13px] py-[7px] text-xs leading-4 font-medium text-slate-700 shadow-[0_1px_1px_rgba(0,0,0,0.05)] transition-colors focus-within:ring-2 focus-within:ring-brand/30 hover:bg-slate-50">
       <img src={icon} alt="" />
-      {children}
+      {current?.label}
       <img src={icons.filterChevron} alt="" />
-    </button>
+      <select
+        aria-label={name}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="absolute inset-0 cursor-pointer opacity-0"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
   )
 }
 
@@ -34,13 +45,13 @@ export default function PageHeader({ meta }) {
 
       <div className="flex flex-col items-start gap-3">
         <div className="flex flex-wrap gap-3">
-          <FilterButton icon={icons.filterLocation}>{meta.locationFilter}</FilterButton>
-          <FilterButton icon={icons.calendar}>{meta.dateFilter}</FilterButton>
+          <FilterSelect icon={icons.filterLocation} name="Location" {...meta.location} />
+          <FilterSelect icon={icons.calendar} name="Day" {...meta.day} />
         </div>
         <div className="flex items-center gap-1 rounded border border-slate-200 bg-slate-100 px-[11px] py-[7px] text-xs leading-4 text-slate-500">
           <img src={icons.sync} alt="" />
-          {meta.lastSynced}
-          <button type="button" aria-label="Refresh data" className="ml-1 p-0.5">
+          <span aria-live="polite">{meta.lastSynced}</span>
+          <button type="button" aria-label="Refresh data" onClick={meta.onRefresh} disabled={meta.refreshing} className="ml-1 p-0.5 disabled:animate-spin">
             <img src={icons.refresh} alt="" />
           </button>
         </div>

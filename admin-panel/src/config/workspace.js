@@ -1,15 +1,6 @@
 import { dashboardIcons as icons } from '../assets/icons/dashboard'
 import { ROUTES } from './routes'
 
-export const OWNER = {
-  name: 'Dr. Siddharth Verma',
-  role: 'Owner · Medical Director',
-}
-
-export const LOCATION_FILTER = 'All locations (3)'
-
-export const SIDEBAR_BRANCH = { name: 'Aura Health', scope: 'Single Location', uptime: '99.98%' }
-
 // `to` is the page a nav entry opens; `match` is the path prefix that keeps it highlighted.
 export const NAV_ITEMS = [
   { id: 'overview', label: 'Overview', icon: icons.navOverview, to: ROUTES.dashboard, match: ROUTES.dashboard },

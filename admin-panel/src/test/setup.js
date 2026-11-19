@@ -3,9 +3,11 @@ import { cleanup, configure } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
 import { createBillingApi } from './fixtures/billingApi'
 import { billingFake } from './fixtures/billingFake'
+import { createDashboardApi } from './fixtures/dashboardApi'
 import { createInventoryApi } from './fixtures/inventoryApi'
 import { createPayrollApi } from './fixtures/payrollApi'
 import { createReportsApi } from './fixtures/reportsApi'
+import { createWorkspaceApi } from './fixtures/workspaceApi'
 
 // The suite renders whole pages in parallel workers; under full load a first API-backed render can take several
 // seconds, so async queries wait up to 15s (they still return as soon as the element appears).
@@ -26,6 +28,14 @@ vi.mock('../features/reports/api', () => ({
   reportsApi: new Proxy({}, { get: (_, method) => (...args) => billingFake.reports.api[method](...args) }),
 }))
 
+vi.mock('../features/dashboard/api', () => ({
+  dashboardApi: new Proxy({}, { get: (_, method) => (...args) => billingFake.dashboard.api[method](...args) }),
+}))
+
+vi.mock('../features/workspace/api', () => ({
+  workspaceApi: new Proxy({}, { get: (_, method) => (...args) => billingFake.workspace.api[method](...args) }),
+}))
+
 vi.mock('../features/payroll/api', () => ({
   payrollApi: new Proxy({}, { get: (_, method) => (...args) => billingFake.payroll.api[method](...args) }),
 }))
@@ -35,6 +45,8 @@ beforeEach(() => {
   billingFake.useInventory(createInventoryApi())
   billingFake.usePayroll(createPayrollApi())
   billingFake.useReports(createReportsApi())
+  billingFake.useDashboard(createDashboardApi())
+  billingFake.useWorkspace(createWorkspaceApi())
   localStorage.clear()
 })
 

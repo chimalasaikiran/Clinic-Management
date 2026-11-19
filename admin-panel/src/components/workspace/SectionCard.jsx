@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { dashboardIcons as icons } from '../../assets/icons/dashboard'
 import { cn } from '../../lib/cn'
 
@@ -33,17 +34,18 @@ export function CardHeader({ icon, title, subtitle, aside, bordered = true, clas
   )
 }
 
-export function CardLink({ children, className }) {
-  return (
-    <button
-      type="button"
-      className={cn(
-        'inline-flex items-center gap-0.5 text-xs leading-4 font-semibold text-brand transition-opacity hover:opacity-80',
-        className,
-      )}
-    >
+// A teal "View …" link in a card header. With `to` it navigates; without, it is a plain button.
+export function CardLink({ children, className, to }) {
+  const classes = cn(
+    'inline-flex items-center gap-0.5 text-xs leading-4 font-semibold text-brand transition-opacity hover:opacity-80',
+    className,
+  )
+  const content = (
+    <>
       {children}
       <img src={icons.arrowTeal} alt="" />
-    </button>
+    </>
   )
+  if (to) return <Link to={to} className={classes}>{content}</Link>
+  return <button type="button" className={classes}>{content}</button>
 }

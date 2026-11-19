@@ -1,6 +1,7 @@
+import { Link } from 'react-router-dom'
 import { dashboardIcons as icons } from '../../../../assets/icons/dashboard'
 import { cn } from '../../../../lib/cn'
-import { CardLink, SectionCard } from '../../../../components/workspace/SectionCard'
+import { SectionCard } from '../../../../components/workspace/SectionCard'
 
 const TONES = {
   amber: { box: 'border-amber-200 bg-amber-50', badge: 'border-amber-200 bg-amber-50 text-amber-800' },
@@ -28,8 +29,8 @@ function AttentionRow({ item }) {
           <p className="text-[11px] leading-[16.5px] text-slate-500">{item.description}</p>
         </div>
       </div>
-      <button
-        type="button"
+      <Link
+        to={item.to}
         className={cn(
           'flex shrink-0 items-center gap-1 rounded-sm px-3 py-1 text-xs leading-4 font-medium transition-opacity hover:opacity-90',
           item.primary ? 'bg-black text-white' : 'border border-slate-300 bg-white px-[13px] py-[5px] text-slate-800',
@@ -37,7 +38,7 @@ function AttentionRow({ item }) {
       >
         {item.action}
         <img src={item.primary ? icons.arrowWhite : icons.arrowDark} alt="" />
-      </button>
+      </Link>
     </li>
   )
 }
@@ -54,16 +55,16 @@ export default function NeedsAttention({ items }) {
             </h2>
           </div>
           <span className="rounded-xl border border-rose-200 bg-rose-50 px-[9px] py-[3px] text-xs leading-4 font-semibold text-rose-800">
-            {items.length} items requiring action
+            {items.length} {items.length === 1 ? 'item' : 'items'} requiring action
           </span>
         </div>
-        <CardLink>Operational Exceptions Log</CardLink>
       </div>
       <p className="text-xs leading-4 text-slate-500">Items that may need your attention today.</p>
       <ul className="border-t border-slate-100 pt-1.5">
         {items.map((item) => (
           <AttentionRow key={item.id} item={item} />
         ))}
+        {items.length === 0 && <li className="py-2.5 text-[11px] leading-[16.5px] text-slate-500">Nothing needs your attention right now.</li>}
       </ul>
     </SectionCard>
   )

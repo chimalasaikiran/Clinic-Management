@@ -1,8 +1,18 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { dashboardIcons as icons } from '../../assets/icons/dashboard'
-import { LOCATION_FILTER } from '../../config/workspace'
+import { ROUTES } from '../../config/routes'
 import { useAuth } from '../../features/auth/context/useAuth'
+import { workspaceApi } from '../../features/workspace/api'
+import { useWorkspace } from '../../features/workspace/useWorkspace'
+import { alertItems, locationOptions, searchGroups } from '../../features/workspace/workspaceView'
+import { useApiResource } from '../../hooks/useApiResource'
 import Avatar from './Avatar'
+
+const SEARCH_DELAY_MS = 250
+const SEARCH_PERMISSIONS = ['patients.view', 'bookings.view', 'accounting.invoices']
+const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform ?? '')
+const SHORTCUT = IS_MAC ? '⌘K' : 'Ctrl K'
 
 const initialsOf = (name) =>
   name
@@ -12,25 +22,33 @@ const initialsOf = (name) =>
     .map((part) => part[0].toUpperCase())
     .join('')
 
+// Closes a menu on a click outside `ref` or on Escape.
+function useDismiss(ref, open, close) {
+  const onClose = useRef(close)
+  useEffect(() => {
+    onClose.current = close
+  })
+  useEffect(() => {
+    if (!open) return undefined
+    const onEvent = (event) => {
+      if (event.type === 'keydown' ? event.key === 'Escape' : !ref.current?.contains(event.target)) onClose.current()
+    }
+    document.addEventListener('mousedown', onEvent)
+    document.addEventListener('keydown', onEvent)
+    return () => {
+      document.removeEventListener('mousedown', onEvent)
+      document.removeEventListener('keydown', onEvent)
+    }
+  }, [ref, open])
+}
+
 function ProfileMenu() {
   const { user, organisation, signOut } = useAuth()
   const [open, setOpen] = useState(false)
   const [failure, setFailure] = useState('')
   const ref = useRef(null)
   const roleLabel = organisation?.roles.map((role) => role.name).join(', ') || 'No role assigned'
-
-  useEffect(() => {
-    if (!open) return undefined
-    const close = (event) => {
-      if (event.type === 'keydown' ? event.key === 'Escape' : !ref.current?.contains(event.target)) setOpen(false)
-    }
-    document.addEventListener('mousedown', close)
-    document.addEventListener('keydown', close)
-    return () => {
-      document.removeEventListener('mousedown', close)
-      document.removeEventListener('keydown', close)
-    }
-  }, [open])
+  useDismiss(ref, open, () => setOpen(false))
 
   const signOutEverywhere = async () => {
     setFailure('')
@@ -100,7 +118,217 @@ function IconButton({ label, children, ...props }) {
   )
 }
 
+// The branch the workspace is working in. The styled button stays as designed; a native select laid over it
+// does the choosing, so it works with the keyboard and screen readers.
+function LocationFilter() {
+  const { organisation } = useAuth()
+  const { branches, branchesLoaded, branchId, setBranchId } = useWorkspace()
+  const options = locationOptions(branches, organisation?.branchScope)
+  const label = !branchesLoaded ? 'Loading locations…' : (options.find((option) => option.value === branchId)?.label ?? options[0]?.label ?? 'No locations')
+
+  return (
+    <div className="relative hidden shrink-0 md:flex">
+      <span className="flex items-center gap-1.5 rounded border border-outline-variant/50 bg-surface-low px-[13px] py-[7px] text-xs leading-4 font-semibold text-on-surface">
+        <img src={icons.location} alt="" />
+        {label}
+        <img src={icons.chevronDown} alt="" />
+      </span>
+      <select
+        aria-label="Working location"
+        value={branchId}
+        disabled={!branchesLoaded || options.length < 2}
+        onChange={(event) => setBranchId(event.target.value)}
+        className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-default"
+      >
+        {options.map((option) => (
+          <option key={option.value || 'all'} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
+// Finds patients, appointments and invoices from anywhere in the workspace; ⌘K / Ctrl K jumps here.
+function SearchBox() {
+  const navigate = useNavigate()
+  const listId = useId()
+  const inputRef = useRef(null)
+  const ref = useRef(null)
+  const [text, setText] = useState('')
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(0)
+  useDismiss(ref, open, () => setOpen(false))
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setQuery(text.trim())
+      setActive(0)
+    }, SEARCH_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [text])
+
+  useEffect(() => {
+    const onKey = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        inputRef.current?.focus()
+        setOpen(true)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
+
+  const ready = query.length >= 2
+  const results = useApiResource(() => (ready ? workspaceApi.search(query) : Promise.resolve(null)), `search:${query}`)
+  const settled = ready && query === text.trim() && !results.loading
+  const groups = settled && results.data?.query === query ? searchGroups(results.data) : []
+  const items = groups.flatMap((group) => group.items)
+  const shown = open && text.trim().length >= 2
+  const current = Math.min(active, Math.max(items.length - 1, 0))
+
+  const go = (item) => {
+    setOpen(false)
+    setText('')
+    navigate(item.to)
+  }
+
+  const onKeyDown = (event) => {
+    if (!items.length) return
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      setOpen(true)
+      setActive((current + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length)
+    } else if (event.key === 'Enter' && shown) {
+      event.preventDefault()
+      go(items[current])
+    }
+  }
+
+  let status = null
+  if (shown && !settled) status = 'Searching…'
+  else if (shown && results.error) status = results.error.message
+  else if (shown && !items.length) status = `No patients, appointments or invoices match “${query}”.`
+
+  return (
+    <div ref={ref} className="relative hidden max-w-md min-w-0 flex-1 sm:block">
+      <img src={icons.search} alt="" className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2" />
+      <input
+        ref={inputRef}
+        type="search"
+        role="combobox"
+        aria-label="Search"
+        aria-expanded={shown && items.length > 0}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        aria-activedescendant={shown && items.length ? `${listId}-${current}` : undefined}
+        placeholder={`Search patients, appointments, invoices... (${SHORTCUT})`}
+        value={text}
+        onChange={(event) => {
+          setText(event.target.value)
+          setOpen(true)
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={onKeyDown}
+        className="w-full rounded border border-outline-variant/60 bg-surface-lowest py-[7px] pr-[49px] pl-[37px] text-xs font-medium tracking-[0.12px] text-on-surface outline-none placeholder:text-outline focus:border-brand focus:ring-2 focus:ring-brand/15"
+      />
+      <kbd className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 rounded-sm border border-outline-variant bg-surface-high px-[7px] py-[3px] font-inter text-[10px] leading-[15px] font-bold text-outline">
+        {SHORTCUT}
+      </kbd>
+
+      {shown && (
+        <div className="absolute inset-x-0 z-30 mt-2 max-h-[70vh] overflow-y-auto rounded-xl border border-outline-variant/60 bg-white p-2 text-xs shadow-lg">
+          {status && (
+            <p role="status" className="px-2 py-2 text-on-surface-variant">
+              {status}
+            </p>
+          )}
+          <ul id={listId} role="listbox" aria-label="Search results">
+            {!status &&
+              groups.map((group) => (
+                <li key={group.id} role="presentation" className="mb-1">
+                  <p className="px-2 pt-1 pb-1 text-[10px] font-semibold tracking-[0.6px] text-outline uppercase">{group.label}</p>
+                  <ul role="group" aria-label={group.label}>
+                    {group.items.map((item) => {
+                      const index = items.indexOf(item)
+                      return (
+                        <li
+                          key={item.key}
+                          id={`${listId}-${index}`}
+                          role="option"
+                          aria-selected={index === current}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => go(item)}
+                          onMouseEnter={() => setActive(index)}
+                          className={`cursor-pointer rounded px-2 py-2 ${index === current ? 'bg-surface-low' : ''}`}
+                        >
+                          <p className="font-semibold text-on-surface">{item.title}</p>
+                          <p className="text-outline">{item.detail}</p>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Open items the person can act on (from /v1/alerts), each linking to where it is handled.
+function AlertsMenu() {
+  const { alerts } = useWorkspace()
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  useDismiss(ref, open, () => setOpen(false))
+  const items = alertItems(alerts)
+  const label = items.length ? `Alerts (${items.length} need${items.length === 1 ? 's' : ''} attention)` : 'Alerts'
+
+  return (
+    <div ref={ref} className="relative">
+      <IconButton label={label} aria-haspopup="true" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+        <img src={icons.bell} alt="" />
+        {items.length > 0 && (
+          <span className="absolute top-1.5 right-1.5 flex size-4 items-center justify-center rounded-xl bg-danger text-[10px] leading-[15px] font-bold text-white ring-2 ring-white">
+            {items.length > 9 ? '9+' : items.length}
+          </span>
+        )}
+      </IconButton>
+
+      {open && (
+        <div role="region" aria-label="Alerts" className="absolute right-0 z-30 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-outline-variant/60 bg-white p-2 text-xs shadow-lg">
+          <p className="border-b border-outline-variant/50 px-2 pt-1 pb-2 font-semibold text-on-surface">Needs your attention</p>
+          {!alerts ? (
+            <p className="px-2 py-3 text-on-surface-variant">Checking for open items…</p>
+          ) : items.length === 0 ? (
+            <p className="px-2 py-3 text-on-surface-variant">Nothing needs your attention right now.</p>
+          ) : (
+            <ul className="mt-1 flex flex-col">
+              {items.map((item) => (
+                <li key={item.id}>
+                  <Link to={item.to} onClick={() => setOpen(false)} className="block rounded px-2 py-2 hover:bg-surface-low">
+                    <span className="block font-semibold text-on-surface">{item.title}</span>
+                    <span className="block text-outline">{item.detail}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function WorkspaceHeader({ onMenuClick }) {
+  const { can, canAny } = useAuth()
+  const intake = can('bookings.view') && can('bookings.create')
+
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-4 border-b border-outline-variant/60 bg-white/90 px-4 font-inter shadow-sm backdrop-blur-[6px] lg:px-8">
       <div className="flex min-w-0 flex-1 items-center gap-4">
@@ -115,49 +343,24 @@ export default function WorkspaceHeader({ onMenuClick }) {
           <span className="h-0.5 w-4 rounded bg-on-surface" />
         </button>
 
-        <button
-          type="button"
-          className="hidden shrink-0 items-center gap-1.5 rounded border border-outline-variant/50 bg-surface-low px-[13px] py-[7px] text-xs leading-4 font-semibold text-on-surface md:flex"
-        >
-          <img src={icons.location} alt="" />
-          {LOCATION_FILTER}
-          <img src={icons.chevronDown} alt="" />
-        </button>
-
-        <div className="relative hidden max-w-md min-w-0 flex-1 sm:block">
-          <img src={icons.search} alt="" className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2" />
-          <input
-            type="search"
-            aria-label="Search"
-            placeholder="Search patients, appointments, invoices... (⌘K)"
-            className="w-full rounded border border-outline-variant/60 bg-surface-lowest py-[7px] pr-[49px] pl-[37px] text-xs font-medium tracking-[0.12px] text-on-surface outline-none placeholder:text-outline focus:border-brand focus:ring-2 focus:ring-brand/15"
-          />
-          <kbd className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 rounded-sm border border-outline-variant bg-surface-high px-[7px] py-[3px] font-inter text-[10px] leading-[15px] font-bold text-outline">
-            ⌘K
-          </kbd>
-        </div>
+        <LocationFilter />
+        {canAny(SEARCH_PERMISSIONS) && <SearchBox />}
       </div>
 
       <div className="flex shrink-0 items-center gap-3">
-        <IconButton label="Notifications (3 unread)">
-          <img src={icons.bell} alt="" />
-          <span className="absolute top-1.5 right-1.5 flex size-4 items-center justify-center rounded-xl bg-danger text-[10px] leading-[15px] font-bold text-white ring-2 ring-white">
-            3
-          </span>
-        </IconButton>
-        <span className="hidden sm:block">
-          <IconButton label="Help documentation">
-            <img src={icons.help} alt="" />
-          </IconButton>
-        </span>
-        <span className="hidden h-6 w-px bg-outline-variant/60 sm:block" aria-hidden="true" />
-        <button
-          type="button"
-          className="hidden items-center gap-1.5 rounded border border-red-200 px-[13px] py-[7px] text-xs leading-4 font-semibold text-danger transition-colors hover:bg-red-50 md:flex"
-        >
-          <img src={icons.emergency} alt="" />
-          Emergency Intake
-        </button>
+        <AlertsMenu />
+        {intake && (
+          <>
+            <span className="hidden h-6 w-px bg-outline-variant/60 sm:block" aria-hidden="true" />
+            <Link
+              to={`${ROUTES.appointments}?walkIn=emergency`}
+              className="hidden items-center gap-1.5 rounded border border-red-200 px-[13px] py-[7px] text-xs leading-4 font-semibold text-danger transition-colors hover:bg-red-50 md:flex"
+            >
+              <img src={icons.emergency} alt="" />
+              Emergency Intake
+            </Link>
+          </>
+        )}
         <ProfileMenu />
       </div>
     </header>

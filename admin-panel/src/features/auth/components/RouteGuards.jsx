@@ -4,6 +4,7 @@ import { ROUTES } from '../../../config/routes'
 import { useAuth } from '../context/useAuth'
 import { landingPath } from '../landing'
 import AccessDeniedPage from '../pages/AccessDeniedPage'
+import WorkspaceProvider from '../../workspace/WorkspaceProvider'
 import AuthStatusScreen from './AuthStatusScreen'
 
 // Loading, failed and misconfigured sessions look the same behind every guard.
@@ -40,8 +41,8 @@ export function RequireWorkspace() {
   if (auth.status === 'signedOut') return signInRedirect(location)
   if (auth.status === 'unverified') return <Navigate to={ROUTES.verify} replace state={{ email: auth.user.email }} />
   if (auth.status === 'noOrganisation') return <Navigate to={ROUTES.clinic} replace />
-  if (!canOpen(location.pathname, auth.can)) return <AccessDeniedPage />
-  return <Outlet />
+  // The provider stays mounted while moving between workspace pages, so the branch, alerts and health carry over.
+  return <WorkspaceProvider>{canOpen(location.pathname, auth.can) ? <Outlet /> : <AccessDeniedPage />}</WorkspaceProvider>
 }
 
 // Sign-in and sign-up: someone already signed in goes straight to where they belong.

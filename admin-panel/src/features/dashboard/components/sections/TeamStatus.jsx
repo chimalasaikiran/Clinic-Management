@@ -1,12 +1,14 @@
+import { Link } from 'react-router-dom'
 import { dashboardIcons as icons } from '../../../../assets/icons/dashboard'
 import { cn } from '../../../../lib/cn'
+import { ROUTES } from '../../../../config/routes'
 import { CardHeader, CardLink, SectionCard } from '../../../../components/workspace/SectionCard'
 
 export default function TeamStatus({ team }) {
   return (
     <SectionCard aria-labelledby="team-status" className="flex flex-col justify-between gap-4">
       <div className="flex flex-col gap-3.5">
-        <CardHeader icon={icons.team} title="Team status" aside={<CardLink>View staff</CardLink>} />
+        <CardHeader icon={icons.team} title="Team status" aside={<CardLink to={ROUTES.staffDirectory}>View staff</CardLink>} />
 
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -26,20 +28,20 @@ export default function TeamStatus({ team }) {
               <span
                 key={group.label}
                 className={cn('h-full', group.barClass)}
-                style={{ width: `${(group.count / team.total) * 100}%` }}
+                style={{ width: `${team.total ? (group.count / team.total) * 100 : 0}%` }}
               />
             ))}
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-200 bg-amber-50/80 p-[11px]">
+          {team.alert && <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-200 bg-amber-50/80 p-[11px]">
             <span className="flex items-center gap-2 text-xs leading-4 font-medium text-amber-900">
               <img src={icons.warning} alt="" />
               {team.alert}
             </span>
-            <button type="button" className="text-[11px] leading-4 font-semibold text-amber-900 underline">
+            <Link to={ROUTES.staffDirectory} className="text-[11px] leading-4 font-semibold text-amber-900 underline">
               Resolve
-            </button>
-          </div>
+            </Link>
+          </div>}
 
           <div className="grid grid-cols-3 gap-2 pt-1">
             {team.shifts.map((shift) => (

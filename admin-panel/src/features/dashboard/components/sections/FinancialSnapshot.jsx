@@ -1,12 +1,13 @@
 import { dashboardIcons as icons } from '../../../../assets/icons/dashboard'
 import { cn } from '../../../../lib/cn'
+import { ROUTES } from '../../../../config/routes'
 import { CardHeader, CardLink, SectionCard } from '../../../../components/workspace/SectionCard'
 
 export default function FinancialSnapshot({ finance }) {
   return (
     <SectionCard aria-labelledby="financial-snapshot" className="flex flex-col justify-between gap-4">
       <div className="flex flex-col gap-4">
-        <CardHeader icon={icons.finance} title="Financial snapshot" aside={<CardLink>View finance</CardLink>} />
+        <CardHeader icon={icons.finance} title="Financial snapshot" aside={<CardLink to={ROUTES.billing}>View finance</CardLink>} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {finance.tiles.map((tile) => (
             <div

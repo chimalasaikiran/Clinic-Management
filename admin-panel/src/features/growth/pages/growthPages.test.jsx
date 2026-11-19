@@ -336,9 +336,9 @@ describe('reports', () => {
     // The last 28 days to today, across permitted branches; choosing a branch asks for that branch only.
     const today = localToday()
     expect(billingFake.reports.calls[0].query).toEqual({ from: addIsoDays(today, -27), to: today, branchId: undefined })
-    await user.selectOptions(screen.getByLabelText('Branch'), 'b-west')
-    await waitFor(() => expect(billingFake.reports.calls.at(-1).query.branchId).toBe('b-west'))
-    expect(await screen.findByText(/^Appointments starting .* · West Wing$/)).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Branch'), 'b-kondapur')
+    await waitFor(() => expect(billingFake.reports.calls.at(-1).query.branchId).toBe('b-kondapur'))
+    expect(await screen.findByText(/^Appointments starting .* · Kondapur Clinic$/)).toBeInTheDocument()
   })
 
   it('shows billed, collected and outstanding apart from one another', async () => {

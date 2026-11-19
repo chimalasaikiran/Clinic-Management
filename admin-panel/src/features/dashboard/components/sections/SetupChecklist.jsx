@@ -1,12 +1,9 @@
-import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { dashboardIcons as icons } from '../../../../assets/icons/dashboard'
 import { SectionCard } from '../../../../components/workspace/SectionCard'
 
-export default function SetupChecklist({ checklist }) {
-  const [hidden, setHidden] = useState(false)
+export default function SetupChecklist({ checklist, onHide }) {
   const percent = Math.round((checklist.completed / checklist.total) * 100)
-
-  if (hidden) return null
 
   return (
     <SectionCard aria-labelledby="complete-setup" className="flex flex-col gap-3">
@@ -21,7 +18,7 @@ export default function SetupChecklist({ checklist }) {
         </div>
         <button
           type="button"
-          onClick={() => setHidden(true)}
+          onClick={onHide}
           className="shrink-0 text-xs leading-4 font-medium text-slate-400 transition-colors hover:text-slate-600"
         >
           Hide setup guide
@@ -51,21 +48,21 @@ export default function SetupChecklist({ checklist }) {
               <span className="text-[11px] leading-4 text-teal-800">{checklist.next.hint}</span>
             </div>
           </div>
-          <button
-            type="button"
+          <Link
+            to={checklist.next.to}
             className="shrink-0 rounded-sm bg-brand px-2 py-0.5 text-[11px] leading-4 font-semibold text-white transition-opacity hover:opacity-90"
           >
             {checklist.next.action}
-          </button>
+          </Link>
         </li>
         {checklist.remaining.map((item) => (
           <li key={item.step} className="flex items-center justify-between border-t border-slate-100 pt-2 pb-[7px] first:border-t-0">
-            <span className="flex items-center gap-2 text-xs leading-4 text-slate-600">
+            <Link to={item.to} className="flex items-center gap-2 text-xs leading-4 text-slate-600 hover:text-slate-900">
               <span className="flex h-[18px] w-4 items-center justify-center rounded-xl border border-slate-300 text-[10px] leading-4 font-medium text-slate-400">
                 {item.step}
               </span>
               {item.label}
-            </span>
+            </Link>
             <span className="text-[11px] leading-4 text-slate-400">{item.hint}</span>
           </li>
         ))}
@@ -73,9 +70,6 @@ export default function SetupChecklist({ checklist }) {
 
       <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-[11px] text-[11px] leading-[16.5px]">
         <span className="text-slate-500">Ongoing workspace configuration · Non-blocking</span>
-        <button type="button" className="shrink-0 font-semibold text-brand">
-          Concierge 1:1
-        </button>
       </div>
     </SectionCard>
   )

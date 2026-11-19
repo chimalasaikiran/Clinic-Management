@@ -18,7 +18,7 @@ export function operationsReportFixture({ from = '2026-10-01', to = '2026-10-28'
       { id: 'dr-2', name: 'Dr. Priya Nair', consultMinutes: 3600, availableMinutes: 4800 },
     ],
     services: [{ name: 'Consultation', count: 90 }, { name: 'Follow-up', count: 60 }],
-    branches: [{ id: 'b-main', name: 'Main Clinic' }, { id: 'b-west', name: 'West Wing' }],
+    branches: [{ id: 'b-main', name: 'Main Clinic' }, { id: 'b-kondapur', name: 'Kondapur Clinic' }],
     branchId: null,
   }
 }

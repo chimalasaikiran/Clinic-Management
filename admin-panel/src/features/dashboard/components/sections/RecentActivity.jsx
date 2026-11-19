@@ -1,5 +1,5 @@
 import { cn } from '../../../../lib/cn'
-import { CardLink, SectionCard } from '../../../../components/workspace/SectionCard'
+import { SectionCard } from '../../../../components/workspace/SectionCard'
 
 function Body({ parts }) {
   return parts.map((part, index) => {
@@ -13,7 +13,7 @@ function Body({ parts }) {
   })
 }
 
-export default function RecentActivity({ events }) {
+export default function RecentActivity({ events, note }) {
   return (
     <SectionCard aria-labelledby="recent-activity" className="flex flex-col">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-[15px]">
@@ -23,13 +23,13 @@ export default function RecentActivity({ events }) {
           </h2>
           <span className="flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-[9px] py-[3px] text-[11px] leading-[16.5px] font-semibold text-emerald-700">
             <span className="size-1.5 rounded-xl bg-emerald-500" />
-            Live Stream
+            Updates every minute
           </span>
         </div>
-        <CardLink>View audit trail</CardLink>
       </div>
 
-      <ol className="relative flex flex-col gap-5 pt-4 pl-6">
+      {!events?.length && <p className="pt-4 text-xs leading-4 text-slate-500">{note}</p>}
+      {events?.length > 0 && <ol className="relative flex flex-col gap-5 pt-4 pl-6">
         <span className="absolute top-[20.5px] bottom-3 left-[7px] w-px bg-slate-200" aria-hidden="true" />
         {events.map((event) => (
           <li key={event.id} className="relative flex flex-col gap-0.5">
@@ -46,7 +46,7 @@ export default function RecentActivity({ events }) {
             </p>
           </li>
         ))}
-      </ol>
+      </ol>}
     </SectionCard>
   )
 }

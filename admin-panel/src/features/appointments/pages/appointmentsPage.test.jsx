@@ -74,6 +74,24 @@ describe('OPD schedule', () => {
     expect(fake.state.calls.find(([name]) => name === 'appointments.create')[1]).toMatchObject({ patientId: 'p-2', channel: 'walk_in', waitingQueue: true, arrivedNow: true, date: localToday() })
   })
 
+  it('opens an emergency walk-in from the header link and records it as an emergency', async () => {
+    const user = setup()
+    const router = renderRoute(`${ROUTES.appointments}?walkIn=emergency`)
+    const drawer = await screen.findByRole('dialog')
+    expect(within(drawer).getByText('Emergency intake')).toBeInTheDocument()
+    expect(within(drawer).getByText(/Emergency · booked into the earliest free slot/)).toBeInTheDocument()
+    await waitFor(() => expect(router.state.location.search).toBe(''))
+
+    await user.click(within(drawer).getByLabelText(/search patient by name/i))
+    await user.paste('Rajesh')
+    await user.click(await within(drawer).findByRole('button', { name: /Rajesh Sundaram/ }))
+    await user.click(within(drawer).getByLabelText(/triage \/ walk-in reason/i))
+    await user.paste('Fall with suspected wrist fracture')
+    await user.click(within(drawer).getByRole('button', { name: 'Add to Waiting Queue Only' }))
+
+    await waitFor(() => expect(fake.state.calls.find(([name]) => name === 'appointments.create')?.[1]).toMatchObject({ patientId: 'p-2', channel: 'walk_in', reason: 'Emergency: Fall with suspected wrist fracture' }))
+  })
+
   it('explains an empty day and links to therapist setup', async () => {
     install({ practitioners: [] })
     renderRoute(ROUTES.appointments)

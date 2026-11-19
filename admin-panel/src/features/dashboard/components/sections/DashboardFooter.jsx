@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+
 export default function DashboardFooter({ footer }) {
   return (
     <footer className="mt-6 flex flex-wrap items-center justify-between gap-x-8 gap-y-3 border-t border-slate-200 pt-[21px] pb-5 text-xs leading-4 text-slate-400">
@@ -10,13 +12,15 @@ export default function DashboardFooter({ footer }) {
           </span>
         ))}
       </p>
-      <nav aria-label="Compliance" className="flex flex-wrap gap-4">
-        {footer.links.map((link) => (
-          <button key={link} type="button" className="transition-colors hover:text-slate-600">
-            {link}
-          </button>
-        ))}
-      </nav>
+      {footer.links.length > 0 && (
+        <nav aria-label="Workspace" className="flex flex-wrap gap-4">
+          {footer.links.map((link) => (
+            <Link key={link.to} to={link.to} className="transition-colors hover:text-slate-600">
+              {link.label}
+            </Link>
+          ))}
+        </nav>
+      )}
     </footer>
   )
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight, Download, Plus } from 'lucide-react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import ActionButton from '../../../components/workspace/ActionButton'
 import { SearchBox } from '../../../components/workspace/controls'
 import StatusPill from '../../../components/workspace/StatusPill'
@@ -13,6 +13,7 @@ import { useAuth } from '../../auth/context/useAuth'
 import { STATUS_VALUES, toAppointmentView, TYPE_VALUES } from '../../patients/adapters'
 import { appointmentsApi, branchesApi, practitionersApi } from '../../patients/api'
 import { usePatientRecords } from '../../patients/context/usePatientRecords'
+import { useWorkspace } from '../../workspace/useWorkspace'
 import { formatLongDate, formatTime, localClock, localToday } from '../../patients/format'
 import { appointmentTone } from '../../patients/selectors'
 import { GRID_SESSIONS, OFF_GRID_STATUSES, STATUS_FILTERS } from '../constants'
@@ -40,7 +41,9 @@ export default function AppointmentsSchedulePage() {
   const navigate = useNavigate()
   const today = localToday()
   const [date, setDate] = useState(today)
-  const [branchChoice, setBranchChoice] = useState('')
+  const { branchId: branchChoice, setBranchId: setBranchChoice } = useWorkspace()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
   const [view, setView] = useState('grid')
   const [sessionId, setSessionId] = useState('morning')
   const [doctorFilter, setDoctorFilter] = useState('')
@@ -71,6 +74,27 @@ export default function AppointmentsSchedulePage() {
   const dayList = appointments.filter((appointment) => matches(appointment) && (!doctorFilter || appointment.doctorId === doctorFilter)).sort((a, b) => a.time.localeCompare(b.time))
   const reset = () => { setDoctorFilter(''); setStatusFilter(''); setQuery('') }
 
+  // "New Encounter" and "Emergency Intake" elsewhere in the workspace land here with ?walkIn=1 or ?walkIn=emergency
+  // and open today's walk-in drawer once the branch's therapists are known.
+  const walkInRequest = searchParams.get('walkIn')
+  const scheduleReady = Boolean(branchId) && !practitioners.loading && Boolean(day.data)
+  const [handledRequest, setHandledRequest] = useState(null)
+  if (walkInRequest && scheduleReady && handledRequest !== location.key) {
+    setHandledRequest(location.key)
+    if (can('bookings.create')) {
+      setDate(today)
+      setWalkIn({ emergency: walkInRequest === 'emergency' })
+    }
+  }
+  // The request is consumed: drop it from the address so a reload or Back does not reopen the drawer.
+  useEffect(() => {
+    if (!walkInRequest || !scheduleReady) return
+    setSearchParams((params) => {
+      params.delete('walkIn')
+      return params
+    }, { replace: true })
+  }, [walkInRequest, scheduleReady, setSearchParams])
+
   useEffect(() => {
     const onKey = (event) => {
       const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName)
@@ -99,7 +123,7 @@ export default function AppointmentsSchedulePage() {
         type: TYPE_VALUES[values.type],
         channel: 'walk_in',
         status: 'confirmed',
-        reason: values.complaint.trim(),
+        reason: values.emergency ? `Emergency: ${values.complaint.trim()}` : values.complaint.trim(),
         arrivedNow: queue || values.present,
         waitingQueue: queue,
       })
@@ -268,7 +292,7 @@ export default function AppointmentsSchedulePage() {
           branchName={branch?.name ?? ''}
           columns={columns}
           waitingCount={stats.waiting}
-          preset={walkIn.doctorId ? walkIn : undefined}
+          preset={walkIn.doctorId || walkIn.emergency ? walkIn : undefined}
           saving={walkInState.saving}
           error={walkInState.error}
           onClose={() => { setWalkIn(null); setWalkInState({ saving: false, error: '' }) }}

@@ -11,7 +11,7 @@ function Stat({ label, value, className }) {
   )
 }
 
-function LocationRow({ location }) {
+function LocationRow({ location, onOpen }) {
   return (
     <li className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-200 bg-slate-50/40 p-[13px]">
       <div className="flex items-center gap-3">
@@ -26,8 +26,13 @@ function LocationRow({ location }) {
         <div className="flex flex-col">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-sm leading-5 font-semibold text-slate-900">{location.name}</h3>
-            <span className="rounded-sm border border-emerald-200 bg-emerald-50 px-[7px] py-px text-[10px] leading-4 font-semibold text-emerald-800">
-              Active
+            <span
+              className={cn(
+                'rounded-sm border px-[7px] py-px text-[10px] leading-4 font-semibold',
+                location.active ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-slate-100 text-slate-700',
+              )}
+            >
+              {location.status}
             </span>
           </div>
           <p className="text-[11px] leading-4 text-slate-500">{location.focus}</p>
@@ -37,7 +42,7 @@ function LocationRow({ location }) {
         <Stat label="Appts" value={location.appointments} />
         <Stat label="Collections" value={location.collections} />
         <Stat label="Exceptions" value={location.exceptions.label} className={location.exceptions.className} />
-        <button type="button" aria-label={`Open ${location.name}`} className="p-1">
+        <button type="button" aria-label={`Show only ${location.name}`} onClick={() => onOpen(location.id)} className="p-1">
           <img src={icons.rowChevron} alt="" />
         </button>
       </div>
@@ -45,18 +50,18 @@ function LocationRow({ location }) {
   )
 }
 
-export default function LocationPerformance({ locations }) {
+export default function LocationPerformance({ locations, onOpen }) {
   return (
     <SectionCard aria-labelledby="location-performance" className="flex flex-col gap-3">
       <CardHeader
         icon={icons.branches}
         title="Location performance"
-        subtitle="Real-time multi-branch operational comparison"
-        aside={<span className="text-xs leading-4 font-medium text-slate-400">{locations.length} active branches in network</span>}
+        subtitle="Multi-branch operational comparison for the day"
+        aside={<span className="text-xs leading-4 font-medium text-slate-400">{locations.filter((location) => location.active).length} active of {locations.length} branches in view</span>}
       />
       <ul className="flex flex-col gap-2">
         {locations.map((location) => (
-          <LocationRow key={location.id} location={location} />
+          <LocationRow key={location.id} location={location} onOpen={onOpen} />
         ))}
       </ul>
     </SectionCard>

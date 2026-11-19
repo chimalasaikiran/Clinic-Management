@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { SectionCard } from '../../../../components/workspace/SectionCard'
 
 export default function QuickActions({ actions }) {
@@ -11,9 +12,9 @@ export default function QuickActions({ actions }) {
       </div>
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
         {actions.map((action) => (
-          <button
+          <Link
             key={action.id}
-            type="button"
+            to={action.to}
             className="flex flex-col items-center gap-1 rounded border border-slate-200 px-1 py-[11px] transition-colors hover:bg-slate-50"
           >
             <span className="flex size-7 items-center justify-center rounded-xl bg-slate-100">
@@ -22,7 +23,7 @@ export default function QuickActions({ actions }) {
             <span className="max-w-[4.5rem] text-center text-[11px] leading-[13.75px] font-medium text-slate-800">
               {action.label}
             </span>
-          </button>
+          </Link>
         ))}
       </div>
     </SectionCard>

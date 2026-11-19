@@ -21,7 +21,7 @@ const signedInPages = [
   [ROUTES.operations, 'What type of clinic are you setting up?'],
   [ROUTES.specialties, 'What specialties does your clinic offer?'],
   [ROUTES.complete, 'Your clinic is ready to go.'],
-  [ROUTES.dashboard, 'Good morning, Dr. Siddharth Verma'],
+  [ROUTES.dashboard, /^Good (morning|afternoon|evening), Siddharth Verma$/],
 ]
 
 describe('routes', () => {

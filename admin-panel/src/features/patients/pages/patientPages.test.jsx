@@ -117,7 +117,7 @@ describe('register patient', () => {
   it('registers a patient with the server and opens their hub', async () => {
     const user = setup()
     const router = renderRoute(ROUTES.patientNew)
-    await screen.findByRole('option', { name: 'Main Clinic' })
+    await within(screen.getByLabelText(/Originating registration branch/)).findByRole('option', { name: 'Main Clinic' })
     await fillRequired(user)
     await user.click(screen.getByRole('button', { name: 'Register patient' }))
 
@@ -130,7 +130,7 @@ describe('register patient', () => {
   it('flags a duplicate mobile number and blocks registration until it is dismissed', async () => {
     const user = setup()
     const router = renderRoute(ROUTES.patientNew)
-    await screen.findByRole('option', { name: 'Main Clinic' })
+    await within(screen.getByLabelText(/Originating registration branch/)).findByRole('option', { name: 'Main Clinic' })
     await fillRequired(user, '98452 11029')
 
     expect(await screen.findByText('1 match alert')).toBeInTheDocument()
@@ -146,7 +146,7 @@ describe('register patient', () => {
   it('shows server validation errors under the matching fields', async () => {
     const user = setup()
     renderRoute(ROUTES.patientNew)
-    await screen.findByRole('option', { name: 'Main Clinic' })
+    await within(screen.getByLabelText(/Originating registration branch/)).findByRole('option', { name: 'Main Clinic' })
     fake.api.patientsApi.create = async () => {
       throw new ApiError(400, 'VALIDATION_FAILED', 'Some fields are missing or invalid.', [{ field: 'pinCode', issue: 'This PIN code is not served by the clinic.' }])
     }
