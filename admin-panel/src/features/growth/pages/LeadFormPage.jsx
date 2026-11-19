@@ -6,8 +6,9 @@ import { Banner, KeyValue, Section } from '../../../components/workspace/RecordK
 import { pathFor, ROUTES } from '../../../config/routes'
 import { useApiResource } from '../../../hooks/useApiResource'
 import { useAuth } from '../../auth/context/useAuth'
-import { Check } from '../../patients/components/parts'
+import { Check, OptionSelect } from '../../patients/components/parts'
 import { digitsOf } from '../../patients/format'
+import { campaignsApi } from '../campaignsApi'
 import GrowthFrame, { GrowthFooter } from '../components/GrowthFrame'
 import LeadGate from '../components/LeadGate'
 import { when } from '../format'
@@ -30,9 +31,10 @@ function LeadForm({ lead }) {
   const { organisation } = useAuth()
   const context = useLeadContext()
   const owners = useLeadOwners()
+  const campaigns = useApiResource(() => campaignsApi.campaignOptions(), 'campaign-options').data ?? []
   const [values, setValues] = useState({
     name: lead?.name ?? '', phone: lead?.phone ?? '', email: lead?.email ?? '', interest: lead?.interest ?? '', source: SOURCES.phone,
-    branchId: lead?.branchId ?? '', ownerId: lead?.ownerId ?? '', stage: lead?.stage ?? STAGES.new, nextAction: '', nextDate: '', reviewed: false, confirmed: false,
+    branchId: lead?.branchId ?? '', ownerId: lead?.ownerId ?? '', campaignId: lead?.campaign?.id ?? '', stage: lead?.stage ?? STAGES.new, nextAction: '', nextDate: '', reviewed: false, confirmed: false,
   })
   const [attempted, setAttempted] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -92,6 +94,7 @@ function LeadForm({ lead }) {
             <TextInput label="Interest" value={values.interest} onChange={(event) => set('interest', event.target.value)} error={errors.interest} hint="Optional · what they asked about, without health detail" />
             <SelectInput label="Branch" required value={branchId} onChange={(event) => set('branchId', event.target.value)} options={context.branches.map((branch) => ({ value: branch.id, label: branch.name }))} error={errors.branch} hint="Lead branch, from the locations your role covers" />
             <SelectInput label="Owner" required value={ownerId} onChange={(event) => set('ownerId', event.target.value)} options={choices} error={errors.owner} hint={choices.length ? 'Team members who can work leads at this branch' : 'No one with lead access covers this branch'} />
+            <OptionSelect label="Campaign" value={values.campaignId} onChange={(event) => set('campaignId', event.target.value)} disabled={Boolean(lead?.campaign)} placeholder="No campaign" options={[...campaigns, ...(lead?.campaign && !campaigns.some((entry) => entry.id === lead.campaign.id) ? [lead.campaign] : [])].map((campaign) => ({ value: campaign.id, label: `${campaign.code} · ${campaign.name}` }))} hint={lead?.campaign ? 'Part of the original source · cannot be changed' : 'The campaign the enquiry came from, if any · cannot be changed later'} />
             {!lead && <SelectInput label="Source" value={values.source} onChange={(event) => set('source', event.target.value)} options={Object.values(SOURCES)} />}
             <SelectInput label="Stage" value={values.stage} onChange={(event) => set('stage', event.target.value)} options={stages} hint={lead ? 'Converted is reached only through Convert Lead' : 'New inquiries usually start as New'} />
             {lead ? <TextInput label="Next follow-up · IST" value={lead.due ? when(lead.due) : 'None set'} readOnly disabled hint="Managed in Lead Follow-up" /> : <><TextInput label="Next action" value={values.nextAction} onChange={(event) => set('nextAction', event.target.value)} error={errors.nextAction} hint="Needed when a follow-up date is set" /><TextInput label="Next follow-up date" type="date" min={clinicNow().date} value={values.nextDate} onChange={(event) => set('nextDate', event.target.value)} error={errors.nextDate} hint="Optional · due at 10:00 IST" /></>}
@@ -111,7 +114,7 @@ function LeadForm({ lead }) {
         </div>
       </div>
 
-      {lead && <Section title="Original source" aside="Read only · Kept through edits and conversion" className="mb-6"><dl className="grid gap-4 text-xs sm:grid-cols-3"><KeyValue label="Source">{lead.source}</KeyValue><KeyValue label="Campaign">No campaign</KeyValue><KeyValue label="Recorded">{when(lead.created)}</KeyValue></dl></Section>}
+      {lead && <Section title="Original source" aside="Read only · Kept through edits and conversion" className="mb-6"><dl className="grid gap-4 text-xs sm:grid-cols-3"><KeyValue label="Source">{lead.source}</KeyValue><KeyValue label="Campaign">{lead.campaign ? `${lead.campaign.code} · ${lead.campaign.name}` : 'No campaign'}</KeyValue><KeyValue label="Recorded">{when(lead.created)}</KeyValue></dl></Section>}
 
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-white px-5 py-4">
         <p className="min-w-60 flex-1 text-xs text-outline"><strong className="block text-[13px] text-on-surface">{blocked ? 'Ready for review, not ready to save' : 'Ready to save'}</strong>{blocked ? 'Save is blocked until duplicate review and any consequential-change confirmation pass.' : 'Required fields are checked again when you save.'}</p>

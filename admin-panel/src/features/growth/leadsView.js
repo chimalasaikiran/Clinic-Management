@@ -58,6 +58,7 @@ export function toLeadView(lead) {
     due: stampOf(lead.nextDueAt),
     dueState: DUE[lead.dueState],
     patient: lead.patient ? { id: lead.patient.id, mrn: lead.patient.mrn, name: lead.patient.fullName } : null,
+    campaign: lead.campaign ?? null,
     patientId: lead.patient?.id ?? null,
     convertedAt: stampOf(lead.convertedAt),
     journey: lead.journey ?? null,
@@ -102,6 +103,7 @@ export function leadPayload(values) {
     branchId: values.branchId,
     ownerMembershipId: values.ownerId,
     confirmedNotDuplicate: values.reviewed,
+    campaignId: values.campaignId || null,
   }
 }
 

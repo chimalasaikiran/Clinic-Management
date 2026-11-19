@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import ActionButton from '../../../components/workspace/ActionButton'
 import { SearchBox } from '../../../components/workspace/controls'
 import { TextInput } from '../../../components/workspace/FormControls'
-import { Banner, FilterField, Section } from '../../../components/workspace/RecordKit'
+import { FilterField, Section } from '../../../components/workspace/RecordKit'
 import { exportCsv } from '../../../lib/exportCsv'
 import { pathFor, ROUTES } from '../../../config/routes'
 import { useApiResource } from '../../../hooks/useApiResource'
@@ -56,7 +56,7 @@ export default function GrowthPerformancePage() {
   }
 
   return (
-    <GrowthFrame back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} crumb="Owner Panel / Growth OS / Growth Performance" code="GO-30" title="Growth Performance & Attribution" description="Understand the evidence behind growth — from source inquiries to outcomes that can be supported." context={[context.line, `${day(from)} – ${day(to)} inclusive · Asia/Kolkata · Leads by the date they were recorded`]} today={context.today} sample="Live lead records · Campaigns are not linked to leads yet, so campaign attribution is unavailable">
+    <GrowthFrame back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} crumb="Owner Panel / Growth OS / Growth Performance" code="GO-30" title="Growth Performance & Attribution" description="Understand the evidence behind growth — from source inquiries to outcomes that can be supported." context={[context.line, `${day(from)} – ${day(to)} inclusive · Asia/Kolkata · Leads by the date they were recorded`]} today={context.today} sample="Live lead records · Leads are credited to a campaign only when recorded against it">
       <Section title="Report scope" aside="Lead cohort · by recorded date" className="mb-6">
         <div className="grid gap-4 sm:grid-cols-4">
           <FilterField label="Branch" value="" disabled options={[['', branchName ?? 'All locations']]} />
@@ -71,7 +71,7 @@ export default function GrowthPerformancePage() {
       <Section title="Source coverage" aside={data ? `${data.total} lead${data.total === 1 ? '' : 's'} in this cohort` : 'Loading…'} className="mb-6">
         <dl className="grid gap-5 text-xs sm:grid-cols-3">{[
           ['Leads', data ? `${data.total} recorded` : '—', 'Every enquiry recorded in the Lead Register.'],
-          ['Campaigns · not linked', 'No campaign data', 'Leads are not linked to campaigns yet; no spend, clicks or reach.'],
+          ['From campaigns', data ? `${data.total - data.untagged} of ${data.total} · ${percent(data.total - data.untagged, data.total)}` : '—', 'Recorded against a campaign; the rest have only a source.'],
           ['Converted', data ? `${data.converted} of ${data.total} · ${percent(data.converted, data.total)}` : '—', 'Linked to one shared patient record.'],
           ['Appointments after conversion', data ? `${data.booked} of ${data.converted} converted` : '—', 'Booked on or after the conversion date; cancellations excluded.'],
           ['Consultations', data ? `${data.consulted} completed a visit` : '—', 'A completed appointment on or after conversion.'],
@@ -97,7 +97,12 @@ export default function GrowthPerformancePage() {
             {list.data && leads.length === 0 && <p className="px-6 py-6 text-center text-xs text-outline">No leads match these filters.</p>}</div>
         </Section>
       </div>
-      <Banner tone="warning" title="Campaign attribution is unavailable, not zero" className="mb-6">Leads record their source, not a campaign, so no lead is credited to a campaign yet. Appointments are counted only when the converted patient booked on or after conversion. <Link to={ROUTES.workflowExecutions} className="font-semibold text-brand hover:underline">Workflow execution evidence → GO29</Link></Banner>
+      <Section title="Leads by campaign" aside="Same cohort · recorded against a campaign" className="mb-6">
+        <div className="-mx-6 overflow-x-auto"><table className="w-full min-w-[640px] text-left text-xs"><thead className="bg-surface-low text-[10px] font-semibold tracking-wide text-on-surface-variant uppercase"><tr>{['Campaign', 'Leads', 'Converted', 'Booked after converting', 'Completed a visit'].map((heading) => <th key={heading} scope="col" className="px-6 py-2.5">{heading}</th>)}</tr></thead>
+          <tbody>{(data?.byCampaign ?? []).map((campaign) => <tr key={campaign.id} className="border-t border-slate-100"><td className="px-6 py-3"><Link to={pathFor(ROUTES.campaignAttribution, { campaignId: campaign.id })} className="font-semibold text-brand hover:underline">{campaign.code} · {campaign.name}</Link></td><td className="px-6 py-3">{campaign.total}</td><td className="px-6 py-3">{campaign.converted} · {percent(campaign.converted, campaign.total)}</td><td className="px-6 py-3">{campaign.booked}</td><td className="px-6 py-3">{campaign.consulted}</td></tr>)}</tbody></table>
+          {data && !data.byCampaign.length && <p className="px-6 py-6 text-center text-xs text-outline">No lead in this cohort was recorded against a campaign.</p>}</div>
+        <p className="mt-3 text-[11px] text-outline">{data ? `${data.untagged} lead${data.untagged === 1 ? '' : 's'} in this cohort have no campaign.` : ''} Appointments count only when the converted patient booked on or after conversion. <Link to={ROUTES.workflowExecutions} className="font-semibold text-brand hover:underline">Workflow execution evidence → GO29</Link></p>
+      </Section>
       <GrowthFooter code="GO-30" back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} />
     </GrowthFrame>
   )

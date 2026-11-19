@@ -7,6 +7,7 @@ import { renderBillingRoute, renderRoute } from '../../../test/renderRoute'
 import { billingFake } from '../../../test/fixtures/billingFake'
 import { apiLead, createLeadsApi, overdueLead } from '../../../test/fixtures/leadsApi'
 import { apiConversation, apiTemplate, createMessagingApi } from '../../../test/fixtures/messagingApi'
+import { apiRun, apiWorkflow, createCampaignsApi } from '../../../test/fixtures/campaignsApi'
 import { apiPatient, createPatientsApi } from '../../../test/fixtures/patientsApi'
 import { localToday } from '../../patients/format'
 
@@ -46,12 +47,12 @@ const SCREENS = [
   ['GO-05 Lead Follow-up', pathFor(ROUTES.leadFollowUp, { leadId: 'l-1' }), 'Lead Follow-up'],
   ['GO-06 Conversion', pathFor(ROUTES.leadConvert, { leadId: 'l-1' }), 'Lead Conversion & Re-engagement'],
   ['GO-07 Campaign Register', ROUTES.campaigns, 'Campaign Register'],
-  ['GO-08 Campaign Details', pathFor(ROUTES.campaign, { campaignId: 'CMP2041' }), 'Campaign Details & Performance'],
+  ['GO-08 Campaign Details', pathFor(ROUTES.campaign, { campaignId: 'cmp-1' }), 'Campaign Details & Performance'],
   ['GO-09 Create campaign', ROUTES.campaignNew, 'Create/Edit Campaign'],
-  ['GO-09 Edit campaign', pathFor(ROUTES.campaignEdit, { campaignId: 'CMP2041' }), 'Create/Edit Campaign'],
+  ['GO-09 Edit campaign', pathFor(ROUTES.campaignEdit, { campaignId: 'cmp-1' }), 'Create/Edit Campaign'],
   ['GO-10 Audiences', ROUTES.audiences, 'Audience Management'],
   ['GO-10A Create segment', ROUTES.segmentNew, 'Create/Edit Audience Segment'],
-  ['GO-10A Edit segment', pathFor(ROUTES.segmentEdit, { segmentId: 'SEG301' }), 'Create/Edit Audience Segment'],
+  ['GO-10A Edit segment', pathFor(ROUTES.segmentEdit, { segmentId: 'a-1' }), 'Create/Edit Audience Segment'],
   ['GO-11 Content Calendar', ROUTES.content, 'Content Calendar'],
   ['GO-12 Create content', ROUTES.contentNew, 'Create/Edit Content'],
   ['GO-12 Edit content', pathFor(ROUTES.contentEdit, { contentId: 'CNT3101' }), 'Create/Edit Content'],
@@ -71,10 +72,10 @@ const SCREENS = [
   ['GO-26 Delivery', ROUTES.deliveryFailures, 'Delivery Failures & Retry'],
   ['GO-27 Workflows', ROUTES.workflows, 'Retention & Reminder Workflows'],
   ['GO-28 Create workflow', ROUTES.workflowNew, 'Create Retention Workflow'],
-  ['GO-28 Edit workflow', pathFor(ROUTES.workflowEdit, { workflowId: 'WF-REM201' }), 'Edit Retention Workflow'],
+  ['GO-28 Edit workflow', pathFor(ROUTES.workflowEdit, { workflowId: 'wf-1' }), 'Edit Retention Workflow'],
   ['GO-29 Executions', ROUTES.workflowExecutions, 'Workflow Execution & Exceptions'],
   ['GO-30 Performance', ROUTES.growthPerformance, 'Growth Performance & Attribution'],
-  ['GO-31 Attribution', pathFor(ROUTES.campaignAttribution, { campaignId: 'CMP2041' }), 'Campaign Attribution Details'],
+  ['GO-31 Attribution', pathFor(ROUTES.campaignAttribution, { campaignId: 'cmp-1' }), 'Campaign Attribution Details'],
   ['RPT-01 Overview', ROUTES.reports, 'Reports overview'],
   ['RPT-02 Operations', ROUTES.reportsOperations, 'Operations'],
   ['RPT-03 Financial', ROUTES.reportsFinancial, 'Financial'],
@@ -90,7 +91,7 @@ describe('every Growth and Reports screen opens from its route', () => {
 
   it.each([
     [pathFor(ROUTES.lead, { leadId: 'l-9999' }), 'Lead not found'],
-    [pathFor(ROUTES.campaign, { campaignId: 'CMP9999' }), 'Campaign not found'],
+    [pathFor(ROUTES.campaign, { campaignId: 'cmp-9999' }), 'Campaign not found'],
     [pathFor(ROUTES.review, { reviewId: 'REV-9999' }), 'Review not found'],
     [pathFor(ROUTES.conversation, { threadId: 'c-9999' }), 'Conversation not found'],
   ])('shows a not-found page for %s', async (path, title) => {
@@ -252,38 +253,96 @@ describe('leads', () => {
 })
 
 describe('campaigns and audiences', () => {
-  it('requires a reason and confirmation before a budget change is saved', async () => {
+  it('requires a reason and confirmation before a budget change is saved, and keeps it in the history', async () => {
     const user = setup()
-    const router = renderRoute(pathFor(ROUTES.campaignEdit, { campaignId: 'CMP2041' }))
+    const campaigns = billingFake.campaigns
+    const router = renderRoute(pathFor(ROUTES.campaignEdit, { campaignId: 'cmp-1' }))
 
-    await fill(user, screen.getByLabelText(/^Planned budget/), '48000')
+    await fill(user, await screen.findByLabelText(/^Planned budget/), '48000')
     expect(screen.getAllByText(/₹45,000 → ₹48,000/).length).toBeGreaterThan(0)
-    await user.click(screen.getByRole('checkbox', { name: /Verify role & branch access/ }))
-    expect(screen.getByRole('button', { name: 'Save draft' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save campaign' })).toBeDisabled()
 
     await fill(user, screen.getByLabelText(/^Change reason/), 'More creative testing')
-    await user.click(screen.getByRole('checkbox', { name: /I confirm the budget change/ }))
-    await user.click(screen.getByRole('button', { name: 'Save draft' }))
+    await user.click(screen.getByRole('checkbox', { name: /I confirm this change/ }))
+    await user.click(screen.getByRole('button', { name: 'Save campaign' }))
 
-    expect(router.state.location.pathname).toBe(pathFor(ROUTES.campaign, { campaignId: 'CMP2041' }))
-    expect(screen.getAllByText('₹48,000').length).toBeGreaterThan(0)
+    await waitFor(() => expect(router.state.location.pathname).toBe(pathFor(ROUTES.campaign, { campaignId: 'cmp-1' })))
+    expect(await screen.findByText('Budget: ₹45,000 → ₹48,000. Reason: More creative testing')).toBeInTheDocument()
+    expect(campaigns.state.calls.find(([name]) => name === 'updateCampaign')[2]).toMatchObject({ budget: 48000, changeNote: 'More creative testing', version: 1 })
   })
 
-  it('shows campaign measurement as unavailable while campaigns are not linked to leads', () => {
-    renderRoute(pathFor(ROUTES.campaign, { campaignId: 'CMP2041' }))
-    expect(screen.queryByText('Historical tag predates proposed schedule · verification required')).not.toBeInTheDocument()
-    expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0)
-  })
-
-  it('requires a lifecycle stage before a segment definition is saved', async () => {
+  it('shows performance from recorded leads and records spend', async () => {
     const user = setup()
-    renderRoute(ROUTES.segmentNew)
+    renderRoute(pathFor(ROUTES.campaign, { campaignId: 'cmp-1' }))
+
+    expect(await screen.findByText('₹6,000 per recorded lead')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'LD-000001 · Nisha Menon' })).toBeInTheDocument()
+    await fill(user, screen.getByLabelText(/^Amount/), '3000')
+    await fill(user, screen.getByLabelText(/^Source of the figure/), 'Google Ads invoice 77')
+    await user.click(screen.getByRole('button', { name: 'Add spend' }))
+
+    expect(await screen.findByText(/Google Ads invoice 77/)).toBeInTheDocument()
+    expect(billingFake.campaigns.state.calls.find(([name]) => name === 'addSpend')[2]).toMatchObject({ amount: 3000, note: 'Google Ads invoice 77' })
+  })
+
+  it('sends a broadcast only after checking who it reaches and confirming that number', async () => {
+    const user = setup()
+    renderRoute(pathFor(ROUTES.campaign, { campaignId: 'cmp-1' }))
+
+    await waitFor(() => expect(screen.getByLabelText('Approved template')).toHaveTextContent('MT-0001 · Follow-up check-in'))
+    await user.selectOptions(screen.getByLabelText('Approved template'), 't-1')
+    await fill(user, screen.getByLabelText(/^service name/), 'knee screening')
+    await user.click(screen.getByRole('button', { name: 'Check who it reaches' }))
+
+    expect(await screen.findByText('2 of 3 will receive it')).toBeInTheDocument()
+    expect(screen.getByText('Opted out on this channel: 1')).toBeInTheDocument()
+    expect(screen.getByText('Hello Nisha, are you still looking for help with knee screening?')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Send broadcast' })).toBeDisabled()
+    await user.click(screen.getByRole('checkbox', { name: /I confirm sending MT-0001 to 2 people/ }))
+    await user.click(screen.getByRole('button', { name: 'Send broadcast' }))
+
+    expect(await screen.findByText(/Broadcast confirmed for 2 people/)).toBeInTheDocument()
+    expect(billingFake.campaigns.state.calls.find(([name]) => name === 'launchBroadcast')[2]).toEqual({ templateId: 't-1', variables: { service_name: 'knee screening' }, expectedRecipients: 2, sendAt: null, confirm: true })
+  })
+
+  it('records the campaign a new lead came from', async () => {
+    const user = setup()
+    const leads = billingFake.useLeads(createLeadsApi({ leads: [] }))
+    renderRoute(ROUTES.leadNew)
+
+    await fill(user, screen.getByLabelText(/^Full name/), 'Sana Iqbal')
+    await fill(user, screen.getByLabelText(/^Phone/), '91234 56780')
+    await waitFor(() => expect(within(screen.getByLabelText(/^Campaign/)).getAllByRole('option').map((option) => option.textContent)).toContain('CMP-0001 · Knee care camp'))
+    await user.selectOptions(screen.getByLabelText(/^Campaign/), 'cmp-1')
+    await user.click(screen.getByRole('button', { name: 'Create lead' }))
+
+    await waitFor(() => expect(leads.state.calls.find(([name]) => name === 'create')?.[1]).toMatchObject({ campaignId: 'cmp-1' }))
+    expect(await screen.findByRole('link', { name: 'CMP-0001 · Knee care camp' })).toBeInTheDocument()
+  })
+
+  it('counts the selected audience per channel', async () => {
+    renderRoute(ROUTES.audiences)
+    const row = await screen.findByRole('row', { name: /WhatsApp/ })
+    expect(within(row).getAllByRole('cell').map((cell) => cell.textContent)).toEqual(['2', '1', '0', '0'])
+    expect(billingFake.campaigns.state.calls.find(([name]) => name === 'countAudience')[1]).toMatchObject({ branchId: 'b-main', rules: { include: 'leads' } })
+  })
+
+  it('requires a lead stage before a segment definition is saved, then saves the rules', async () => {
+    const user = setup()
+    const router = renderRoute(ROUTES.segmentNew)
 
     await fill(user, screen.getByLabelText(/^Segment name/), 'New segment')
     await fill(user, screen.getByLabelText(/^Purpose/), 'Test purpose')
     await user.click(screen.getByRole('button', { name: 'Save definition' }))
+    expect(screen.getByText('Choose at least one lead stage before saving.')).toBeInTheDocument()
 
-    expect(screen.getByText('Choose at least one permitted lifecycle stage before saving.')).toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: 'Qualified' }))
+    await fill(user, screen.getByLabelText(/^Interest contains/), 'dental')
+    expect(await screen.findByText('3 leads · 0 patients')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Save definition' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe(ROUTES.audiences))
+    expect(billingFake.campaigns.state.calls.find(([name]) => name === 'createAudience')[1]).toMatchObject({ name: 'New segment', status: 'draft', rules: { include: 'leads', leadStages: ['qualified'], leadInterest: 'dental' } })
   })
 })
 
@@ -459,20 +518,52 @@ describe('reviews and messaging', () => {
 })
 
 describe('workflows', () => {
-  it('lists the inactive definitions and creates a draft', async () => {
+  it('creates a workflow switched off, and cannot switch it on without a template', async () => {
     const user = setup()
+    const campaigns = billingFake.useCampaigns(createCampaignsApi({ workflows: [] }))
     const router = renderRoute(ROUTES.workflowNew)
 
     await user.click(screen.getByRole('button', { name: 'Save draft' }))
     expect(screen.getByText('Enter a workflow name.')).toBeInTheDocument()
-
-    await fill(user, screen.getByLabelText(/^Workflow name/), 'Recall check')
-    await fill(user, screen.getByLabelText(/^Trigger/), 'Six months after the last visit')
+    await fill(user, screen.getByLabelText(/^Workflow name/), 'Revisit check-in')
+    await user.selectOptions(screen.getByLabelText(/^Trigger/), 'revisit_due')
+    await fill(user, screen.getByLabelText(/^Send after/), '30')
     await user.click(screen.getByRole('button', { name: 'Save draft' }))
 
-    expect(router.state.location.pathname).toBe(ROUTES.workflows)
-    expect(screen.getByText('Recall check')).toBeInTheDocument()
-    expect(screen.getAllByText('Draft · inactive').length).toBeGreaterThan(5)
+    await waitFor(() => expect(router.state.location.pathname).toBe(pathFor(ROUTES.workflowEdit, { workflowId: 'wf-1' })))
+    expect(campaigns.state.calls.find(([name]) => name === 'createWorkflow')[1]).toMatchObject({ name: 'Revisit check-in', trigger: 'revisit_due', delayHours: 720, weeklyCap: 2 })
+    expect(await screen.findByText('• Choose a message template.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Activate' })).toBeDisabled()
+  })
+
+  it('asks for confirmation before switching a ready workflow on, and locks it while on', async () => {
+    const user = setup()
+    const campaigns = billingFake.useCampaigns(createCampaignsApi({ workflows: [apiWorkflow()] }))
+    renderRoute(pathFor(ROUTES.workflowEdit, { workflowId: 'wf-1' }))
+
+    await user.click(await screen.findByRole('button', { name: 'Activate' }))
+    expect(screen.getByRole('button', { name: 'Switch on' })).toBeDisabled()
+    await user.click(screen.getByRole('checkbox', { name: /I confirm this workflow may send/ }))
+    await user.click(screen.getByRole('button', { name: 'Switch on' }))
+
+    expect(await screen.findByText('This workflow is on')).toBeInTheDocument()
+    expect(screen.getByLabelText(/^Workflow name/)).toBeDisabled()
+    expect(campaigns.state.calls.find(([name]) => name === 'activateWorkflow')).toEqual(['activateWorkflow', 'wf-1', 1])
+    await user.click(screen.getByRole('button', { name: 'Pause' }))
+    expect(await screen.findByRole('button', { name: 'Activate' })).toBeInTheDocument()
+  })
+
+  it('lists each event a workflow acted on, with the reason and a safe next step', async () => {
+    const user = setup()
+    const failed = apiRun({ id: 'run-2', outcome: 'queued', skipReason: null, skipLabel: null, createdAt: '2026-11-19T04:00:00.000Z', message: { id: 'msg-1', status: 'failed', errorCode: '131026', errorMessage: 'Message undeliverable', conversationId: 'c-1', sentAt: null, deliveredAt: null } })
+    billingFake.useCampaigns(createCampaignsApi({ runs: [apiRun(), failed] }))
+    renderRoute(ROUTES.workflowExecutions)
+
+    expect((await screen.findAllByText('No recorded permission')).length).toBe(2)
+    expect(screen.getByText(/Record the person’s permission for this channel/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '19 Nov 2026 · 09:30 IST' }))
+    expect(screen.getByText(/The provider rejected the message/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open conversation' })).toHaveAttribute('href', pathFor(ROUTES.conversation, { threadId: 'c-1' }))
   })
 
   it('never retries an unknown outcome until it is resolved, then retries after the checks', async () => {

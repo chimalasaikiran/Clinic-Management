@@ -5,6 +5,9 @@ import { Section } from '../../../components/workspace/RecordKit'
 import { pathFor, ROUTES } from '../../../config/routes'
 import { useApiResource } from '../../../hooks/useApiResource'
 import { useAuth } from '../../auth/context/useAuth'
+import { formatINR } from '../../patients/format'
+import { campaignsApi } from '../campaignsApi'
+import { CAMPAIGN_CHANNELS, CAMPAIGN_STATUSES, CAMPAIGN_TONE, percent } from '../campaignsView'
 import GrowthFrame, { GrowthFooter } from '../components/GrowthFrame'
 import { useGrowth } from '../context/growthContext'
 import { day, TONES, when } from '../format'
@@ -36,13 +39,18 @@ export default function GrowthHomePage() {
   const needsAttention = data.reviews.filter((review) => review.rating <= 3 && review.responseState !== 'Response approved')
   const inbox = useApiResource(() => (can('growth.view') ? messagingApi.conversations({ branchId, pageSize: 2 }) : Promise.resolve(null)), `home-inbox:${branchId}`).data
   const conversations = (inbox?.data ?? []).map(toConversationView)
+  const campaigns = useApiResource(() => campaignsApi.campaigns({ branchId, pageSize: 3 }), `home-campaigns:${branchId}`).data?.data ?? []
+  const tagged = month?.byCampaign?.reduce((sum, entry) => sum + entry.total, 0) ?? 0
+  const workflows = useApiResource(() => campaignsApi.workflows(), 'home-workflows').data
+  const exceptions = useApiResource(() => campaignsApi.runs({ problem: 'true', pageSize: 1 }), 'home-exceptions').data?.meta.total
+  const byTrigger = (trigger) => workflows?.find((workflow) => workflow.trigger === trigger && workflow.status === 'active') ?? workflows?.find((workflow) => workflow.trigger === trigger)
 
   return (
-    <GrowthFrame back={{ to: ROUTES.dashboard, label: 'Back to Owner Panel' }} crumb="Owner Panel / Growth" code="GO-01" title="Growth OS" description="Prioritize inquiries, follow-ups and patient relationships across Aura Health." sample="Leads, follow-ups and conversations are live. Campaigns, reviews and workflows below are still sample records; channel connection states are unverified." context={[context.line, `Month to date · ${day(monthStart)} – ${day(today)} · Asia/Kolkata`]} today={context.today}>
+    <GrowthFrame back={{ to: ROUTES.dashboard, label: 'Back to Owner Panel' }} crumb="Owner Panel / Growth" code="GO-01" title="Growth OS" description="Prioritize inquiries, follow-ups and patient relationships across Aura Health." sample="Leads, follow-ups, conversations and campaigns are live. Reviews below are still sample records." context={[context.line, `Month to date · ${day(monthStart)} – ${day(today)} · Asia/Kolkata`]} today={context.today}>
       <p className="mb-6 flex flex-wrap items-center gap-2 text-xs"><span className="text-[10px] font-semibold tracking-wide text-outline uppercase">Quick actions</span>{quick.map(([label, to, primary]) => <ActionButton key={label} to={to} variant={primary ? 'brand' : 'secondary'}>{label}</ActionButton>)}</p>
 
       <dl className="mb-2 grid gap-4 sm:grid-cols-4">
-        {[['New Leads', open.data ? String(counts.New) : '—', 'Leads at the New stage'], ['Follow-ups Due', open.data ? String(summary.followUpsDue) : '—', `${overdue} overdue · due by end of today`], ['Booked After Conversion', month ? String(month.booked) : '—', month ? `${month.converted} converted this month` : 'Loading'], ['Campaign Performance', '—', 'Campaigns are not linked to leads yet']].map(([label, value, hint]) => (
+        {[['New Leads', open.data ? String(counts.New) : '—', 'Leads at the New stage'], ['Follow-ups Due', open.data ? String(summary.followUpsDue) : '—', `${overdue} overdue · due by end of today`], ['Booked After Conversion', month ? String(month.booked) : '—', month ? `${month.converted} converted this month` : 'Loading'], ['Campaign Leads', month ? String(tagged) : '—', month ? `${percent(tagged, month.total)} of this month’s leads came from a campaign` : 'Loading']].map(([label, value, hint]) => (
           <div key={label} className="rounded-md border border-slate-200 bg-white p-5"><dt className="text-[13px] font-medium">{label}</dt><dd className="mt-3 text-2xl font-semibold">{value}</dd><p className="mt-2 text-[11px] text-outline">{hint}</p></div>
         ))}
       </dl>
@@ -72,10 +80,10 @@ export default function GrowthHomePage() {
       <Section title="Recent campaigns" aside={<Link to={ROUTES.campaigns} className="font-semibold text-brand hover:underline">Campaign Details ↗</Link>} className="mb-6">
         <div className="-mx-6 overflow-x-auto"><table className="w-full min-w-[760px] text-left text-xs">
           <thead className="bg-surface-low text-[10px] font-semibold tracking-wide text-on-surface-variant uppercase"><tr>{['Campaign', 'Channel', 'Status', 'Spend · INR', 'Leads', 'Conversion'].map((heading) => <th key={heading} scope="col" className="px-6 py-3">{heading}</th>)}</tr></thead>
-          <tbody>{data.campaigns.slice(0, 3).map((campaign) => (
-            <tr key={campaign.id} className="border-t border-slate-100 align-top"><td className="px-6 py-4"><Link to={pathFor(ROUTES.campaign, { campaignId: campaign.id })} className="font-semibold text-brand hover:underline">{campaign.name} ↗</Link><br /><span className="text-outline">Updated {day(campaign.updated)}</span></td><td className="px-6 py-4">{campaign.channel.split(' / ')[0]}</td><td className="px-6 py-4"><StatusPill>{campaign.status}</StatusPill></td><td className="px-6 py-4">—<br /><span className="text-outline">Setup unverified</span></td><td className="px-6 py-4">—<br /><span className="text-outline">Unavailable</span></td><td className="px-6 py-4">—<br /><span className="text-outline">Attribution unavailable</span></td></tr>))}</tbody>
-        </table></div>
-        <p className="mt-3 text-[11px] text-outline">Spend requires configured tracking. Setup is unverified; unavailable spend or attribution is not zero performance.</p>
+          <tbody>{campaigns.map((campaign) => (
+            <tr key={campaign.id} className="border-t border-slate-100 align-top"><td className="px-6 py-4"><Link to={pathFor(ROUTES.campaign, { campaignId: campaign.id })} className="font-semibold text-brand hover:underline">{campaign.name} ↗</Link><br /><span className="text-outline">{campaign.code} · {day(campaign.startDate)} – {day(campaign.endDate)}</span></td><td className="px-6 py-4">{CAMPAIGN_CHANNELS[campaign.channel]}</td><td className="px-6 py-4"><StatusPill tone={CAMPAIGN_TONE[campaign.status]}>{CAMPAIGN_STATUSES[campaign.status]}</StatusPill></td><td className="px-6 py-4">{formatINR(campaign.spent)}<br /><span className="text-outline">of {formatINR(campaign.budget)} planned</span></td><td className="px-6 py-4">{campaign.leadCount}<br /><span className="text-outline">Recorded</span></td><td className="px-6 py-4">{percent(campaign.converted, campaign.leadCount)}<br /><span className="text-outline">{campaign.converted} became patients</span></td></tr>))}</tbody>
+        </table>{campaigns.length === 0 && <p className="px-6 py-8 text-center text-sm text-on-surface-variant">No campaigns yet.</p>}</div>
+        <p className="mt-3 text-[11px] text-outline">Spend is entered by the team. Leads count when recorded against a campaign.</p>
       </Section>
 
       <div className="mb-6 grid gap-6 lg:grid-cols-2">
@@ -92,9 +100,10 @@ export default function GrowthHomePage() {
 
       <h2 className="mb-3 text-[17px] font-semibold">Keep care relationships moving</h2>
       <div className="mb-6 grid gap-4 lg:grid-cols-3">
-        {[['Retention reminders', 'Routine recall', data.workflows[0], ROUTES.workflows, 'Recall workflow'], ['No-show recovery', 'Recovery', data.workflows[4], ROUTES.workflows, 'Recovery workflow'], ['Workflow exceptions', 'Needs review', null, ROUTES.workflowExecutions, 'Execution exceptions']].map(([title, tag, workflow, to, link]) => (
-          <div key={title} className="rounded-md border border-slate-200 bg-white p-5 text-xs"><p className="text-[13px] font-semibold">{title}</p><StatusPill className="my-3">{tag}</StatusPill><p className="font-medium">{workflow?.name ?? 'Simulation scenarios'}</p><p className="mt-1 text-on-surface-variant">{workflow ? workflow.trigger : 'Four simulated runs need review before any live use.'}</p><Link to={to} className="mt-3 inline-block font-semibold text-brand hover:underline">{link} ↗</Link></div>
+        {[['Revisit follow-up', byTrigger('revisit_due'), 'Recall workflow'], ['No-show recovery', byTrigger('no_show'), 'Recovery workflow']].map(([title, workflow, link]) => (
+          <div key={title} className="rounded-md border border-slate-200 bg-white p-5 text-xs"><p className="text-[13px] font-semibold">{title}</p><StatusPill tone={workflow?.status === 'active' ? 'success' : 'neutral'} className="my-3">{workflow ? (workflow.status === 'active' ? 'On' : workflow.status === 'paused' ? 'Paused' : 'Draft') : 'Not set up'}</StatusPill><p className="font-medium">{workflow?.name ?? (workflows ? 'No workflow yet' : 'Loading…')}</p><p className="mt-1 text-on-surface-variant">{workflow ? `${workflow.lastWeek.queued} sent · ${workflow.lastWeek.skipped} skipped in the last 7 days` : 'Create one to send it automatically.'}</p><Link to={workflow ? pathFor(ROUTES.workflowEdit, { workflowId: workflow.id }) : ROUTES.workflowNew} className="mt-3 inline-block font-semibold text-brand hover:underline">{link} ↗</Link></div>
         ))}
+        <div className="rounded-md border border-slate-200 bg-white p-5 text-xs"><p className="text-[13px] font-semibold">Workflow exceptions</p><StatusPill tone={exceptions ? 'warning' : 'neutral'} className="my-3">{exceptions === undefined ? 'Loading' : exceptions ? 'Needs review' : 'None'}</StatusPill><p className="font-medium">{exceptions === undefined ? '—' : `${exceptions} skipped or failed`}</p><p className="mt-1 text-on-surface-variant">Events a workflow could not send, with the reason.</p><Link to={ROUTES.workflowExecutions} className="mt-3 inline-block font-semibold text-brand hover:underline">Execution exceptions ↗</Link></div>
       </div>
       <GrowthFooter code="GO-01" />
     </GrowthFrame>

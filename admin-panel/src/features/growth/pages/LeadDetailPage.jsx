@@ -65,7 +65,7 @@ function LeadDetail({ lead, reload }) {
   const appointment = lead.journey?.appointment
   const consultation = lead.journey?.consultation
   const stages = [
-    ['Campaign', 'No campaign', 'Campaigns are not linked to leads yet', false],
+    ['Campaign', lead.campaign ? lead.campaign.code : 'No campaign', lead.campaign ? lead.campaign.name : 'Not recorded against a campaign', false],
     ['Lead', `${lead.number} · ${lead.stage}`, `Recorded ${day(lead.created.date)}`, true],
     ['Appointment', appointment ? `${appointment.reference} · ${day(appointment.date)}` : 'Not booked', appointment ? APPOINTMENT_STATUS[appointment.status] : converted ? 'No appointment since conversion' : 'Not converted', Boolean(appointment)],
     ['Consultation', consultation ? `${consultation.reference} · ${day(consultation.date)}` : 'Not yet reached', consultation ? 'Completed visit' : 'No completed visit linked', Boolean(consultation)],
@@ -100,7 +100,7 @@ function LeadDetail({ lead, reload }) {
       </div>
 
       <Section title="Source & journey" aside="Original source kept through edits and conversion" className="mb-6">
-        <dl className="mb-5 grid gap-4 text-xs sm:grid-cols-4"><KeyValue label="Source">{lead.source}</KeyValue><KeyValue label="Branch">{lead.branch}</KeyValue><KeyValue label="Campaign">No campaign</KeyValue><KeyValue label="Converted">{lead.convertedAt ? when(lead.convertedAt) : 'Not converted'}</KeyValue></dl>
+        <dl className="mb-5 grid gap-4 text-xs sm:grid-cols-4"><KeyValue label="Source">{lead.source}</KeyValue><KeyValue label="Branch">{lead.branch}</KeyValue><KeyValue label="Campaign">{lead.campaign ? <Link to={pathFor(ROUTES.campaign, { campaignId: lead.campaign.id })} className="font-semibold text-brand hover:underline">{lead.campaign.code} · {lead.campaign.name}</Link> : 'No campaign'}</KeyValue><KeyValue label="Converted">{lead.convertedAt ? when(lead.convertedAt) : 'Not converted'}</KeyValue></dl>
         <p className="mb-3 flex items-center justify-between text-xs"><strong>Campaign → Lead → Appointment → Consultation → Revenue</strong><StatusPill>{converted ? 'Visits since conversion' : 'Lead only'}</StatusPill></p>
         <ol className="grid gap-3 sm:grid-cols-5">{stages.map(([stage, name, note, reached]) => <li key={stage} className={`rounded-md border p-3 text-xs ${reached ? 'border-teal-200 bg-teal-50' : 'border-slate-200 bg-surface-lowest'}`}><p className="font-semibold">{stage}</p><p className="mt-1">{name}</p><p className="mt-1 text-outline">{note}</p></li>)}</ol>
         {converted && !lead.journey && <p className="mt-3 text-[11px] text-outline">Appointments are shown to roles that can view bookings.</p>}

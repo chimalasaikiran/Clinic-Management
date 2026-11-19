@@ -45,6 +45,7 @@ export const apiLead = (overrides = {}) => ({
   branch: branchOf('b-main'),
   owner: ownerOf('m-1'),
   patient: null,
+  campaign: null,
   dueState: 'none',
   activities: [{ id: 'act-1', kind: 'created', title: 'Phone inquiry recorded', text: 'New enquiry about Knee pain.', details: null, occurredAt: '2026-11-18T05:00:00.000Z', actor: 'Meera Shah', owner: null }],
   journey: null,
@@ -114,6 +115,11 @@ export function createLeadsApi({ leads = [overdueLead()], owners = LEAD_OWNERS, 
         bySource: Object.fromEntries(['website', 'phone', 'front_desk', 'walk_in'].map((source) => [source, count((lead) => lead.source === source)])),
         byStage: Object.fromEntries(['new', 'contacted', 'qualified', 'converted', 'closed'].map((stage) => [stage, count((lead) => lead.stage === stage)])),
         converted: count((lead) => lead.stage === 'converted'), booked: count((lead) => Boolean(lead.journey?.appointment)), consulted: count((lead) => Boolean(lead.journey?.consultation)),
+        byCampaign: [...new Map(rows.filter((lead) => lead.campaign).map((lead) => [lead.campaign.id, lead.campaign])).values()].map((campaign) => {
+          const tagged = rows.filter((lead) => lead.campaign?.id === campaign.id)
+          return { ...campaign, total: tagged.length, converted: tagged.filter((lead) => lead.stage === 'converted').length, booked: 0, consulted: 0 }
+        }),
+        untagged: count((lead) => !lead.campaign),
       }
     },
     async create(body) {
@@ -126,6 +132,7 @@ export function createLeadsApi({ leads = [overdueLead()], owners = LEAD_OWNERS, 
       const lead = apiLead({
         id: `l-${number}`, number: `LD-${String(number).padStart(6, '0')}`, fullName: body.fullName, mobile: body.mobile, email: body.email || null, interest: body.interest || null, source: body.source, stage: body.stage,
         branch: branchOf(body.branchId), owner: ownerOf(body.ownerMembershipId), nextAction: body.nextDueDate ? body.nextAction : null, nextDueAt: body.nextDueDate ? dueAt(body.nextDueDate, body.nextDueTime ?? '10:00') : null,
+        campaign: body.campaignId ? { id: body.campaignId, code: 'CMP-0001', name: 'Knee care camp' } : null,
         createdAt: now, lastActivityAt: now, activities: [{ id: 'act-1', kind: 'created', title: 'Recorded', text: 'New enquiry.', details: null, occurredAt: now, actor: 'Meera Shah', owner: null }],
       })
       state.leads.push(lead)

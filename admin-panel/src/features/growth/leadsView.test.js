@@ -25,7 +25,7 @@ describe('lead view', () => {
     const owners = [{ membershipId: 'm-1', name: 'Meera Shah', branches: 'all' }, { membershipId: 'm-2', name: 'Priya Nair', branches: ['b-kondapur'] }]
     expect(ownerOptions(owners, 'b-main')).toEqual([{ value: 'm-1', label: 'Meera Shah' }])
     expect(ownerOptions(owners, 'b-kondapur').map((option) => option.label)).toEqual(['Meera Shah', 'Priya Nair'])
-    expect(leadPayload({ name: ' Nisha ', phone: '98480 22110', email: '', interest: ' Knee ', branchId: 'b-main', ownerId: 'm-1', reviewed: false })).toEqual({ fullName: 'Nisha', mobile: '9848022110', email: '', interest: 'Knee', branchId: 'b-main', ownerMembershipId: 'm-1', confirmedNotDuplicate: false })
+    expect(leadPayload({ name: ' Nisha ', phone: '98480 22110', email: '', interest: ' Knee ', branchId: 'b-main', ownerId: 'm-1', reviewed: false })).toEqual({ fullName: 'Nisha', mobile: '9848022110', email: '', interest: 'Knee', branchId: 'b-main', ownerMembershipId: 'm-1', confirmedNotDuplicate: false, campaignId: null })
   })
 
   it('checks a lead and an interaction before sending them', () => {

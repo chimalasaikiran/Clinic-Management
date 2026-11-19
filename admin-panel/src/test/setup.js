@@ -2,6 +2,7 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, configure } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
 import { createBillingApi } from './fixtures/billingApi'
+import { createCampaignsApi } from './fixtures/campaignsApi'
 import { billingFake } from './fixtures/billingFake'
 import { createDashboardApi } from './fixtures/dashboardApi'
 import { createInventoryApi } from './fixtures/inventoryApi'
@@ -46,6 +47,10 @@ vi.mock('../features/growth/messagingApi', () => ({
   messagingApi: new Proxy({}, { get: (_, method) => (...args) => billingFake.messaging.api[method](...args) }),
 }))
 
+vi.mock('../features/growth/campaignsApi', () => ({
+  campaignsApi: new Proxy({}, { get: (_, method) => (...args) => billingFake.campaigns.api[method](...args) }),
+}))
+
 vi.mock('../features/payroll/api', () => ({
   payrollApi: new Proxy({}, { get: (_, method) => (...args) => billingFake.payroll.api[method](...args) }),
 }))
@@ -59,6 +64,7 @@ beforeEach(() => {
   billingFake.useWorkspace(createWorkspaceApi())
   billingFake.useLeads(createLeadsApi())
   billingFake.useMessaging(createMessagingApi())
+  billingFake.useCampaigns(createCampaignsApi())
   localStorage.clear()
 })
 

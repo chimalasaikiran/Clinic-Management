@@ -10,6 +10,7 @@ export const billingFake = {
   workspace: null,
   leads: null,
   messaging: null,
+  campaigns: null,
   use(fake) {
     this.current = fake
     return fake
@@ -40,6 +41,10 @@ export const billingFake = {
   },
   useMessaging(fake) {
     this.messaging = fake
+    return fake
+  },
+  useCampaigns(fake) {
+    this.campaigns = fake
     return fake
   },
 }

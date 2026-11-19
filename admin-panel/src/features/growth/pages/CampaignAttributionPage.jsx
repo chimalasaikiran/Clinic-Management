@@ -2,50 +2,67 @@ import { Link, useParams } from 'react-router-dom'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { Banner, KeyValue, Section } from '../../../components/workspace/RecordKit'
 import { pathFor, ROUTES } from '../../../config/routes'
+import { useApiResource } from '../../../hooks/useApiResource'
+import LoadingState from '../../patients/components/LoadingState'
 import { formatINR } from '../../patients/format'
 import GrowthFrame, { GrowthFooter } from '../components/GrowthFrame'
-import { GROWTH_BRANCH } from '../constants'
-import { useGrowth } from '../context/growthContext'
+import { campaignsApi } from '../campaignsApi'
+import { CAMPAIGN_CHANNELS, CAMPAIGN_STATUSES, CAMPAIGN_TONE, percent } from '../campaignsView'
 import { day, when } from '../format'
+import { SOURCES, STAGES, stampOf } from '../leadsView'
+import { useLeadContext } from '../useLeads'
 
 export default function CampaignAttributionPage() {
   const { campaignId } = useParams()
-  const { data } = useGrowth()
-  const campaign = data.campaigns.find((entry) => entry.id === campaignId)
+  const context = useLeadContext()
+  const resource = useApiResource(() => campaignsApi.campaign(campaignId), `campaign:${campaignId}`)
+  const campaign = resource.data
+  const frame = { back: { to: ROUTES.growthPerformance, label: 'Growth performance · GO30' }, crumb: 'Owner Panel / Growth OS / Campaign Attribution', code: 'GO-31', context: [context.line, 'Leads recorded against the campaign, followed through conversion, booking, visit and billing'], today: context.today, sample: 'Live records · Only leads recorded against this campaign are credited to it' }
 
-  if (!campaign) {
+  if (resource.error?.status === 404) {
     return (
-      <GrowthFrame back={{ to: ROUTES.growthPerformance, label: 'Growth performance · GO30' }} crumb="Owner Panel / Growth OS / Campaign Attribution" code="GO-31" title="Campaign not found">
+      <GrowthFrame {...frame} title="Campaign not found">
         <Banner tone="warning" title="No campaign matches this link">Open Growth performance to choose a campaign.</Banner>
       </GrowthFrame>
     )
   }
+  if (!campaign) {
+    return (
+      <GrowthFrame {...frame} title="Campaign Attribution Details">
+        <LoadingState label="Loading attribution…" error={resource.error} onRetry={resource.reload} />
+      </GrowthFrame>
+    )
+  }
 
-  const leads = data.leads.filter((lead) => campaign.leadIds.includes(lead.id))
-  const early = leads.find((lead) => lead.created.date < campaign.start)
-  const stages = [['Campaign', `${campaign.id} · ${campaign.status}`, `${campaign.name} ${day(campaign.start)} – ${day(campaign.end)}`, false], ['Lead', `${leads.length} historical tag${leads.length === 1 ? '' : 's'}`, leads[0] ? `${leads[0].id} · ${day(leads[0].created.date)} · unknown attribution` : 'No linked lead', true], ['Appointment', 'No linked record', 'Not booked · live feed not verified', false], ['Consultation', 'No linked evidence', 'Completion status not supplied', false], ['Revenue', 'No ledger evidence', 'No attributable amount · model / join missing', false]]
+  const { attribution } = campaign
+  const stages = [
+    ['Campaign', campaign.code, `${day(campaign.startDate)} – ${day(campaign.endDate)}`],
+    ['Lead', `${attribution.leads} recorded`, 'Recorded with this campaign as their source'],
+    ['Patient', `${attribution.converted} converted`, `${percent(attribution.converted, attribution.leads)} of leads`],
+    ['Appointment', `${attribution.booked} booked`, 'On or after converting, not cancelled'],
+    ['Revenue', attribution.revenue === null ? 'Restricted' : formatINR(attribution.revenue), attribution.revenue === null ? 'Needs the revenue permission' : `${attribution.consulted} completed a visit`],
+  ]
 
   return (
-    <GrowthFrame back={{ to: ROUTES.growthPerformance, label: 'Growth performance · GO30 · Restore cohort, filters & scroll' }} crumb="Owner Panel / Growth OS / Campaign Attribution" code="GO-31" title="Campaign Attribution Details" description={`Trace ${campaign.id} from its historical lead association to the evidence required for downstream credit.`} context={[`Record branch · ${GROWTH_BRANCH.name} · ${GROWTH_BRANCH.code}`, '01–25 Oct 2026 inclusive · Asia/Kolkata · Source cohort · Retain filters & scroll on return']} sample="Sample slice · Live data is not connected · Sample and live sources are never combined">
-      {early && <Banner tone="warning" title="Historical tag predates proposed campaign window — verification required" className="mb-6">{early.id} was created {day(early.created.date)}; {campaign.id} proposes {day(campaign.start)} – {day(campaign.end)}. The historical tag is not proof of campaign acquisition, delivery or an eligible touch. The exact tag actor and timestamp are not supplied; creation time is not touch proof.</Banner>}
-      <Section title={campaign.name} aside={`${campaign.id} · saved record`} className="mb-6">
-        <p className="mb-4 flex flex-wrap gap-2"><StatusPill>{campaign.status} · internal</StatusPill>{leads.length > 0 && <StatusPill tone="warning">Attribution unverified</StatusPill>}<StatusPill>Source cohort ≠ proposed plan window</StatusPill></p>
-        <dl className="grid gap-4 text-xs sm:grid-cols-3"><KeyValue label="Branch / owner">{campaign.branch} · {campaign.owner}</KeyValue><KeyValue label="Saved plan only · not spend">{formatINR(campaign.budget)} · {day(campaign.start)} – {day(campaign.end)} proposed</KeyValue><KeyValue label={`${campaign.channel.split(' / ')[0]} planned`}>No verified campaign connector</KeyValue></dl>
-        <Link to={pathFor(ROUTES.campaign, { campaignId })} className="mt-4 inline-block text-xs font-semibold text-brand hover:underline">Campaign definition → GO08 · Scoped view · No changes to the saved plan</Link>
+    <GrowthFrame {...frame} title="Campaign Attribution Details" description={`Trace ${campaign.code} from the leads recorded against it to patients, appointments and billed revenue.`}>
+      <Section title={campaign.name} aside={campaign.code} className="mb-6">
+        <p className="mb-4 flex flex-wrap gap-2"><StatusPill tone={CAMPAIGN_TONE[campaign.status]}>{CAMPAIGN_STATUSES[campaign.status]}</StatusPill><StatusPill>{CAMPAIGN_CHANNELS[campaign.channel]}</StatusPill></p>
+        <dl className="grid gap-4 text-xs sm:grid-cols-3"><KeyValue label="Branch / owner">{campaign.branch.name} · {campaign.owner.name}</KeyValue><KeyValue label="Budget · spent">{formatINR(campaign.budget)} · {formatINR(campaign.spent)}</KeyValue><KeyValue label="Cost per converted patient">{attribution.converted && campaign.spent ? formatINR(Math.round(campaign.spent / attribution.converted)) : '—'}</KeyValue></dl>
+        <Link to={pathFor(ROUTES.campaign, { campaignId })} className="mt-4 inline-block text-xs font-semibold text-brand hover:underline">Campaign details → GO08</Link>
       </Section>
 
-      <Section title="Campaign → lead → appointment → consultation → revenue" aside="Evidence journey · no inferred results" className="mb-6">
-        <ol className="grid gap-3 sm:grid-cols-5">{stages.map(([stage, name, note, flagged]) => <li key={stage} className={`rounded-md border p-3 text-xs ${flagged ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-surface-lowest'}`}><p className="font-semibold">{stage} →</p><p className="mt-1">{name}</p><p className="mt-1 text-outline">{note}</p></li>)}</ol>
-        <Banner className="mt-4 border-violet-200 bg-violet-50" title={`${leads.length} known association · not ${leads.length} directly or assisted-attributed lead`}>Current tag classification: Unknown — model, eligible touch evidence, identity and coverage are insufficient. Attribution rates are not calculated; verified direct and assisted counts are not evaluated, not zero.</Banner>
+      <Section title="Campaign → lead → patient → appointment → revenue" aside="Counted from records" className="mb-6">
+        <ol className="grid gap-3 sm:grid-cols-5">{stages.map(([stage, value, note]) => <li key={stage} className="rounded-md border border-slate-200 bg-surface-lowest p-3 text-xs"><p className="font-semibold">{stage} →</p><p className="mt-1 text-[13px] font-semibold">{value}</p><p className="mt-1 text-outline">{note}</p></li>)}</ol>
+        <Banner className="mt-4" title="How credit is given">A lead is credited to this campaign only when staff record it against the campaign. Its later appointments count from the day it converted; revenue counts invoices to that patient from the same day.</Banner>
       </Section>
 
-      <Section title="Linked records & evidence" aside="Supplied samples only · no patient chart access" className="mb-6">
-        <div className="-mx-6 overflow-x-auto"><table className="w-full min-w-[760px] text-left text-xs"><thead className="bg-surface-low text-[10px] font-semibold tracking-wide text-on-surface-variant uppercase"><tr>{['Stage', 'Record / timestamp · IST', 'Source / evidence', 'Verification / blocker', 'Permitted next step'].map((heading) => <th key={heading} scope="col" className="px-6 py-3">{heading}</th>)}</tr></thead>
+      <Section title="Recorded leads" aside={`${attribution.leads} lead${attribution.leads === 1 ? '' : 's'}`} className="mb-6">
+        <div className="-mx-6 overflow-x-auto"><table className="w-full min-w-[760px] text-left text-xs"><thead className="bg-surface-low text-[10px] font-semibold tracking-wide text-on-surface-variant uppercase"><tr>{['Lead', 'Recorded · IST', 'Source', 'Stage', 'Converted'].map((heading) => <th key={heading} scope="col" className="px-6 py-3">{heading}</th>)}</tr></thead>
           <tbody>
-            <tr className="border-t border-slate-100 align-top"><td className="px-6 py-4 font-semibold">Campaign</td><td className="px-6 py-4">{campaign.id}<br /><span className="text-outline">Updated {day(campaign.updated)}</span></td><td className="px-6 py-4">Saved plan</td><td className="px-6 py-4">Plan window is proposed; delivery unverified</td><td className="px-6 py-4"><Link to={pathFor(ROUTES.campaign, { campaignId })} className="font-semibold text-brand hover:underline">Open campaign → GO08</Link></td></tr>
-            {leads.map((lead) => <tr key={lead.id} className="border-t border-slate-100 align-top"><td className="px-6 py-4 font-semibold">Lead</td><td className="px-6 py-4">{lead.id}<br /><span className="text-outline">{when(lead.created)}</span></td><td className="px-6 py-4">{lead.source} · {lead.campaign}</td><td className="px-6 py-4">Tag actor and timestamp not supplied; association unverified</td><td className="px-6 py-4"><Link to={pathFor(ROUTES.lead, { leadId: lead.id })} className="font-semibold text-brand hover:underline">Open lead → GO03</Link></td></tr>)}
-            {leads.length === 0 && <tr className="border-t border-slate-100"><td colSpan={5} className="px-6 py-6 text-center text-outline">No lead is tagged to this campaign.</td></tr>}
+            {attribution.recent.map((lead) => <tr key={lead.id} className="border-t border-slate-100 align-top"><td className="px-6 py-4"><Link to={pathFor(ROUTES.lead, { leadId: lead.id })} className="font-semibold text-brand hover:underline">{lead.number} · {lead.fullName}</Link></td><td className="px-6 py-4">{when(stampOf(lead.createdAt))}</td><td className="px-6 py-4">{SOURCES[lead.source]}</td><td className="px-6 py-4">{STAGES[lead.stage]}</td><td className="px-6 py-4">{lead.convertedAt ? when(stampOf(lead.convertedAt)) : '—'}</td></tr>)}
+            {attribution.recent.length === 0 && <tr className="border-t border-slate-100"><td colSpan={5} className="px-6 py-6 text-center text-outline">No lead is recorded against this campaign.</td></tr>}
           </tbody></table></div>
+        {attribution.leads > attribution.recent.length && <p className="mt-3 text-[11px] text-outline">Showing the latest {attribution.recent.length} of {attribution.leads}.</p>}
       </Section>
       <GrowthFooter code="GO-31" back={{ to: ROUTES.growthPerformance, label: 'Growth performance · GO30' }} />
     </GrowthFrame>
