@@ -1,4 +1,5 @@
-// Sample Growth OS records standing in for the campaign, content and messaging APIs. Leads come from the API.
+// Sample Growth OS records standing in for the campaign, content, review and workflow APIs. Leads and messaging come
+// from the API; the sample message templates remain only for the workflow and review-request screens.
 const at = (date, time) => ({ date, time })
 
 export const SEED_CAMPAIGNS = [
@@ -41,20 +42,6 @@ export const SEED_ESCALATIONS = [
   { id: 'ESC-DEMO102', reviewId: 'REV-DEMO102', topic: 'Holiday hours unclear', summary: 'Awaiting operations review', severity: 'Medium', owner: 'Meera Shah', due: '2026-10-23', dueTime: '17:00', status: 'Open', note: '' },
 ]
 
-export const SEED_CONVERSATIONS = [
-  { id: 'CV-DEMO201', subject: 'Visitor inquiry', preview: 'Thank you. Is there a separate holiday schedule?', channel: 'ClinicOS test inbox', status: 'Open', unread: true, owner: 'Meera Shah', linked: false, last: at('2026-10-24', '09:20'), summary: 'Saturday opening hours and holiday schedule. Nonclinical enquiry; no external or provider identity supplied.' },
-  { id: 'CV-DEMO202', subject: 'Directions to the clinic', preview: 'Is there parking near the entrance?', channel: 'ClinicOS test inbox', status: 'Open', unread: true, owner: 'Priya Nair', linked: false, last: at('2026-10-23', '15:05'), summary: 'Directions and parking. Nonclinical enquiry.' },
-  { id: 'CV-DEMO203', subject: 'Appointment change request', preview: 'Thanks, that works for me.', channel: 'ClinicOS test inbox', status: 'Resolved', unread: false, owner: 'Meera Shah', linked: false, last: at('2026-10-22', '12:40'), summary: 'Rescheduling enquiry handled by the front desk.' },
-]
-
-export const SEED_MESSAGES = [
-  { id: 'm1', threadId: 'CV-DEMO201', from: 'visitor', who: 'Visitor · sample enquiry', at: at('2026-10-24', '09:15'), text: 'Hello, could you confirm your Saturday opening hours?', note: 'Received in sample dataset' },
-  { id: 'm2', threadId: 'CV-DEMO201', from: 'team', who: 'Team reply · test transcript', at: at('2026-10-24', '09:18'), text: 'Our local information lists Saturday opening hours as 09:00–18:00. Please check the clinic’s official contact details for current exceptions.', note: 'Stored in test transcript — no external delivery receipt' },
-  { id: 'm3', threadId: 'CV-DEMO201', from: 'visitor', who: 'Visitor · sample enquiry', at: at('2026-10-24', '09:20'), text: 'Thank you. Is there a separate holiday schedule?', note: 'Received in sample dataset' },
-  { id: 'm4', threadId: 'CV-DEMO202', from: 'visitor', who: 'Visitor · sample enquiry', at: at('2026-10-23', '15:05'), text: 'Is there parking near the entrance?', note: 'Received in sample dataset' },
-  { id: 'm5', threadId: 'CV-DEMO203', from: 'visitor', who: 'Visitor · sample enquiry', at: at('2026-10-22', '12:40'), text: 'Thanks, that works for me.', note: 'Received in sample dataset' },
-]
-
 export const SEED_MESSAGE_TEMPLATES = [
   { id: 'MT-REM01', version: 1, name: 'Appointment reminder', category: 'Reminder', channel: 'WhatsApp', locale: 'English · en-IN', status: 'Local draft', body: 'Hello {{preferred_name}}, this is a reminder from Aura Health about your appointment on {{appointment_date}} at {{appointment_time}}. Please contact the clinic through its verified contact details if your plans change. Do not share medical information in this message.' },
   { id: 'MT-FUP02', version: 1, name: 'Follow-up check-in', category: 'Follow-up', channel: 'SMS', locale: 'English · en-IN', status: 'Local draft', body: 'Hello {{preferred_name}}, we would like to check whether you still need information about {{service_name}}. Reply or contact the clinic when convenient.' },
@@ -77,19 +64,6 @@ export const SEED_EXECUTIONS = [
   { id: 'SIM-REM201-003', workflowId: 'WF-REM201', at: at('2026-10-25', '09:30'), step: 'Validation', outcome: 'Failed', reason: 'Required appointment_time missing — structural rejection, not delivery failure.' },
   { id: 'SIM-REM201-002', workflowId: 'WF-REM201', at: at('2026-10-25', '09:15'), step: 'Eligibility request', outcome: 'Pending', reason: 'Awaiting query response; recipient count not recorded.' },
   { id: 'SIM-REM201-001', workflowId: 'WF-REM201', at: at('2026-10-25', '09:00'), step: 'Channel authorization', outcome: 'Blocked', reason: 'No verified connection — dispatch not attempted.' },
-]
-
-export const SEED_SCENARIOS = [
-  { id: 'SIM-REJECT', messageId: 'MSG-SIM01', target: 'synthetic target A', error: 'Illustrated invalid-template rejection', evidence: 'Explicit rejection scenario · No real provider evidence', retry: 'After content fix, approval and full gate recheck', canRetry: false },
-  { id: 'SIM-AUTH', messageId: 'MSG-SIM02', target: 'synthetic target B', error: 'Illustrated expired authorization', evidence: 'Auth expiry scenario · No real grant supplied', retry: 'Re-authorize first; not a blind retry', canRetry: false },
-  { id: 'SIM-UNKNOWN', messageId: 'MSG-SIM03', target: 'synthetic target C', error: 'Illustrated transport timeout', evidence: 'Unknown outcome · Neither failed nor accepted', retry: 'Blocked — reconcile first', canRetry: false },
-  { id: 'SIM-REFRESH', messageId: 'MSG-SIM04', target: 'synthetic target D', error: 'Illustrated receipt refresh failure', evidence: 'Read failure only · Send state not established', retry: 'Retry status read only; never resend', canRetry: false },
-]
-
-export const SEED_CHANNELS = [
-  { id: 'whatsapp', name: 'WhatsApp Business', note: 'Proposed for WF-REM201. Template and provider account verification required.' },
-  { id: 'sms', name: 'SMS', note: 'Setup option only. Not a selected channel or automatic fallback.' },
-  { id: 'email', name: 'Email', note: 'Setup option only. Not a selected channel or automatic fallback.' },
 ]
 
 export const SEED_PROFILE = { business: 'Aura Health — Jubilee Hills Clinic', street: 'Plot 42, Road 36, Jubilee Hills', city: 'Hyderabad', state: 'Telangana', postal: '500033', country: 'India', description: 'A neighbourhood clinic offering consultations and preventive health screening enquiries. Services and availability are confirmed by the clinic.', primary: 'Medical clinic', secondary: 'Preventive healthcare clinic', specialDate: '2026-10-26', specialFrom: '10:00', specialTo: '14:00', specialSaved: false }

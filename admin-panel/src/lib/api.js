@@ -3,6 +3,9 @@ const TIMEOUT_MS = 15000
 
 export const apiConfigured = () => Boolean(BASE_URL)
 
+// Absolute address of an API path, for what cannot go through api() (EventSource streams).
+export const apiUrl = (path) => `${BASE_URL}${path}`
+
 export class ApiError extends Error {
   constructor(status, code, message, details = [], retryAfter = null) {
     super(message)

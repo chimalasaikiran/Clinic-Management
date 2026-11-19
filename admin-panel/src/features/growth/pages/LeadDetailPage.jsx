@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useLocation, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import ActionButton from '../../../components/workspace/ActionButton'
 import { SelectInput } from '../../../components/workspace/FormControls'
 import StatusPill from '../../../components/workspace/StatusPill'
@@ -11,6 +11,7 @@ import GrowthFrame, { GrowthFooter } from '../components/GrowthFrame'
 import LeadGate from '../components/LeadGate'
 import { day, TONES, when } from '../format'
 import { leadsApi } from '../leadsApi'
+import { messagingApi } from '../messagingApi'
 import { LIVE_NOTE, leadPayload, ownerOptions, STAGES, stageId } from '../leadsView'
 import { useLeadContext, useLeadOwners } from '../useLeads'
 
@@ -29,6 +30,7 @@ function LeadDetail({ lead, reload }) {
   const context = useLeadContext()
   const owners = useLeadOwners()
   const [failure, setFailure] = useState('')
+  const navigate = useNavigate()
   const writer = can('growth.leads')
   const registerPath = `${ROUTES.leads}${state?.search ?? ''}`
   const leadId = lead.id
@@ -46,6 +48,17 @@ function LeadDetail({ lead, reload }) {
     } catch (error) {
       setFailure(error.message)
       if (error.code === 'LEAD_CHANGED') reload()
+    }
+  }
+
+  // Opens the conversation with this lead on a channel, creating it the first time.
+  const message = async (channel) => {
+    setFailure('')
+    try {
+      const conversation = await messagingApi.start({ channel, leadId: lead.id })
+      navigate(pathFor(ROUTES.conversation, { threadId: conversation.id }))
+    } catch (error) {
+      setFailure(error.message)
     }
   }
 
@@ -100,6 +113,7 @@ function LeadDetail({ lead, reload }) {
         </Section>
         <Section title="Related records" aside={converted ? 'Converted' : 'Not converted'}>
           <div className="grid gap-3 sm:grid-cols-2 text-xs"><div className="rounded-md bg-surface-lowest p-3"><p className="text-outline">Shared patient</p><p className="mt-1 text-[13px] font-semibold">{lead.patient ? <Link to={pathFor(ROUTES.patientHub, { patientId: lead.patient.id })} className="text-brand hover:underline">{lead.patient.name} ↗</Link> : 'No patient linked'}</p><p className="mt-1 text-outline">{lead.patient ? `${lead.patient.mrn} · Linked at conversion` : 'Linked when the lead is converted'}</p></div><div className="rounded-md bg-surface-lowest p-3"><p className="text-outline">Appointment</p><p className="mt-1 text-[13px] font-semibold">{appointment ? <Link to={pathFor(ROUTES.appointment, { patientId: lead.patient.id, appointmentId: appointment.id })} className="text-brand hover:underline">{appointment.reference} ↗</Link> : 'Not booked'}</p><p className="mt-1 text-outline">{appointment ? `${day(appointment.date)} · ${APPOINTMENT_STATUS[appointment.status]}` : 'Booking is a separate workflow'}</p></div></div>
+          {can('growth.manage') && <div className="mt-4 rounded-md bg-surface-lowest p-3 text-xs"><p className="text-outline">Message this lead</p><div className="mt-2 flex flex-wrap gap-2"><ActionButton onClick={() => message('whatsapp')}>WhatsApp</ActionButton><ActionButton onClick={() => message('sms')}>SMS</ActionButton>{lead.email && <ActionButton onClick={() => message('email')}>Email</ActionButton>}</div><p className="mt-2 text-[11px] text-outline">Opens the conversation; sending checks the channel and their recorded permission.</p></div>}
           {duplicates.length > 0 && <Banner tone="warning" title="Possible duplicate · Review required" className="mt-4">{duplicates.map((entry) => `${entry.fullName} (${entry.number})`).join(', ')} uses the same mobile number. A match is not a verified identity; compare details before linking or creating.</Banner>}
           {!converted && writer && <><p className="mt-5 text-[13px] font-semibold">Before converting this lead</p><ul className="mt-2 space-y-2 text-xs text-on-surface-variant"><li>Review shared records.</li><li>Resolve identity before creation.</li><li>Confirm conversion separately.</li></ul><ActionButton variant="brand" className="mt-4" to={pathFor(ROUTES.leadConvert, { leadId })} state={here}>Convert Lead</ActionButton></>}
         </Section>

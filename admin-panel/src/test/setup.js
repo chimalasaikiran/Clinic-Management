@@ -6,6 +6,7 @@ import { billingFake } from './fixtures/billingFake'
 import { createDashboardApi } from './fixtures/dashboardApi'
 import { createInventoryApi } from './fixtures/inventoryApi'
 import { createLeadsApi } from './fixtures/leadsApi'
+import { createMessagingApi } from './fixtures/messagingApi'
 import { createPayrollApi } from './fixtures/payrollApi'
 import { createReportsApi } from './fixtures/reportsApi'
 import { createWorkspaceApi } from './fixtures/workspaceApi'
@@ -41,6 +42,10 @@ vi.mock('../features/growth/leadsApi', () => ({
   leadsApi: new Proxy({}, { get: (_, method) => (...args) => billingFake.leads.api[method](...args) }),
 }))
 
+vi.mock('../features/growth/messagingApi', () => ({
+  messagingApi: new Proxy({}, { get: (_, method) => (...args) => billingFake.messaging.api[method](...args) }),
+}))
+
 vi.mock('../features/payroll/api', () => ({
   payrollApi: new Proxy({}, { get: (_, method) => (...args) => billingFake.payroll.api[method](...args) }),
 }))
@@ -53,6 +58,7 @@ beforeEach(() => {
   billingFake.useDashboard(createDashboardApi())
   billingFake.useWorkspace(createWorkspaceApi())
   billingFake.useLeads(createLeadsApi())
+  billingFake.useMessaging(createMessagingApi())
   localStorage.clear()
 })
 

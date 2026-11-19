@@ -2,8 +2,8 @@ import { useCallback, useMemo, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { nextId } from '../../patients/format'
 import {
-  SEED_CAMPAIGNS, SEED_CHANNELS, SEED_CONTENT, SEED_CONTENT_TEMPLATES, SEED_CONVERSATIONS, SEED_ESCALATIONS, SEED_EXECUTIONS, SEED_MESSAGES, SEED_MESSAGE_TEMPLATES,
-  SEED_PROFILE, SEED_REVIEW_REQUEST, SEED_REVIEWS, SEED_SCENARIOS, SEED_SEGMENTS, SEED_WORKFLOWS,
+  SEED_CAMPAIGNS, SEED_CONTENT, SEED_CONTENT_TEMPLATES, SEED_ESCALATIONS, SEED_EXECUTIONS, SEED_MESSAGE_TEMPLATES,
+  SEED_PROFILE, SEED_REVIEW_REQUEST, SEED_REVIEWS, SEED_SEGMENTS, SEED_WORKFLOWS,
 } from '../data/seed'
 import { GrowthContext } from './growthContext'
 
@@ -16,19 +16,16 @@ const SEED = {
   contentTemplates: SEED_CONTENT_TEMPLATES,
   reviews: SEED_REVIEWS,
   escalations: SEED_ESCALATIONS,
-  conversations: SEED_CONVERSATIONS,
-  messages: SEED_MESSAGES,
+  // Only for the sample workflow and review-request screens; the Message Templates screen uses the API.
   messageTemplates: SEED_MESSAGE_TEMPLATES,
   workflows: SEED_WORKFLOWS,
   executions: SEED_EXECUTIONS,
-  scenarios: SEED_SCENARIOS,
-  channels: SEED_CHANNELS,
   profile: SEED_PROFILE,
   reviewRequest: SEED_REVIEW_REQUEST,
 }
 
-// Holds the Growth OS sample records (campaigns, content, reviews, messaging, workflows) in memory so a change in
-// one screen shows up in the next. Leads are read from the API instead.
+// Holds the Growth OS sample records (campaigns, content, reviews, workflows) in memory so a change in
+// one screen shows up in the next. Leads and messaging are read from the API instead.
 export default function GrowthProvider({ children }) {
   const [data, setData] = useState(SEED)
 

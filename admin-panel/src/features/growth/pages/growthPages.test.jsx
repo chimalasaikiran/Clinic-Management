@@ -6,6 +6,7 @@ import { authState } from '../../../test/auth'
 import { renderBillingRoute, renderRoute } from '../../../test/renderRoute'
 import { billingFake } from '../../../test/fixtures/billingFake'
 import { apiLead, createLeadsApi, overdueLead } from '../../../test/fixtures/leadsApi'
+import { apiConversation, apiTemplate, createMessagingApi } from '../../../test/fixtures/messagingApi'
 import { apiPatient, createPatientsApi } from '../../../test/fixtures/patientsApi'
 import { localToday } from '../../patients/format'
 
@@ -63,9 +64,9 @@ const SCREENS = [
   ['GO-19 Escalation', ROUTES.escalations, 'Feedback Escalation'],
   ['GO-20 Reputation', ROUTES.reputation, 'Reputation Reporting'],
   ['GO-21 Inbox', ROUTES.conversations, 'Conversations Inbox'],
-  ['GO-22 Thread', pathFor(ROUTES.conversation, { threadId: 'CV-DEMO201' }), 'Conversation Thread & Patient Context'],
+  ['GO-22 Thread', pathFor(ROUTES.conversation, { threadId: 'c-1' }), 'Conversation Thread & Patient Context'],
   ['GO-23 Message Templates', ROUTES.messageTemplates, 'Message Templates'],
-  ['GO-24 History', pathFor(ROUTES.communicationHistory, { threadId: 'CV-DEMO201' }), 'Communication History & Preferences'],
+  ['GO-24 History', pathFor(ROUTES.communicationHistory, { threadId: 'c-1' }), 'Communication History & Preferences'],
   ['GO-25 Channels', ROUTES.channels, 'Channel / Integration Configuration'],
   ['GO-26 Delivery', ROUTES.deliveryFailures, 'Delivery Failures & Retry'],
   ['GO-27 Workflows', ROUTES.workflows, 'Retention & Reminder Workflows'],
@@ -91,7 +92,7 @@ describe('every Growth and Reports screen opens from its route', () => {
     [pathFor(ROUTES.lead, { leadId: 'l-9999' }), 'Lead not found'],
     [pathFor(ROUTES.campaign, { campaignId: 'CMP9999' }), 'Campaign not found'],
     [pathFor(ROUTES.review, { reviewId: 'REV-9999' }), 'Review not found'],
-    [pathFor(ROUTES.conversation, { threadId: 'CV-9999' }), 'Conversation not found'],
+    [pathFor(ROUTES.conversation, { threadId: 'c-9999' }), 'Conversation not found'],
   ])('shows a not-found page for %s', async (path, title) => {
     renderRoute(path)
     await waitFor(() => expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(title))
@@ -343,30 +344,117 @@ describe('reviews and messaging', () => {
     const user = setup()
     renderRoute(ROUTES.messageTemplates)
 
-    await fill(user, screen.getByLabelText(/^Message body/), 'Hello {{preferred_name}} {{secret}}')
+    await fill(user, await screen.findByLabelText(/^Message body/), 'Hello {{preferred_name}} {{secret}}')
 
     expect(screen.getByText('Unknown variable: {{secret}}')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save as new version' })).toBeDisabled()
   })
 
-  it('keeps an unsent reply as a draft because no live channel is verified', async () => {
+  it('saves a template as a new version only with a change reason, and needs the provider reference to approve', async () => {
     const user = setup()
-    renderRoute(pathFor(ROUTES.conversation, { threadId: 'CV-DEMO201' }))
+    const messaging = billingFake.useMessaging(createMessagingApi({ templates: [apiTemplate({ status: 'draft', providerRef: null, version: 1 })] }))
+    renderRoute(ROUTES.messageTemplates)
 
-    expect(screen.getByRole('button', { name: 'Send reply' })).toBeDisabled()
-    await fill(user, screen.getByLabelText(/^Draft text/), 'We open at nine.')
-    await user.click(screen.getByRole('button', { name: 'Save draft' }))
-    expect(screen.getByText(/Reply draft saved/)).toBeInTheDocument()
+    await user.selectOptions(await screen.findByLabelText('Status'), 'approved')
+    expect(screen.getByText('Enter the Meta template name before approving.')).toBeInTheDocument()
+    await fill(user, screen.getByLabelText('Meta template name'), 'follow_up_v1')
+    await fill(user, screen.getByLabelText(/^Change reason/), 'Approved by Meta')
+    await user.click(screen.getByRole('button', { name: 'Save as new version' }))
+
+    expect(await screen.findByText('Saved MT-0001 as v2.')).toBeInTheDocument()
+    expect(messaging.state.calls.find(([name]) => name === 'updateTemplate')[2]).toMatchObject({ status: 'approved', providerRef: 'follow_up_v1', changeNote: 'Approved by Meta', version: 1 })
+  })
+
+  it('answers an enquiry inside the WhatsApp reply window and marks the thread read', async () => {
+    const user = setup()
+    const messaging = billingFake.messaging
+    renderRoute(pathFor(ROUTES.conversation, { threadId: 'c-1' }))
+
+    expect(await screen.findByText('Do you treat frozen shoulder?')).toBeInTheDocument()
+    await waitFor(() => expect(messaging.state.calls.find(([name]) => name === 'updateConversation')?.[2]).toEqual({ unread: false, version: 1 }))
+    await fill(user, screen.getByLabelText('Message'), 'Yes, we do. Shall we call you?')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+
+    expect(await screen.findByText('Message queued. Its status updates here as the provider reports it.')).toBeInTheDocument()
+    expect(await screen.findByText('Yes, we do. Shall we call you?')).toBeInTheDocument()
+    expect(screen.getByText('Queued')).toBeInTheDocument()
+    expect(messaging.state.calls.find(([name]) => name === 'sendMessage')[2]).toEqual({ body: 'Yes, we do. Shall we call you?' })
+  })
+
+  it('sends a template once its variables are filled, and explains an opt-out', async () => {
+    const user = setup()
+    const messaging = billingFake.useMessaging(createMessagingApi({ conversations: [apiConversation({ lastInboundAt: null, replyWindowOpen: false, lead: { id: 'l-1', number: 'LD-000001', fullName: 'Nisha Menon' }, address: '9848022110' })] }))
+    renderRoute(pathFor(ROUTES.conversation, { threadId: 'c-1' }))
+
+    expect(await screen.findByRole('radio', { name: 'Write a reply' })).toBeDisabled()
+    await screen.findByRole('option', { name: /Follow-up check-in/ })
+    await user.selectOptions(screen.getByLabelText('Approved template'), 't-1')
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+    await fill(user, screen.getByLabelText(/^service name/), 'knee physiotherapy')
+    expect(screen.getByText('Hello Nisha, are you still looking for help with knee physiotherapy?')).toBeInTheDocument()
+
+    messaging.state.consents.push({ id: 'k-1', channel: 'whatsapp', address: '9848022110', status: 'withdrawn', source: 'stop_reply', note: null, createdAt: '2026-11-19T05:00:00.000Z', recordedBy: null })
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+    expect(await screen.findByText('This contact has opted out of messages on this channel.')).toBeInTheDocument()
+    expect(screen.getByText('This contact opted out on this channel.')).toBeInTheDocument()
+  })
+
+  it('links an unknown contact to a lead after a search', async () => {
+    const user = setup()
+    billingFake.useLeads(createLeadsApi({ leads: [apiLead({ id: 'l-2', number: 'LD-000002', fullName: 'Rohan Mehta', mobile: '9000000002' })] }))
+    renderRoute(pathFor(ROUTES.conversation, { threadId: 'c-1' }))
+
+    await user.click(await screen.findByRole('searchbox', { name: 'Find a lead or patient' }))
+    await user.paste('rohan')
+    await user.click(await screen.findByRole('button', { name: 'Link' }))
+    expect(await screen.findByText('Linked to Rohan Mehta.')).toBeInTheDocument()
+    expect(billingFake.messaging.state.calls.find(([name]) => name === 'link')[2]).toEqual({ leadId: 'l-2', version: 2 })
+  })
+
+  it('records a contact’s permission with how it was given', async () => {
+    const user = setup()
+    renderRoute(pathFor(ROUTES.communicationHistory, { threadId: 'c-1' }))
+
+    expect(await screen.findByText('No permission recorded')).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('How'), 'written_form')
+    await user.click(screen.getByRole('checkbox', { name: /I confirm this is what the contact told us/ }))
+    await user.click(screen.getByRole('button', { name: 'Record' }))
+
+    expect(await screen.findByText('Permission recorded for this channel')).toBeInTheDocument()
+    expect(billingFake.messaging.state.calls.find(([name]) => name === 'recordConsent')[1]).toMatchObject({ channel: 'whatsapp', address: '9000000002', status: 'granted', source: 'written_form' })
   })
 
   it('reassigns an inbox conversation and marks it resolved', async () => {
     const user = setup()
     renderRoute(ROUTES.conversations)
 
-    await user.selectOptions(screen.getByLabelText('Current owner'), 'Priya Nair')
+    await user.selectOptions(await screen.findByLabelText('Current owner'), 'm-2')
+    await waitFor(() => expect(screen.getByLabelText('Current owner')).toHaveValue('m-2'))
     await user.click(screen.getByRole('button', { name: 'Mark resolved' }))
 
-    expect(screen.getByRole('button', { name: 'Reopen' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Reopen' })).toBeInTheDocument()
+  })
+
+  it('connects a channel and keeps saved credentials hidden', async () => {
+    const user = setup()
+    const messaging = billingFake.messaging
+    renderRoute(ROUTES.channels)
+
+    expect(await screen.findByText('https://api.clinic.test/v1/webhooks/whatsapp/tok')).toBeInTheDocument()
+    expect(screen.getByLabelText('Permanent access token')).toHaveValue('')
+    expect(screen.getByLabelText('Permanent access token')).toHaveAttribute('placeholder', 'Saved · leave blank to keep')
+    await user.click(screen.getByRole('radio', { name: /SMS/ }))
+    await fill(user, screen.getByLabelText('DLT sender ID'), 'AURAHC')
+    await fill(user, screen.getByLabelText('MSG91 auth key'), 'msg91-key')
+    await user.click(screen.getByRole('button', { name: 'Connect & verify' }))
+
+    expect(await screen.findByText('SMS connected')).toBeInTheDocument()
+    expect(messaging.state.calls.find(([name]) => name === 'saveChannel')).toEqual(['saveChannel', 'sms', expect.objectContaining({ senderId: 'AURAHC', authKey: 'msg91-key' })])
+  })
+
+  it('hides channel setup from people who do not manage the organisation', async () => {
+    renderRoute(ROUTES.channels, undefined, { auth: authState({ permissions: ['growth.view'] }) })
+    expect(screen.getByText('Only organisation administrators can view or change channels')).toBeInTheDocument()
   })
 })
 
@@ -387,9 +475,23 @@ describe('workflows', () => {
     expect(screen.getAllByText('Draft · inactive').length).toBeGreaterThan(5)
   })
 
-  it('never offers a retry for a failure scenario', () => {
+  it('never retries an unknown outcome until it is resolved, then retries after the checks', async () => {
+    const user = setup()
+    const failed = { ...apiConversation().messages[0], id: 'm-9', direction: 'outbound', status: 'unknown', body: 'Hello', errorCode: 'TIMEOUT', errorMessage: 'The provider did not answer in time.', attempts: 1 }
+    const messaging = billingFake.useMessaging(createMessagingApi({ conversations: [apiConversation({ messages: [failed] })] }))
     renderRoute(ROUTES.deliveryFailures)
-    expect(screen.getByRole('button', { name: 'Retry send' })).toBeDisabled()
+
+    expect(await screen.findByText('1 message with an unknown outcome')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry send' })).not.toBeInTheDocument()
+    await fill(user, screen.getByLabelText(/What the provider’s console shows/), 'Not in WhatsApp Manager')
+    await user.click(screen.getByRole('button', { name: 'It was not sent' }))
+
+    const retry = await screen.findByRole('button', { name: 'Retry send' })
+    expect(retry).toBeDisabled()
+    for (const gate of screen.getAllByRole('checkbox')) await user.click(gate)
+    await user.click(retry)
+    expect(await screen.findByText('Queued again. Its status updates as the provider reports it.')).toBeInTheDocument()
+    expect(messaging.state.calls.map(([name]) => name)).toEqual(expect.arrayContaining(['resolve', 'retry']))
   })
 })
 

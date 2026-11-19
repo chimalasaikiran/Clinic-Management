@@ -9,6 +9,8 @@ import GrowthFrame, { GrowthFooter } from '../components/GrowthFrame'
 import { useGrowth } from '../context/growthContext'
 import { day, TONES, when } from '../format'
 import { leadsApi } from '../leadsApi'
+import { messagingApi } from '../messagingApi'
+import { toConversationView } from '../messagingView'
 import { clinicNow, leadSummary, STAGES, toLeadView } from '../leadsView'
 import { useLeadContext } from '../useLeads'
 
@@ -32,10 +34,11 @@ export default function GrowthHomePage() {
   const overdue = summary.overdue
   const quick = QUICK.filter(([label]) => label !== 'Add Lead' || can('growth.leads'))
   const needsAttention = data.reviews.filter((review) => review.rating <= 3 && review.responseState !== 'Response approved')
-  const unread = data.conversations.filter((thread) => thread.unread).length
+  const inbox = useApiResource(() => (can('growth.view') ? messagingApi.conversations({ branchId, pageSize: 2 }) : Promise.resolve(null)), `home-inbox:${branchId}`).data
+  const conversations = (inbox?.data ?? []).map(toConversationView)
 
   return (
-    <GrowthFrame back={{ to: ROUTES.dashboard, label: 'Back to Owner Panel' }} crumb="Owner Panel / Growth" code="GO-01" title="Growth OS" description="Prioritize inquiries, follow-ups and patient relationships across Aura Health." sample="Leads and follow-ups are live. Campaigns, conversations, reviews and workflows below are still sample records; channel connection states are unverified." context={[context.line, `Month to date · ${day(monthStart)} – ${day(today)} · Asia/Kolkata`]} today={context.today}>
+    <GrowthFrame back={{ to: ROUTES.dashboard, label: 'Back to Owner Panel' }} crumb="Owner Panel / Growth" code="GO-01" title="Growth OS" description="Prioritize inquiries, follow-ups and patient relationships across Aura Health." sample="Leads, follow-ups and conversations are live. Campaigns, reviews and workflows below are still sample records; channel connection states are unverified." context={[context.line, `Month to date · ${day(monthStart)} – ${day(today)} · Asia/Kolkata`]} today={context.today}>
       <p className="mb-6 flex flex-wrap items-center gap-2 text-xs"><span className="text-[10px] font-semibold tracking-wide text-outline uppercase">Quick actions</span>{quick.map(([label, to, primary]) => <ActionButton key={label} to={to} variant={primary ? 'brand' : 'secondary'}>{label}</ActionButton>)}</p>
 
       <dl className="mb-2 grid gap-4 sm:grid-cols-4">
@@ -77,8 +80,9 @@ export default function GrowthHomePage() {
 
       <div className="mb-6 grid gap-6 lg:grid-cols-2">
         <Section title="Recent conversations" aside={<Link to={ROUTES.conversations} className="font-semibold text-brand hover:underline">Inbox ↗</Link>}>
-          <ul className="divide-y divide-slate-100 text-xs">{data.conversations.slice(0, 2).map((thread) => <li key={thread.id} className="py-3"><p className="flex justify-between"><strong className="text-[13px]">{thread.subject}</strong><Link to={pathFor(ROUTES.conversation, { threadId: thread.id })} className="font-semibold text-brand hover:underline">Thread ↗</Link></p><p className="mt-1">“{thread.preview}”</p><p className="mt-1 text-outline">{thread.channel} · {when(thread.last)} <StatusPill tone={thread.unread ? 'success' : 'neutral'} className="ml-2">{thread.unread ? 'Unread' : 'Read'}</StatusPill></p></li>)}</ul>
-          <p className="mt-3 text-[11px] text-outline">Unread total: {unread} · Channel states unverified</p>
+          <ul className="divide-y divide-slate-100 text-xs">{conversations.map((thread) => <li key={thread.id} className="py-3"><p className="flex justify-between"><strong className="text-[13px]">{thread.contact} · {thread.number}</strong><Link to={pathFor(ROUTES.conversation, { threadId: thread.id })} className="font-semibold text-brand hover:underline">Thread ↗</Link></p><p className="mt-1">“{thread.preview}”</p><p className="mt-1 text-outline">{thread.channel} · {when(thread.last)} <StatusPill tone={thread.unread ? 'success' : 'neutral'} className="ml-2">{thread.unread ? 'Unread' : 'Read'}</StatusPill></p></li>)}</ul>
+          {inbox && conversations.length === 0 && <p className="py-3 text-xs text-outline">No conversations yet.</p>}
+          <p className="mt-3 text-[11px] text-outline">Unread total: {inbox?.meta.unread ?? '—'} · Live</p>
         </Section>
         <Section title="Reviews requiring attention" aside={<Link to={ROUTES.reviews} className="font-semibold text-brand hover:underline">Register ↗</Link>}>
           <ul className="divide-y divide-slate-100 text-xs">{needsAttention.map((review) => <li key={review.id} className="py-3"><p className="flex justify-between"><strong className="text-[13px]">{review.alias} · {review.rating}/5</strong><StatusPill tone="warning">Needs response</StatusPill></p><p className="mt-1">“{review.text}”</p><Link to={pathFor(ROUTES.review, { reviewId: review.id })} className="mt-1 inline-block font-semibold text-brand hover:underline">Review Details ↗</Link></li>)}</ul>
