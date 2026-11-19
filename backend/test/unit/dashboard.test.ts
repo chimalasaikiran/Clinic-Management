@@ -29,9 +29,9 @@ describe('dashboard appointments', () => {
 
     const closed = [visit('a', 540, 'completed'), visit('b', 570, 'no_show')]
     expect(sessions(closed, 13 * 60).map((session) => session.state)).toEqual(['finished', 'empty'])
-    expect(sessions([visit('a', 900, 'confirmed')], 9 * 60)[1].state).toBe('not_started')
+    expect(sessions([visit('a', 900, 'confirmed')], 9 * 60)[1]?.state).toBe('not_started')
     // A past day: anything still open stays open.
-    expect(sessions([visit('a', 540, 'confirmed')], null)[0].state).toBe('open')
+    expect(sessions([visit('a', 540, 'confirmed')], null)[0]?.state).toBe('open')
   })
 
   it('averages the wait over visits with both a check-in and a start', () => {

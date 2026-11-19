@@ -31,6 +31,7 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
       'dashboard.view', 'dashboard.telemetry', 'branches.view', 'branches.hours', 'branches.staff',
       'bookings.view', 'bookings.create', 'bookings.assign', 'bookings.reschedule', 'bookings.cancel', 'bookings.notes',
       'patients.view', 'patients.create', 'patients.edit', 'staff.view', 'staff.attendance', 'staff.leave', 'inventory.view', 'reports.view',
+      'growth.view', 'growth.leads',
     ],
   },
   {
@@ -39,7 +40,7 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
     scope: 'branch',
     system: false,
     description: 'Registers patients, books and reschedules appointments, and manages the waiting queue.',
-    permissions: ['dashboard.view', 'bookings.view', 'bookings.create', 'bookings.reschedule', 'bookings.cancel', 'patients.view', 'patients.create', 'patients.edit', 'staff.view'],
+    permissions: ['dashboard.view', 'bookings.view', 'bookings.create', 'bookings.reschedule', 'bookings.cancel', 'patients.view', 'patients.create', 'patients.edit', 'staff.view', 'growth.view', 'growth.leads'],
   },
   {
     name: 'Clinician',

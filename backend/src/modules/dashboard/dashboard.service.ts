@@ -116,7 +116,7 @@ export class DashboardService {
     const can = (permission: string) => access.permissions.has(permission)
     const window = { gte: zonedInstant(today, 0, zone), lt: zonedInstant(addDays(today, 1), 0, zone) }
 
-    const [waiting, orders, stock, people, approvals, refunds, reconciliation] = await Promise.all([
+    const [waiting, orders, stock, people, approvals, refunds, reconciliation, followUps] = await Promise.all([
       can('bookings.view') ? this.prisma.appointment.count({ where: { orgId, branchId: { in: branchIds }, startsAt: window, status: 'arrived' } }) : 0,
       can('clinical.read') ? this.orders(orgId, branchIds) : null,
       can('inventory.view') ? this.stock(orgId, branchIds, today) : [],
@@ -124,6 +124,8 @@ export class DashboardService {
       this.approvals(access),
       can('accounting.payments') ? this.prisma.refund.count({ where: { orgId, status: 'pending', payment: { branchId: { in: branchIds } } } }) : 0,
       access.branchScope === 'all' && can('accounting.settlements') ? this.reconciliation(orgId) : null,
+      // Lead follow-ups that are late or due before the end of today.
+      can('growth.leads') ? this.prisma.lead.count({ where: { orgId, branchId: { in: branchIds }, nextDueAt: { lt: window.lt } } }) : 0,
     ])
 
     const items = [
@@ -134,6 +136,7 @@ export class DashboardService {
       { id: 'refunds', count: refunds },
       { id: 'attendance', count: people.filter((member) => presenceOf(member) === 'not_marked').length },
       { id: 'payroll', count: (approvals.payrollAdjustments ?? 0) + (approvals.advances ?? 0) },
+      { id: 'lead_follow_ups', count: followUps },
     ]
     return { generatedAt: new Date().toISOString(), branchId: query.branchId ?? null, items: items.filter((item) => item.count > 0) }
   }

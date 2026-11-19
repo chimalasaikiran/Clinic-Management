@@ -8,6 +8,6 @@ import { PatientsService } from './patients.service'
   imports: [SchedulingModule],
   controllers: [PatientsController],
   providers: [PatientsRepository, PatientsService],
-  exports: [PatientsRepository],
+  exports: [PatientsRepository, PatientsService],
 })
 export class PatientsModule {}

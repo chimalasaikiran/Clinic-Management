@@ -4,7 +4,7 @@ import { conflict, notFound, unprocessable } from '../../common/errors/app-error
 import type { AccessContext, ClientInfo } from '../../common/utils/request'
 import { ENV, Env } from '../../config/env'
 import { CountersRepository, formatNumber } from '../../database/counters.repository'
-import { PrismaService } from '../../database/prisma.service'
+import { PrismaService, Tx } from '../../database/prisma.service'
 import { CareScope, CareScopeService } from '../scheduling/care-scope.service'
 import { localDate } from '../scheduling/clinic-time'
 import { PatientRow, PatientsRepository } from './patients.repository'
@@ -47,7 +47,8 @@ export class PatientsService {
     return (await this.patients.findByMobile(orgId, mobile, excludeId)).map((row) => this.view(row))
   }
 
-  async create(access: AccessContext, actorUserId: string, input: CreatePatientInput, client: ClientInfo) {
+  // `link` runs inside the registration transaction, so a record created from a lead is linked to it or not created.
+  async create(access: AccessContext, actorUserId: string, input: CreatePatientInput, client: ClientInfo, link?: (tx: Tx, patient: { id: string; mrn: string }) => Promise<void>) {
     const { confirmedNotDuplicate, ...fields } = input
     await this.assertBranch(access.orgId, fields.homeBranchId)
     if (!confirmedNotDuplicate) {
@@ -61,6 +62,7 @@ export class PatientsService {
       const mrn = formatNumber('PT-', await this.counters.next(tx, access.orgId, 'patient_mrn'))
       const created = await this.patients.create(tx, access.orgId, mrn, fields, actorUserId)
       await this.audit.record({ action: 'patient.registered', entityType: 'patient', entityId: created.id, orgId: access.orgId, actorUserId, details: { mrn } }, client, tx)
+      if (link) await link(tx, { id: created.id, mrn })
       return created.id
     })
     return this.get(access, id)

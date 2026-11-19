@@ -264,6 +264,17 @@ Amounts are stored in whole paise and rates in basis points. CHECK constraints k
 between 1 and 28, an IFSC and four-digit account ending, months as `YYYY-MM`, positive amounts, 1 to 12 instalments, and
 status, decision, processing and payment timestamps in step with each other.
 
+`prisma/migrations/20261119120000_leads` adds:
+
+| Table | Holds |
+| --- | --- |
+| `leads` | an enquiry: lead number, branch, name, mobile, optional email and interest, source, stage (new → contacted → qualified → converted or closed), owner, the open follow-up (next action and due time) and, once converted, the linked patient with who converted it and when |
+| `lead_activities` | each lead's append-only history: creation, edits with old → new values, interactions with type and outcome, re-engagement and conversion |
+
+CHECK constraints keep the mobile format, make a lead converted exactly when it is linked to a patient, and give
+converted and closed leads no open follow-up. The migration also grants the new `growth.leads` permission to every
+organisation's owner (system) role.
+
 The database itself refuses double booking. Two exclusion constraints (using the `btree_gist` extension) reject an
 open appointment (`pending`, `confirmed`, `arrived`, `in_progress`) that overlaps another open appointment with the
 same therapist, or with the same patient. Another rejects overlapping weekly windows for one therapist. CHECK
@@ -694,6 +705,30 @@ state: an item leaves the list once it is handled.
 | `refunds` | `accounting.payments` | Refunds awaiting approval |
 | `attendance` | `staff.attendance` | Active staff without attendance marked today |
 | `payroll` | `staff.payroll` | Payroll adjustments and advances awaiting a decision |
+| `lead_follow_ups` | `growth.leads` | Lead follow-ups that are overdue or due before the end of today |
+
+### Leads (`/v1/leads`)
+
+Enquiries from people who are not (yet) patients. Reading needs `growth.view`; adding, editing, recording
+follow-ups and converting need `growth.leads`. Every request is limited to the member's branches: a lead elsewhere is
+a `404`, and choosing a branch outside the role is `403 BRANCH_OUT_OF_SCOPE`. Times are entered and returned in the
+clinic zone (`CLINIC_TIMEZONE`); a lead's `dueState` is `overdue`, `due_today`, `upcoming` or `none`.
+
+| Endpoint | Does |
+| --- | --- |
+| `GET /v1/leads` | Register: `q`, `stage`, `source`, `ownerId`, `due` (`overdue`, `due_today`, `upcoming`, `open`), `branchId`, `from`/`to` (recorded date), `sort` (`follow-up`, `newest`, `name`), paging. `meta.summary` counts every lead in scope by stage, plus overdue and due today |
+| `GET /v1/leads/:id` | One lead with its activity history and, once converted, the patient's first appointment and first completed visit since conversion (for roles with `bookings.view`) |
+| `GET /v1/leads/owners` | Members who may own a lead: an active login holding `growth.leads`, with the branches they cover (`branchId?` narrows it) |
+| `GET /v1/leads/duplicates` | Other leads in scope with the same `mobile` |
+| `GET /v1/leads/performance` | For leads recorded `from`–`to`: totals by source and stage, how many converted, booked an appointment on or after conversion, and completed one |
+| `POST /v1/leads` | Records a lead (`LD-000001`). Another lead with the same mobile is `409 POSSIBLE_DUPLICATE` unless `confirmedNotDuplicate`; the owner must cover the branch (`422 OWNER_NOT_ELIGIBLE`) |
+| `PATCH /v1/leads/:id` | Edits contact details, branch, owner and stage (`version` required, `409 LEAD_CHANGED` if stale). Converted is reached only by converting; closing ends the open follow-up |
+| `POST /v1/leads/:id/interactions` | Logs a call, message or visit (not in the future) and `keep`s, `complete`s or `reschedule`s the open follow-up (a reschedule needs the next action, date and reason) |
+| `POST /v1/leads/:id/disposition` | Re-engagement: `defer` to a later contact, or close as `unresponsive` / `not_interested` |
+| `POST /v1/leads/:id/convert` | Links a patient the member can see (also needs `patients.view`). No appointment is booked |
+| `POST /v1/leads/:id/convert/new-patient` | Registers the patient (the `POST /v1/patients` body plus `leadVersion`, also needs `patients.create`) and converts the lead in the same transaction |
+
+Every change adds an entry to the lead's activity history (who, when, old → new values) and the audit log.
 
 ### Search (`/v1/search`)
 

@@ -110,6 +110,10 @@ model User {
   approvedAdvances        PayrollAdvance[]    @relation("AdvanceApprovedBy")
   payrollEvents           PayrollEvent[]      @relation("PayrollEventActor")
 
+  createdLeads   Lead[]         @relation("LeadCreatedBy")
+  convertedLeads Lead[]         @relation("LeadConvertedBy")
+  leadActivities LeadActivity[] @relation("LeadActivityActor")
+
   @@map("users")
 }
 
@@ -234,6 +238,9 @@ model Organisation {
   payrollAdvances    PayrollAdvance[]
   payrollEvents      PayrollEvent[]
 
+  leads          Lead[]
+  leadActivities LeadActivity[]
+
   @@map("organisations")
 }
 
@@ -276,6 +283,7 @@ model Branch {
   payments       Payment[]
   stockLocations StockLocation[]
   payrollEntries PayrollEntry[]
+  leads          Lead[]
 
   @@unique([orgId, code])
   @@map("branches")
@@ -300,12 +308,14 @@ model Membership {
   createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organisation Organisation     @relation(fields: [orgId], references: [id])
-  user         User             @relation("MembershipUser", fields: [userId], references: [id])
-  invitedBy    User?            @relation("MembershipInvitedBy", fields: [invitedById], references: [id])
-  roles        MembershipRole[]
-  practitioner Practitioner?
-  staff        StaffMember?
+  organisation   Organisation     @relation(fields: [orgId], references: [id])
+  user           User             @relation("MembershipUser", fields: [userId], references: [id])
+  invitedBy      User?            @relation("MembershipInvitedBy", fields: [invitedById], references: [id])
+  roles          MembershipRole[]
+  practitioner   Practitioner?
+  staff          StaffMember?
+  ownedLeads     Lead[]           @relation("LeadOwner")
+  leadActivities LeadActivity[]   @relation("LeadActivityOwner")
 
   @@unique([orgId, userId])
   @@index([userId, status])
@@ -526,6 +536,7 @@ model Patient {
   invoices      Invoice[]
   payments      Payment[]
   refunds       Refund[]
+  leads         Lead[]
 
   @@unique([orgId, mrn])
   @@index([orgId, mobile])
@@ -2755,4 +2766,102 @@ model PayrollEvent {
   @@index([orgId, createdAt])
   @@index([orgId, entityType, entityId])
   @@map("payroll_events")
+}
+
+// ─── Growth: leads ──────────────────────────────────────────────────────────
+
+enum LeadStage {
+  new
+  contacted
+  qualified
+  converted
+  closed
+
+  @@map("lead_stage")
+}
+
+enum LeadSource {
+  website
+  phone
+  front_desk
+  walk_in
+
+  @@map("lead_source")
+}
+
+enum LeadActivityKind {
+  created
+  updated
+  interaction
+  converted
+  disposition
+
+  @@map("lead_activity_kind")
+}
+
+// An enquiry from someone who is not (yet) a patient. Converting links it to one shared patient record;
+// the original source stays as it was recorded.
+model Lead {
+  id                String     @id @default(uuid(7)) @db.Uuid
+  orgId             String     @map("org_id") @db.Uuid
+  number            String     @db.VarChar(20)
+  branchId          String     @map("branch_id") @db.Uuid
+  fullName          String     @map("full_name") @db.VarChar(120)
+  mobile            String     @db.VarChar(10)
+  email             String?    @db.VarChar(254)
+  interest          String?    @db.VarChar(120)
+  source            LeadSource
+  stage             LeadStage  @default(new)
+  ownerMembershipId String     @map("owner_membership_id") @db.Uuid
+  // The open follow-up task, if any.
+  nextAction        String?    @map("next_action") @db.VarChar(200)
+  nextDueAt         DateTime?  @map("next_due_at") @db.Timestamptz(6)
+  patientId         String?    @map("patient_id") @db.Uuid
+  convertedAt       DateTime?  @map("converted_at") @db.Timestamptz(6)
+  convertedById     String?    @map("converted_by") @db.Uuid
+  lastActivityAt    DateTime   @default(now()) @map("last_activity_at") @db.Timestamptz(6)
+  createdById       String     @map("created_by") @db.Uuid
+  version           Int        @default(1)
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation   @relation(fields: [orgId], references: [id])
+  branch       Branch         @relation(fields: [branchId], references: [id])
+  owner        Membership     @relation("LeadOwner", fields: [ownerMembershipId], references: [id])
+  patient      Patient?       @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  convertedBy  User?          @relation("LeadConvertedBy", fields: [convertedById], references: [id])
+  createdBy    User           @relation("LeadCreatedBy", fields: [createdById], references: [id])
+  activities   LeadActivity[]
+
+  @@unique([orgId, number])
+  @@index([orgId, branchId, stage])
+  @@index([orgId, mobile])
+  @@index([orgId, nextDueAt])
+  @@index([orgId, createdAt])
+  @@map("leads")
+}
+
+// Append-only history of a lead: what changed, who did it and when.
+model LeadActivity {
+  id                String           @id @default(uuid(7)) @db.Uuid
+  orgId             String           @map("org_id") @db.Uuid
+  leadId            String           @map("lead_id") @db.Uuid
+  kind              LeadActivityKind
+  title             String           @db.VarChar(160)
+  text              String           @db.VarChar(2000)
+  // Interaction type and outcome, or the old → new values of an edit.
+  details           Json?
+  // When it happened (an interaction can be logged after the call); createdAt is when it was recorded.
+  occurredAt        DateTime         @map("occurred_at") @db.Timestamptz(6)
+  ownerMembershipId String?          @map("owner_membership_id") @db.Uuid
+  actorId           String?          @map("actor_id") @db.Uuid
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+  lead         Lead         @relation(fields: [leadId], references: [id])
+  owner        Membership?  @relation("LeadActivityOwner", fields: [ownerMembershipId], references: [id])
+  actor        User?        @relation("LeadActivityActor", fields: [actorId], references: [id])
+
+  @@index([leadId, occurredAt])
+  @@map("lead_activities")
 }
