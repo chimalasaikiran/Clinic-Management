@@ -1,33 +1,96 @@
 import { useState } from 'react'
-import { ArrowRight, ChevronRight, MoreHorizontal, Pencil } from 'lucide-react'
+import { ArrowRight, ChevronRight, Pencil } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import ActionButton from '../../../components/workspace/ActionButton'
 import Avatar from '../../../components/workspace/Avatar'
 import DetailList from '../../../components/workspace/DetailList'
+import { SelectInput, TextInput } from '../../../components/workspace/FormControls'
 import PageIntro from '../../../components/workspace/PageIntro'
 import Panel from '../../../components/workspace/Panel'
+import { Banner } from '../../../components/workspace/RecordKit'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
+import { useApiResource } from '../../../hooks/useApiResource'
+import { useAuth } from '../../auth/context/useAuth'
+import { money } from '../../billing/financeFormat'
+import LoadingState from '../../patients/components/LoadingState'
+import { configApi } from '../api'
 import ConfigPage from '../components/ConfigPage'
-import DetailUnavailable from '../components/DetailUnavailable'
-import { CARDIOLOGY } from '../data/departments'
+import { BRANCH_STATUS, DEPARTMENT_TYPES, departmentPayload, initialsOf } from '../configView'
 
-function DeactivateDepartment({ name }) {
-  const [confirming, setConfirming] = useState(false)
+const dateLabel = (iso) => new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+
+function DepartmentEditor({ department, onSaved, onCancel }) {
+  const [values, setValues] = useState({ name: department.name, type: department.type, description: department.description })
+  const [errors, setErrors] = useState({})
+  const [failure, setFailure] = useState('')
+  const [pending, setPending] = useState(false)
+  const update = (event) => setValues((current) => ({ ...current, [event.target.name]: event.target.value }))
+
+  const save = async (event) => {
+    event.preventDefault()
+    if (!values.name.trim()) return setErrors({ name: 'Enter the department name.' })
+    setPending(true)
+    setErrors({})
+    setFailure('')
+    try {
+      const renamed = values.name.trim() !== department.name
+      onSaved(await configApi.updateDepartment(department.id, departmentPayload(department, { name: values.name.trim(), type: values.type, description: values.description.trim() })), renamed ? 'Department renamed. Staff, doctors and services in it now show the new name.' : 'Department details saved.')
+    } catch (error) {
+      setErrors(error.fieldErrors?.() ?? (error.code === 'DEPARTMENT_EXISTS' ? { name: error.message } : {}))
+      setFailure(error.message)
+      setPending(false)
+    }
+  }
 
   return (
-    <Panel tone="danger" title="Department status" action={<StatusPill tone="success">Active</StatusPill>}>
+    <form onSubmit={save} noValidate className="flex flex-col gap-4">
+      {failure && <Banner tone="danger" title="Not saved">{failure}</Banner>}
+      <TextInput label="Department name" name="name" required value={values.name} onChange={update} error={errors.name} hint="Renaming updates every staff, doctor and service record in it" />
+      <SelectInput label="Department type" name="type" value={values.type} onChange={update} options={DEPARTMENT_TYPES} error={errors.type} />
+      <label className="flex flex-col gap-1.5">
+        <span className="text-[13px] font-semibold text-slate-800">Description <span className="font-normal text-outline">(optional)</span></span>
+        <textarea name="description" rows={3} value={values.description} onChange={update} className="rounded-md border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-brand focus:ring-2 focus:ring-brand/15" />
+      </label>
+      <div className="flex justify-end gap-2">
+        <ActionButton onClick={onCancel}>Cancel</ActionButton>
+        <ActionButton variant="primary" type="submit" disabled={pending}>{pending ? 'Saving…' : 'Save details'}</ActionButton>
+      </div>
+    </form>
+  )
+}
+
+function DepartmentStatus({ department, onSaved }) {
+  const [confirming, setConfirming] = useState(false)
+  const [failure, setFailure] = useState('')
+  const active = department.status === 'active'
+
+  const change = async () => {
+    setFailure('')
+    try {
+      onSaved(await configApi.updateDepartment(department.id, departmentPayload(department, { status: active ? 'inactive' : 'active' })), active ? 'Department deactivated.' : 'Department activated.')
+      setConfirming(false)
+    } catch (error) {
+      setFailure(error.message)
+    }
+  }
+
+  return (
+    <Panel tone={active ? 'danger' : undefined} title="Department status" action={<StatusPill tone={active ? 'success' : 'neutral'}>{active ? 'Active' : 'Inactive'}</StatusPill>}>
       <p className="text-xs leading-5 text-on-surface-variant">
-        Deactivating this department will pause new patient bookings and prevent new service additions. Historical health records, completed invoices, and ABDM encounter archives will remain permanently accessible.
+        {active
+          ? 'Deactivating takes this department off the staff, doctor and service forms. People and services already in it keep it, and every past record stays as it is.'
+          : 'This department is not offered on staff, doctor or service forms. Activate it to use it again.'}
       </p>
+      {failure && <p role="alert" className="mt-2 text-xs text-danger">{failure}</p>}
       {confirming ? (
         <div className="mt-3 flex gap-2">
-          <ActionButton size="sm" onClick={() => setConfirming(false)}>Keep active</ActionButton>
-          <ActionButton variant="danger" size="sm" onClick={() => setConfirming(false)}>Confirm deactivation</ActionButton>
+          <ActionButton size="sm" onClick={() => setConfirming(false)}>Keep {active ? 'active' : 'inactive'}</ActionButton>
+          <ActionButton variant={active ? 'danger' : 'primary'} size="sm" onClick={change}>Confirm {active ? 'deactivation' : 'activation'}</ActionButton>
         </div>
       ) : (
-        <ActionButton variant="danger" className="mt-3 w-full" onClick={() => setConfirming(true)}>
-          Deactivate {name.toLowerCase()}
+        <ActionButton variant={active ? 'danger' : 'primary'} className="mt-3 w-full" onClick={() => setConfirming(true)}>
+          {active ? 'Deactivate' : 'Activate'} {department.name}
         </ActionButton>
       )}
     </Panel>
@@ -36,13 +99,47 @@ function DeactivateDepartment({ name }) {
 
 export default function DepartmentDetailPage() {
   const { departmentId } = useParams()
-  const department = CARDIOLOGY
+  const { can } = useAuth()
+  const resource = useApiResource(() => configApi.department(departmentId), `department:${departmentId}`)
+  const [updated, setUpdated] = useState(null)
+  const [editing, setEditing] = useState(false)
+  const [message, setMessage] = useState('')
+  const department = updated?.id === departmentId ? updated : resource.data
 
-  if (departmentId !== department.id) {
-    return <DetailUnavailable title="Department" backTo={ROUTES.departments} backLabel="Back to departments" />
+  if (!department) {
+    return (
+      <ConfigPage>
+        <PageIntro title={resource.error?.status === 404 ? 'Department not found' : 'Department'} />
+        {resource.error?.status !== 404 && <LoadingState label="Loading department…" error={resource.error} onRetry={resource.reload} />}
+      </ConfigPage>
+    )
   }
 
+  const manage = can('settings.organisation')
   const params = { departmentId }
+  const saved = (next, text) => {
+    setUpdated(next)
+    setEditing(false)
+    setMessage(text)
+  }
+  const people = [
+    ...department.staff.map((person) => ({ key: `staff:${person.id}`, name: person.fullName, detail: person.designation || (person.type === 'doctor' ? 'Doctor' : 'Staff'), type: person.type, to: pathFor(ROUTES.staffMember, { staffId: person.id }) })),
+    ...department.doctors.map((doctor) => ({ key: `doctor:${doctor.id}`, name: doctor.displayName, detail: `${doctor.specialty} · schedule profile`, type: 'doctor', to: null })),
+  ]
+  const modules = [
+    { id: 'locations', title: 'Operating locations', detail: `${department.branches.length} branch${department.branches.length === 1 ? '' : 'es'} linked`, to: pathFor(ROUTES.departmentLocations, params) },
+    { id: 'services', title: 'Services & prices', detail: `${department.services.length} services in the billing catalogue`, to: ROUTES.services },
+    { id: 'practitioners', title: 'Staff & doctors', detail: `${people.length} people in this department`, to: pathFor(ROUTES.departmentStaff, params) },
+    { id: 'scheduling', title: 'Appointment scheduling', detail: 'Doctors’ availability and bookings', to: ROUTES.appointments },
+  ]
+  const info = [
+    { label: 'Department name', value: department.name },
+    { label: 'Department code', value: department.code },
+    { label: 'Department type', value: department.type },
+    { label: 'Description', value: department.description || 'No description', full: true },
+    { label: 'Created', value: dateLabel(department.createdAt) },
+    { label: 'Last changed', value: dateLabel(department.updatedAt) },
+  ]
 
   return (
     <ConfigPage>
@@ -50,28 +147,25 @@ export default function DepartmentDetailPage() {
         eyebrow={
           <>
             <span className="text-on-surface-variant">Department configuration</span>
-            <span className="rounded border border-slate-200 bg-surface-low px-1.5 py-0.5 text-on-surface-variant">{department.orgNode}</span>
+            <span className="rounded border border-slate-200 bg-surface-low px-1.5 py-0.5 text-on-surface-variant">{department.code}</span>
           </>
         }
         title={
           <span className="flex items-center gap-3">
             {department.name}
-            <StatusPill tone="success" dot>Active</StatusPill>
+            <StatusPill tone={department.status === 'active' ? 'success' : 'neutral'} dot>{department.status === 'active' ? 'Active' : 'Inactive'}</StatusPill>
           </span>
         }
-        description={department.description}
-        actions={
-          <>
-            <ActionButton variant="primary" icon={Pencil}>Edit department</ActionButton>
-            <ActionButton aria-label="More department actions"><MoreHorizontal className="size-4" aria-hidden="true" /></ActionButton>
-          </>
-        }
+        description="Manage this department's operating branches, linked clinical services and assigned personnel."
+        actions={manage && !editing && <ActionButton variant="primary" icon={Pencil} onClick={() => setEditing(true)}>Edit department</ActionButton>}
       />
+
+      {message && <Banner tone="brand" title={message} className="mb-5" />}
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="flex min-w-0 flex-col gap-5">
-          <Panel title="Department information" action={<ActionButton variant="soft" size="sm">Edit details <ArrowRight className="size-3" aria-hidden="true" /></ActionButton>}>
-            <DetailList items={department.info} />
+          <Panel title="Department information" action={manage && !editing && <ActionButton variant="soft" size="sm" onClick={() => setEditing(true)}>Edit details <ArrowRight className="size-3" aria-hidden="true" /></ActionButton>}>
+            {editing ? <DepartmentEditor department={department} onSaved={saved} onCancel={() => setEditing(false)} /> : <DetailList items={info} />}
           </Panel>
 
           <Panel
@@ -81,30 +175,26 @@ export default function DepartmentDetailPage() {
             bodyClassName="p-0"
           >
             <ul className="divide-y divide-slate-100">
-              {department.locations.map((location) => (
-                <li key={location.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+              {department.branches.map((branch) => (
+                <li key={branch.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
                   <div>
                     <p className="flex flex-wrap items-center gap-2 text-[13px] font-semibold text-on-surface">
-                      {location.name}
-                      <StatusPill className="rounded">{location.tag}</StatusPill>
+                      {branch.name}
+                      <StatusPill className="rounded">{branch.code}</StatusPill>
                     </p>
-                    <p className="mt-1 text-xs text-on-surface-variant">{location.detail}</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <StatusPill tone="success">Active</StatusPill>
-                    <ActionButton size="sm" to={pathFor(ROUTES.branch, { branchId: location.id })}>View branch</ActionButton>
+                    <StatusPill tone={BRANCH_STATUS[branch.status][1]}>{BRANCH_STATUS[branch.status][0]}</StatusPill>
+                    <ActionButton size="sm" to={pathFor(ROUTES.branch, { branchId: branch.id })}>View branch</ActionButton>
                   </div>
                 </li>
               ))}
             </ul>
-            <p className="border-t border-slate-100 bg-surface-lowest px-5 py-3 text-xs text-on-surface-variant">
-              <strong className="text-on-surface">Department mapping:</strong> Changes made to departmental protocols or base fee catalogs automatically reflect across both linked branches, while branch practitioner duty rosters remain branch-specific.
-            </p>
           </Panel>
 
           <Panel
             title="Services & diagnostic procedures"
-            subtitle="8 clinical and diagnostic services configured under this department."
+            subtitle={`${department.services.length} service${department.services.length === 1 ? '' : 's'} in the billing catalogue under this department.`}
             action={<ActionButton variant="soft" size="sm" to={ROUTES.services}>Manage services in catalog</ActionButton>}
             bodyClassName="p-0"
           >
@@ -112,104 +202,66 @@ export default function DepartmentDetailPage() {
               {department.services.map((service) => (
                 <li key={service.id} className="flex items-center justify-between gap-3 px-5 py-3">
                   <div>
-                    <Link to={pathFor(ROUTES.service, { serviceId: service.id })} className="text-[13px] font-medium text-on-surface hover:text-brand">
-                      {service.name}
-                    </Link>
-                    <p className="text-[11px] text-outline">{service.detail}</p>
+                    <Link to={pathFor(ROUTES.service, { serviceId: service.id })} className="text-[13px] font-medium text-on-surface hover:text-brand">{service.name}</Link>
+                    <p className="text-[11px] text-outline">{[service.code, service.category, service.unit].filter(Boolean).join(' · ')}</p>
                   </div>
                   <div className="flex items-center gap-4">
-                    <StatusPill tone="success">Active</StatusPill>
-                    <span className="w-14 text-right text-[13px] font-semibold">{service.price}</span>
+                    <StatusPill tone={service.status === 'active' ? 'success' : 'neutral'}>{service.status === 'active' ? 'Active' : 'Inactive'}</StatusPill>
+                    <span className="w-20 text-right text-[13px] font-semibold">{money(service.price)}</span>
                   </div>
                 </li>
               ))}
+              {department.services.length === 0 && <li className="px-5 py-6 text-center text-xs text-on-surface-variant">No services name this department yet.</li>}
             </ul>
-            <p className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-surface-lowest px-5 py-3 text-xs text-on-surface-variant">
-              + 2 additional configured procedures. All billing codes mapped to ABDM / Standard Health Terminology.
-              <Link to={ROUTES.services} className="font-semibold text-brand hover:underline">View Full Fee Catalog</Link>
-            </p>
           </Panel>
 
           <Panel
             title="Rostered practitioners & care staff"
-            subtitle="4 Doctors and 3 Specialized Care Personnel assigned to this department across active branches."
+            subtitle={`${people.length} people assigned to this department.`}
             action={<ActionButton variant="soft" size="sm" to={pathFor(ROUTES.departmentStaff, params)}>Manage roster & personnel</ActionButton>}
             bodyClassName="p-0"
           >
             <ul className="divide-y divide-slate-100">
-              {department.practitioners.map((person) => (
-                <li key={person.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+              {people.slice(0, 8).map((person) => (
+                <li key={person.key} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
                   <div className="flex items-center gap-3">
-                    <Avatar initials={person.initials} tone={person.head ? 'teal' : 'slate'} />
+                    <Avatar initials={initialsOf(person.name)} tone={person.type === 'doctor' ? 'teal' : 'slate'} />
                     <div>
-                      <p className="flex items-center gap-2 text-[13px] font-semibold text-on-surface">
-                        {person.name}
-                        {person.head && <span className="rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold text-white">HEAD OF DEPT</span>}
-                      </p>
+                      {person.to ? <Link to={person.to} className="text-[13px] font-semibold text-on-surface hover:text-brand">{person.name}</Link> : <p className="text-[13px] font-semibold text-on-surface">{person.name}</p>}
                       <p className="text-xs text-on-surface-variant">{person.detail}</p>
                     </div>
                   </div>
-                  <div className="text-right text-xs">
-                    <p className="font-semibold text-on-surface">{person.where}</p>
-                    <p className="text-outline">{person.when}</p>
-                  </div>
                 </li>
               ))}
+              {people.length === 0 && <li className="px-5 py-6 text-center text-xs text-on-surface-variant">No one is in this department yet.</li>}
             </ul>
+            {people.length > 8 && <p className="border-t border-slate-100 bg-surface-lowest px-5 py-3 text-xs text-on-surface-variant">+ {people.length - 8} more · <Link to={pathFor(ROUTES.departmentStaff, params)} className="font-semibold text-brand hover:underline">See everyone</Link></p>}
           </Panel>
         </div>
 
         <div className="flex flex-col gap-5">
           <Panel title="Department setup & modules" subtitle="Quick access to operational relationships." bodyClassName="p-0">
             <ul className="divide-y divide-slate-100">
-              {department.modules.map((module) => {
-                const body = (
-                  <>
+              {modules.map((module) => (
+                <li key={module.id}>
+                  <Link to={module.to} className="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-surface-lowest">
                     <span className="min-w-0 flex-1">
                       <span className="block text-[13px] font-semibold text-on-surface">{module.title}</span>
                       <span className="block text-xs leading-4 text-on-surface-variant">{module.detail}</span>
                     </span>
                     <ChevronRight className="size-4 text-outline" aria-hidden="true" />
-                  </>
-                )
-                const rowClass = 'flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-surface-lowest'
-                return (
-                  <li key={module.id}>
-                    {module.to ? (
-                      <Link to={pathFor(ROUTES[module.to], params)} className={rowClass}>{body}</Link>
-                    ) : (
-                      <button type="button" className={rowClass}>{body}</button>
-                    )}
-                  </li>
-                )
-              })}
+                  </Link>
+                </li>
+              ))}
             </ul>
           </Panel>
 
           <Panel title="Access & governance" action={<StatusPill tone="brand">RBAC</StatusPill>}>
-            <dl className="space-y-2 text-xs">
-              {department.governance.map(([label, value]) => (
-                <div key={label} className="flex justify-between gap-3">
-                  <dt className="text-on-surface-variant">{label}</dt>
-                  <dd className="font-semibold text-on-surface">{value}</dd>
-                </div>
-              ))}
-            </dl>
-            <div className="mt-4 rounded-md bg-surface-lowest p-3 text-xs">
-              <p className="mb-1 text-[11px] text-outline">Assigned role privileges</p>
-              {department.privileges.map(([role, privilege]) => (
-                <p key={role} className="flex justify-between py-0.5">
-                  <span className="text-on-surface-variant">{role}</span>
-                  <span className="font-medium text-on-surface">{privilege}</span>
-                </p>
-              ))}
-            </div>
-            <Link to={pathFor(ROUTES.departmentAccess, params)} className="mt-3 block text-xs font-semibold text-brand hover:underline">
-              Manage access & permissions →
-            </Link>
+            <p className="text-xs leading-5 text-on-surface-variant">Access is granted by role and branch, not by department. Anyone whose role covers a branch where {department.name} operates can work with its patients there.</p>
+            <Link to={pathFor(ROUTES.departmentAccess, params)} className="mt-3 block text-xs font-semibold text-brand hover:underline">Manage access & permissions →</Link>
           </Panel>
 
-          <DeactivateDepartment name={department.name} />
+          {manage && <DepartmentStatus department={department} onSaved={saved} />}
         </div>
       </div>
     </ConfigPage>

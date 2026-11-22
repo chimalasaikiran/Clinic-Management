@@ -2,7 +2,6 @@ import { localToday } from '../patients/format'
 
 // Option lists shared with the API (backend/src/modules/billing/billing.constants.ts), which validates against them.
 export const SERVICE_CATEGORIES = ['Consultation', 'Diagnostic & Lab', 'Therapy & Allied Health', 'Procedure', 'Consumables & Supplies']
-export const SERVICE_DEPARTMENTS = ['Cardiology', 'Diagnostic & Imaging', 'General Medicine', 'Pediatrics', 'Physiotherapy']
 
 // Tax treatments as the API stores them and as the screens name them. Exempt is not the same as no tax.
 export const TAX_TREATMENTS = [

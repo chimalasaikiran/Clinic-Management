@@ -86,12 +86,12 @@ describe('add person, branches and profile', () => {
     const router = renderRoute(ROUTES.staffNew)
     await user.click(screen.getByRole('radio', { name: /^Staff/ }))
     await fill(user, screen.getByLabelText(/^Full name/), 'Ravi Kumar')
-    await user.selectOptions(screen.getByLabelText(/Primary department/), 'Reception & Front Desk')
+    await user.selectOptions(await screen.findByRole('combobox', { name: /Primary department/ }), 'General Medicine')
     await fill(user, screen.getByLabelText(/Professional title/), 'Receptionist')
     await user.click(screen.getByRole('button', { name: /Create person & assign branches/ }))
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/staff/s-4/branches'))
-    expect(staffCalls('staff.create')[0][0]).toMatchObject({ type: 'staff', fullName: 'Ravi Kumar', department: 'Reception & Front Desk', designation: 'Receptionist', status: 'active' })
+    expect(staffCalls('staff.create')[0][0]).toMatchObject({ type: 'staff', fullName: 'Ravi Kumar', department: 'General Medicine', designation: 'Receptionist', status: 'active' })
 
     await user.click(await screen.findByRole('checkbox', { name: 'Kondapur Clinic' }))
     await user.click(screen.getByRole('button', { name: /Save branch assignments/ }))
@@ -168,6 +168,23 @@ describe('OPD schedule', () => {
       { branchId: 'b-main', weekday: 1, start: '09:00', end: '13:00' },
       { branchId: 'b-main', weekday: 0, start: '09:00', end: '13:00' },
     ]])
+  })
+})
+
+describe('OPD schedule against branch hours', () => {
+  it('warns, without refusing, when a session falls outside the branch’s opening hours', async () => {
+    const warning = 'Sunday 09:00–13:00 at Main Clinic is outside the branch’s hours (closed on Sundays).'
+    const scheduling = createPatientsApi({ practitioners: [apiPractitioner({ availability: [{ branchId: 'b-main', branchName: 'Main Clinic', weekday: 1, start: '09:00', end: '13:00' }] })], hoursWarnings: [warning] })
+    fake.scheduling = scheduling.api
+    fake.schedulingState = scheduling.state
+    const user = setup()
+    renderRoute(pathFor(ROUTES.staffSchedule, { staffId: 's-3' }))
+
+    await user.click(await screen.findByRole('switch', { name: 'Sunday OPD' }))
+    await user.click(screen.getByRole('button', { name: /Save & Apply OPD Schedule/ }))
+
+    expect(await screen.findByText(warning)).toBeInTheDocument()
+    expect(schedulingCalls('practitioners.setAvailability')).toHaveLength(1)
   })
 })
 

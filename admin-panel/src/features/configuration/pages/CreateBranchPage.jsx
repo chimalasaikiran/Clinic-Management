@@ -6,24 +6,28 @@ import { SelectInput, TextInput } from '../../../components/workspace/FormContro
 import PageIntro from '../../../components/workspace/PageIntro'
 import Panel from '../../../components/workspace/Panel'
 import StatusPill from '../../../components/workspace/StatusPill'
-import { ROUTES } from '../../../config/routes'
+import { Banner } from '../../../components/workspace/RecordKit'
+import { pathFor, ROUTES } from '../../../config/routes'
+import { useApiResource } from '../../../hooks/useApiResource'
 import { useFormFields } from '../../../hooks/useFormFields'
 import { cn } from '../../../lib/cn'
+import { accessApi } from '../../auth/api'
+import { CLINIC_CLASSIFICATIONS } from '../../onboarding/data/clinicOptions'
+import { configApi } from '../api'
 import ConfigPage from '../components/ConfigPage'
+import { FACILITY_TYPES } from '../configView'
 import { validateBranch } from '../validation'
-
-const FACILITY_TYPES = ['Specialty & Surgical Hub', 'General OPD Clinic', 'Diagnostic Centre', 'Day-care Centre']
 
 const STATUS_OPTIONS = [
   { value: 'active', title: 'Active (Licensed & Operational)', detail: 'Immediately open for patient scheduling, billing, and clinical encounters upon branch save.' },
-  { value: 'inactive', title: 'Inactive / Pre-launch Setup', detail: 'Restricted mode. Remains hidden from public booking engines and calendar dispatchers until licensed.' },
+  { value: 'planned', title: 'Planned / Pre-launch Setup', detail: 'Not open for booking until you set it to Active on the branch page.' },
 ]
 
 const LIFECYCLE = [
-  { title: 'Branch Master', detail: 'Physical identity, registry & geo-tagging (in progress)' },
-  { title: 'Department & Suite Mapping', detail: 'Consultation chambers, OT units, lab triage areas' },
-  { title: 'Rostered Doctors & Staff', detail: 'Assign clinical staff credentials and OPD time slots' },
-  { title: 'Service & Pricing Catalog', detail: 'Branch-level overrides on baseline diagnostic packages' },
+  { title: 'Branch Master', detail: 'Identity, address and contact (this page)' },
+  { title: 'Operating hours & departments', detail: 'Weekly sessions, closures and the departments that work here' },
+  { title: 'Staff & doctors', detail: 'Deploy staff to the branch and set doctors’ availability' },
+  { title: 'Services & stock', detail: 'Branch prices on services, and stock locations' },
 ]
 
 const INITIAL_VALUES = {
@@ -76,7 +80,8 @@ function StatusChoice({ option, checked, onChange }) {
   )
 }
 
-function BranchSidebar() {
+function BranchSidebar({ organisation }) {
+  const classification = CLINIC_CLASSIFICATIONS.find((option) => option.id === organisation?.classification)?.title
   return (
     <div className="flex flex-col gap-5">
       <Panel title="Lifecycle & downstream scope" action={<span className="text-[10px] text-outline">Stage 1 of 4</span>}>
@@ -106,24 +111,23 @@ function BranchSidebar() {
         </p>
       </Panel>
 
-      <Panel title="Multi-branch synchronization">
+      <Panel title="Multi-branch records">
         <ul className="space-y-3 text-xs leading-5 text-on-surface-variant">
           <li>
-            <p className="font-semibold text-on-surface">Universal UHID Registry</p>
-            Centralized patient records automatically sync across all branches. A single unique Health ID follows the patient everywhere
-            in your network.
+            <p className="font-semibold text-on-surface">One patient record</p>
+            Patients are registered once for the organisation; their records follow them to every branch.
           </li>
           <li>
-            <p className="font-semibold text-on-surface">National Health Stack (ABDM)</p>
-            Full M1, M2, and M3 milestone compatibility. Fast-tracks your Health Facility Registry (HFR) accreditation.
+            <p className="font-semibold text-on-surface">Organisation-wide roles</p>
+            Roles covering the whole organisation see the new branch at once. Branch-limited roles see it when you give it to them below.
           </li>
         </ul>
         <div className="mt-4 flex items-end justify-between rounded-md bg-surface-lowest p-3">
           <div>
-            <p className="text-[10px] tracking-wide text-outline uppercase">Patient identity pool</p>
-            <p className="text-lg font-bold text-on-surface">148,920 UHIDs</p>
+            <p className="text-[10px] tracking-wide text-outline uppercase">Branches today</p>
+            <p className="text-lg font-bold text-on-surface">{organisation ? organisation.counts.branches : '—'}</p>
           </div>
-          <StatusPill tone="success">Cross-Branch Active</StatusPill>
+          <StatusPill tone="success">{classification ?? 'Organisation'}</StatusPill>
         </div>
       </Panel>
 
@@ -132,7 +136,7 @@ function BranchSidebar() {
           <Info className="size-3.5 text-amber-600" aria-hidden="true" />
           State protection safeguard
         </p>
-        Unsaved modifications will be lost if you leave without creating the branch. Form drafts are held in local memory.
+        Unsaved changes are lost if you leave without creating the branch.
       </aside>
     </div>
   )
@@ -140,16 +144,37 @@ function BranchSidebar() {
 
 export default function CreateBranchPage() {
   const navigate = useNavigate()
+  const organisation = useApiResource(() => configApi.organisation(), 'organisation').data
+  const roles = (useApiResource(() => accessApi.roles(), 'roles').data ?? []).filter((role) => role.scope === 'branch' && role.status === 'active')
   const [values, handleChange] = useFormFields(INITIAL_VALUES)
+  const [roleIds, setRoleIds] = useState([])
   const [submitted, setSubmitted] = useState(false)
-  const errors = submitted ? validateBranch(values) : {}
+  const [serverErrors, setServerErrors] = useState({})
+  const [failure, setFailure] = useState('')
+  const [pending, setPending] = useState(false)
+  const errors = { ...(submitted ? validateBranch(values) : {}), ...serverErrors }
 
   const cancel = () => navigate(ROUTES.organisation)
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
     setSubmitted(true)
-    if (Object.keys(validateBranch(values)).length === 0) navigate(ROUTES.organisation)
+    setServerErrors({})
+    setFailure('')
+    if (Object.keys(validateBranch(values)).length) return
+    setPending(true)
+    try {
+      const branch = await configApi.createBranch({
+        name: values.name.trim(), code: values.code.trim(), facilityType: values.facilityType, status: values.status, addressLine1: values.addressLine1.trim(), addressLine2: values.addressLine2.trim(),
+        city: values.city.trim(), state: values.state.trim(), pinCode: values.pin.trim(), phone: values.phone.trim(), email: values.email.trim(), roleIds,
+      })
+      navigate(pathFor(ROUTES.branch, { branchId: branch.id }))
+    } catch (error) {
+      const fields = error.fieldErrors?.() ?? {}
+      setServerErrors({ ...fields, ...(fields.pinCode ? { pin: fields.pinCode } : {}), ...(error.code === 'BRANCH_CODE_TAKEN' ? { code: error.message } : {}) })
+      setFailure(error.message)
+      setPending(false)
+    }
   }
 
   return (
@@ -159,9 +184,8 @@ export default function CreateBranchPage() {
           eyebrow={
             <>
               <span className="rounded border border-slate-200 bg-surface-low px-1.5 py-0.5 text-on-surface-variant">
-                Branch master configuration · Organization node #CP-IND-4091
+                Branch master configuration · {organisation?.displayName ?? 'Organization'}
               </span>
-              <StatusPill tone="success">ABDM HFR Registry Ready</StatusPill>
             </>
           }
           title="Create branch"
@@ -169,13 +193,14 @@ export default function CreateBranchPage() {
           actions={
             <>
               <ActionButton onClick={cancel}>Cancel</ActionButton>
-              <ActionButton variant="primary" type="submit">
-                Create branch
+              <ActionButton variant="primary" type="submit" disabled={pending}>
+                {pending ? 'Creating…' : 'Create branch'}
               </ActionButton>
             </>
           }
         />
 
+        {failure && <Banner tone="danger" title="Branch not created" className="mb-5">{failure}</Banner>}
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
           <div className="flex min-w-0 flex-col gap-5">
             <StepPanel step={1} title="Branch identity" subtitle="Physical facility identifier and internal system taxonomy.">
@@ -203,15 +228,10 @@ export default function CreateBranchPage() {
                 <TextInput label="PIN code" name="pin" required inputMode="numeric" maxLength={6} value={values.pin} onChange={handleChange} error={errors.pin} />
                 <TextInput label="Country" value="India (IN / +91)" readOnly />
               </div>
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200 bg-surface-lowest p-3">
-                <p className="flex items-center gap-2 text-xs text-on-surface-variant">
-                  <MapPin className="size-4 text-brand" aria-hidden="true" />
-                  Spatial verification preview appears once the address is geo-tagged.
-                </p>
-                <ActionButton size="sm" disabled>
-                  Adjust pin
-                </ActionButton>
-              </div>
+              <p className="flex items-center gap-2 rounded-md border border-slate-200 bg-surface-lowest p-3 text-xs text-on-surface-variant">
+                <MapPin className="size-4 text-brand" aria-hidden="true" />
+                The address appears on invoices, appointment messages and the branch’s public profile.
+              </p>
             </StepPanel>
 
             <StepPanel step={3} title="Contact & communications" subtitle="Front-desk triage phone and patient SMS/WhatsApp delivery credentials.">
@@ -221,11 +241,11 @@ export default function CreateBranchPage() {
               </div>
             </StepPanel>
 
-            <StepPanel step={4} title="Operating model & schedule" subtitle="Core operating framework inherited from CarePoint Health Network.">
+            <StepPanel step={4} title="Operating model & access" subtitle={`Inherited from ${organisation?.displayName ?? 'the organisation'}.`}>
               <div className="grid gap-3 sm:grid-cols-2">
                 {[
-                  ['Practice taxonomy', 'Multi-Speciality Clinic · Outpatient Care & Day Surgery', 'Default clinical encounter sheets are pre-loaded for Cardiology, ENT, and Orthopedics.'],
-                  ['Central billing & tax', 'Standard Healthcare Services Exempt', 'GST 12% exemption on Consultation. Pharmacy maintains HSN-level tiered GST rates.'],
+                  ['Practice taxonomy', CLINIC_CLASSIFICATIONS.find((option) => option.id === organisation?.classification)?.title ?? 'Not set', organisation?.specialties.length ? organisation.specialties.join(' · ') : 'Specialties are set during onboarding.'],
+                  ['Billing & tax', 'Organisation billing settings', 'Services, prices and tax treatment come from the billing catalogue; set this branch’s prices there.'],
                 ].map(([label, title, detail]) => (
                   <div key={label} className="rounded-md border border-slate-200 bg-surface-lowest p-4">
                     <p className="flex items-center justify-between text-[10px] tracking-wide text-outline uppercase">
@@ -237,8 +257,14 @@ export default function CreateBranchPage() {
                   </div>
                 ))}
               </div>
+              {roles.length > 0 && (
+                <fieldset>
+                  <legend className="mb-1.5 text-[13px] font-semibold text-slate-800">Give this branch to branch-limited roles</legend>
+                  <div className="flex flex-wrap gap-2">{roles.map((role) => <label key={role.id} className={cn('flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-xs font-medium', roleIds.includes(role.id) ? 'border-brand bg-teal-50 text-brand' : 'border-slate-300')}><input type="checkbox" checked={roleIds.includes(role.id)} onChange={() => setRoleIds((current) => (current.includes(role.id) ? current.filter((id) => id !== role.id) : [...current, role.id]))} className="accent-[#006a61]" />{role.name}</label>)}</div>
+                </fieldset>
+              )}
               <p className="rounded-md border border-teal-200 bg-teal-50/60 p-3 text-xs leading-5 text-on-surface-variant">
-                <span className="font-semibold text-brand">Set operating hours & OPD shift schedules.</span> Configured post-creation inside the Branch Operations console.
+                <span className="font-semibold text-brand">Set operating hours & OPD sessions</span> on the branch page after creating it.
               </p>
             </StepPanel>
 
@@ -246,14 +272,14 @@ export default function CreateBranchPage() {
               <p className="text-xs text-on-surface-variant">Creation commits facility metadata to CarePoint organizational master.</p>
               <div className="flex gap-2">
                 <ActionButton onClick={cancel}>Cancel</ActionButton>
-                <ActionButton variant="primary" type="submit">
-                  Create branch
+                <ActionButton variant="primary" type="submit" disabled={pending}>
+                  {pending ? 'Creating…' : 'Create branch'}
                 </ActionButton>
               </div>
             </div>
           </div>
 
-          <BranchSidebar />
+          <BranchSidebar organisation={organisation} />
         </div>
       </form>
     </ConfigPage>

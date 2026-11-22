@@ -49,6 +49,8 @@ export default function BookAppointmentPage() {
   const slots = useApiResource(() => (doctor && branchId ? practitionersApi.slots(doctor.id, { branchId, from: today, days: DAYS_SHOWN }) : Promise.resolve(null)), slotKey)
   const days = datesFrom(today, DAYS_SHOWN)
   const daySlots = (date) => slots.data?.days.find((day) => day.date === date)?.slots ?? []
+  // The branch's closure reason when it is closed that day (Configuration › Operating hours).
+  const closedOn = (date) => slots.data?.days.find((day) => day.date === date)?.closed ?? null
   const pickerSlots = slotsForPicker(daySlots(values.date))
 
   const form = { ...values, branchId, department, doctorId: doctor?.id ?? '' }
@@ -171,13 +173,15 @@ export default function BookAppointmentPage() {
                   <button key={day} type="button" aria-pressed={values.date === day} onClick={() => choose({ date: day })} className={cn('rounded-lg border p-3 text-left', values.date === day ? 'border-2 border-brand bg-white' : 'border-slate-200')}>
                     <span className="block text-[10px] font-semibold text-brand uppercase">{day === today ? 'Today' : formatWeekday(day).slice(0, 3)}</span>
                     <span className="block text-sm font-semibold">{formatDate(day).slice(0, 6)}</span>
-                    <span className="block text-[10px] text-outline">{slots.loading ? 'Checking…' : `${free} slots left`}</span>
+                    <span className="block text-[10px] text-outline">{slots.loading ? 'Checking…' : closedOn(day) ? 'Branch closed' : `${free} slots left`}</span>
                   </button>
                 )
               })}
             </div>
             {slots.error ? (
               <p role="alert" className="text-xs text-rose-600">{slots.error.message} <button type="button" onClick={slots.reload} className="font-semibold text-brand hover:underline">Try again</button></p>
+            ) : closedOn(values.date) ? (
+              <p role="note" className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"><strong>The branch is closed on this day:</strong> {closedOn(values.date)}. Choose another date.</p>
             ) : (
               <SlotPicker slots={pickerSlots} session={values.session} onSessionChange={(session) => set('session', session)} value={values.slot} onChange={(slot) => setValues((current) => ({ ...current, slot, session: sessionOf(slot) }))} error={errors.slot} />
             )}

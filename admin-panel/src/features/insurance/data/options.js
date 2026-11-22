@@ -1,5 +1,5 @@
-// Partner directory and coverage options for the insurance setup. Selecting a partner here
-// records intent only; it does not establish an empanelment or cashless agreement.
+// The built-in partner directory and coverage options for the insurance setup. Selecting a partner records that
+// the clinic works with it; it does not establish an empanelment or cashless agreement.
 export const PARTNERS = [
   { id: 'hdfc-ergo', name: 'HDFC ERGO General Insurance', type: 'Insurer' },
   { id: 'medi-assist', name: 'Medi Assist Insurance TPA', type: 'TPA' },
@@ -14,11 +14,6 @@ export const PARTNERS = [
 export const BILLING_METHODS = [
   { id: 'cashless', label: 'Cashless billing' },
   { id: 'reimbursement', label: 'Reimbursement support' },
-]
-
-export const COVERAGE_BRANCHES = [
-  { id: 'bangalore-central', name: 'Bangalore Central', detail: 'Current workspace · Karnataka, IN' },
-  { id: 'whitefield', name: 'Whitefield', detail: 'Branch · Karnataka, IN' },
 ]
 
 export const COVERAGE_SERVICES = [

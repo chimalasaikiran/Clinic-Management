@@ -38,10 +38,10 @@ export function FieldError({ children }) {
 }
 
 // Primary action, then a back link on the left and a secondary link on the right.
-export function StepActions({ submitLabel, back, secondary, note = 'Optional setup · You can return to this later.' }) {
+export function StepActions({ submitLabel, back, secondary, pending = false, note = 'Optional setup · You can return to this later.' }) {
   return (
     <div className="flex flex-col gap-3.5 border-t border-slate-200/70 pt-5">
-      <Button type="submit" fullWidth trailing={<img src={icons.arrowRight} alt="" />}>
+      <Button type="submit" fullWidth disabled={pending} trailing={<img src={icons.arrowRight} alt="" />}>
         {submitLabel}
       </Button>
       <div className="flex items-center justify-between gap-3 text-xs font-semibold">

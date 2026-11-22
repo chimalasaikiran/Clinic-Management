@@ -1,176 +1,160 @@
 import { useState } from 'react'
-import { MoreVertical, Plus } from 'lucide-react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Plus } from 'lucide-react'
+import { Link, useParams } from 'react-router-dom'
 import ActionButton from '../../../components/workspace/ActionButton'
-import { Toggle } from '../../../components/workspace/controls'
 import { Cell, Row, Table } from '../../../components/workspace/DataTable'
 import PageIntro from '../../../components/workspace/PageIntro'
 import Panel from '../../../components/workspace/Panel'
+import { Banner } from '../../../components/workspace/RecordKit'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
+import { useApiResource } from '../../../hooks/useApiResource'
+import { accessApi } from '../../auth/api'
+import { useAuth } from '../../auth/context/useAuth'
+import { inventoryApi } from '../../inventory/api'
+import LoadingState from '../../patients/components/LoadingState'
+import { coversBranch } from '../access'
+import { configApi } from '../api'
 import AddInventoryLocationDrawer from '../components/AddInventoryLocationDrawer'
 import ConfigPage from '../components/ConfigPage'
-import { INVENTORY_LOCATIONS, INVENTORY_ROLES, STOCK_ALERTS, STOCK_GOVERNANCE } from '../data/inventory'
 
-function GovernanceCard({ rule, on, onChange }) {
-  return (
-    <div className="flex items-start justify-between gap-3 rounded-md border border-slate-200 p-4">
-      <div className="min-w-0">
-        <p className="flex flex-wrap items-center gap-2 text-[13px] font-semibold text-on-surface">
-          {rule.title}
-          {rule.badge && <StatusPill tone={rule.badge === 'Mandatory' ? 'brand' : 'neutral'}>{rule.badge}</StatusPill>}
-        </p>
-        <p className="mt-1 text-xs leading-4 text-on-surface-variant">{rule.detail}</p>
-        {rule.field && (
-          <label className="mt-3 flex items-center gap-2 text-xs text-on-surface-variant">
-            {rule.field}
-            <input
-              type="number"
-              min="0"
-              defaultValue={rule.value}
-              aria-label={rule.field}
-              className="w-16 rounded border border-slate-200 px-2 py-1 text-right text-xs outline-none focus:border-brand"
-            />
-            {rule.unit}
-          </label>
-        )}
-      </div>
-      {rule.field === undefined && <Toggle checked={on} onChange={onChange} label={rule.title} />}
-    </div>
-  )
-}
+// What the inventory module enforces at every location; these are not settings.
+const STOCK_RULES = [
+  ['Batch & expiry on every receipt', 'Stock is received against a batch number and expiry date.'],
+  ['First expiry, first out', 'Issues, dispensing and transfers take the batch that expires first.'],
+  ['Quarantine is held back', 'Quarantined units stay on the books but are never issued or dispensed.'],
+  ['Every movement recorded', 'Receipts, issues, transfers and adjustments are kept with who made them.'],
+]
+const INVENTORY_ROLES = [
+  ['Manage stock', 'inventory.manage', 'Items, suppliers, locations, receipts, issues and transfers.'],
+  ['View stock', 'inventory.view', 'See stock levels and movements.'],
+  ['Pharmacy', 'pharmacy.dispense', 'Dispense prescriptions at pharmacy counters.'],
+]
 
 export default function BranchInventoryPage() {
   const { branchId } = useParams()
-  const navigate = useNavigate()
-  const [enabled, setEnabled] = useState(true)
-  const [locations, setLocations] = useState(INVENTORY_LOCATIONS)
+  const { can } = useAuth()
+  const [attempt, setAttempt] = useState(0)
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [toggles, setToggles] = useState(() =>
-    Object.fromEntries([...STOCK_GOVERNANCE, ...STOCK_ALERTS].map((rule) => [rule.id, rule.locked ?? rule.defaultOn ?? true])),
-  )
+  const [message, setMessage] = useState(null)
+  const branch = useApiResource(() => configApi.branch(branchId), `config-branch:${branchId}`)
+  const stock = useApiResource(() => inventoryApi.state(), `inventory-state#${attempt}`)
+  const roles = useApiResource(() => (can('settings.roles') ? accessApi.roles() : Promise.resolve([])), 'roles').data ?? []
 
-  const setToggle = (id) => (value) => setToggles((current) => ({ ...current, [id]: value }))
-  const branchPath = pathFor(ROUTES.branch, { branchId })
+  if (!branch.data || !stock.data) {
+    return (
+      <ConfigPage>
+        <PageIntro title={branch.error?.status === 404 ? 'Branch not found' : 'Inventory configuration'} />
+        {branch.error?.status !== 404 && <LoadingState label="Loading inventory…" error={branch.error ?? stock.error} onRetry={() => { branch.reload(); stock.reload() }} />}
+      </ConfigPage>
+    )
+  }
+
+  const current = branch.data
+  const manage = can('inventory.manage')
+  const locations = stock.data.locations.filter((location) => location.branch.id === branchId)
+  const onHand = (locationId) => {
+    const batches = stock.data.batches.filter((batch) => batch.locationId === locationId)
+    return { batches: batches.length, units: batches.reduce((sum, batch) => sum + batch.posted, 0) }
+  }
+  const reload = (text) => {
+    setMessage({ tone: 'brand', title: text })
+    setAttempt((count) => count + 1)
+  }
+  const setActive = async (location) => {
+    setMessage(null)
+    try {
+      await inventoryApi.setLocationActive(location.id, !location.active)
+      reload(`${location.name} ${location.active ? 'deactivated' : 'activated'}.`)
+    } catch (error) {
+      setMessage({ tone: 'danger', title: 'Not changed', text: error.message })
+    }
+  }
 
   return (
     <ConfigPage>
       <PageIntro
-        eyebrow={<span className="rounded border border-slate-200 bg-surface-low px-1.5 py-0.5 text-on-surface-variant">Branch scope: Main Clinic (HYD-HQ-01) · Operational facility</span>}
+        eyebrow={<span className="rounded border border-slate-200 bg-surface-low px-1.5 py-0.5 text-on-surface-variant">Branch scope: {current.name} ({current.code})</span>}
         title="Inventory configuration"
-        description="Configure inventory capabilities, physical storage nodes, tracking rules, and stock-tracking protocols for this branch."
+        description="The stock locations at this branch and the rules ClinicOS applies to stock held in them."
         actions={
           <>
-            <ActionButton onClick={() => navigate(branchPath)}>Cancel</ActionButton>
-            <ActionButton variant="primary" onClick={() => navigate(branchPath)}>
-              Save changes
-            </ActionButton>
+            <ActionButton to={pathFor(ROUTES.branch, { branchId })}>Back to branch</ActionButton>
+            <ActionButton to={ROUTES.inventory}>Open Inventory</ActionButton>
           </>
         }
-        note="All changes saved to branch profile"
       />
 
-      <div className="flex flex-col gap-5">
-        <Panel title="Branch inventory master switch" action={<StatusPill tone="success">Enabled (Active)</StatusPill>}>
-          <div className="flex items-center justify-between gap-4">
-            <p className="max-w-2xl text-xs leading-5 text-on-surface-variant">
-              When enabled, physical locations can hold stock, register dispensing events, and allocate batches. If disabled, operational
-              inventory and dispensing tools remain visible while inventory tracking is suspended.
-            </p>
-            <span className="flex items-center gap-2 text-xs font-medium text-on-surface">
-              {enabled ? 'Active' : 'Paused'}
-              <Toggle checked={enabled} onChange={setEnabled} label="Branch inventory" />
-            </span>
-          </div>
-        </Panel>
+      {message && <Banner tone={message.tone} title={message.title} className="mb-5">{message.text}</Banner>}
 
+      <div className="flex flex-col gap-5">
         <Panel
           title="Inventory locations"
-          subtitle="Define the physical or operational locations where stock is stored and managed for this branch."
-          action={
-            <ActionButton variant="brand" size="sm" icon={Plus} onClick={() => setDrawerOpen(true)}>
-              Add inventory location
-            </ActionButton>
-          }
+          subtitle="The physical or operational locations where stock is stored and managed for this branch."
+          action={manage && <ActionButton variant="brand" size="sm" icon={Plus} onClick={() => setDrawerOpen(true)}>Add inventory location</ActionButton>}
           bodyClassName="p-0"
         >
-          <Table headings={['Location', 'Type', 'Status', 'Stock handling protocol', 'Action']} minWidth={820}>
-            {locations.map((location) => (
-              <Row key={location.id}>
-                <Cell>
-                  <p className="font-semibold">{location.name}</p>
-                  <p className="text-[11px] text-outline">{location.detail}</p>
-                </Cell>
-                <Cell><StatusPill className="rounded">{location.type}</StatusPill></Cell>
-                <Cell><StatusPill tone={location.status === 'Active' ? 'success' : 'neutral'} dot>{location.status}</StatusPill></Cell>
-                <Cell>
-                  <StatusPill tone="success">{location.protocol}</StatusPill>
-                  <p className="mt-1 text-[11px] text-outline">{location.protocolNote}</p>
-                </Cell>
-                <Cell>
-                  <button type="button" aria-label={`Actions for ${location.name}`} className="text-outline hover:text-on-surface">
-                    <MoreVertical className="size-4" aria-hidden="true" />
-                  </button>
-                </Cell>
-              </Row>
-            ))}
+          <Table headings={['Location', 'Type', 'Status', 'Stock held', 'Action']} minWidth={820} empty={locations.length ? null : 'No stock locations at this branch yet.'}>
+            {locations.map((location) => {
+              const held = onHand(location.id)
+              return (
+                <Row key={location.id} muted={!location.active}>
+                  <Cell>
+                    <p className="font-semibold">{location.name}</p>
+                    <p className="text-[11px] text-outline">{[location.code, location.detail].filter(Boolean).join(' · ')}</p>
+                  </Cell>
+                  <Cell><StatusPill className="rounded">{location.kind === 'pharmacy' ? 'Pharmacy' : 'Store'}</StatusPill></Cell>
+                  <Cell><StatusPill tone={location.active ? 'success' : 'neutral'} dot>{location.active ? 'Active' : 'Inactive'}</StatusPill></Cell>
+                  <Cell>
+                    <p className="font-medium">{held.units} units</p>
+                    <p className="text-[11px] text-outline">{held.batches} batch{held.batches === 1 ? '' : 'es'}</p>
+                  </Cell>
+                  <Cell>{manage && <ActionButton size="sm" variant={location.active ? 'secondary' : 'primary'} onClick={() => setActive(location)}>{location.active ? 'Deactivate' : 'Activate'}</ActionButton>}</Cell>
+                </Row>
+              )
+            })}
           </Table>
           <p className="border-t border-slate-100 px-5 py-3 text-xs text-on-surface-variant">
-            Showing {locations.length} of {locations.length} active storage nodes
+            {locations.filter((location) => location.active).length} of {locations.length} locations active
           </p>
         </Panel>
 
-        <Panel title="Stock handling & safety governance" subtitle="Set global batch, expiry, serial, and verification across all branch storage sites.">
+        <Panel title="Stock handling & safety governance" subtitle="Applied at every location; not configurable per branch.">
           <div className="grid gap-4 md:grid-cols-2">
-            {STOCK_GOVERNANCE.map((rule) => (
-              <GovernanceCard key={rule.id} rule={rule} on={toggles[rule.id]} onChange={rule.locked ? () => {} : setToggle(rule.id)} />
-            ))}
-          </div>
-        </Panel>
-
-        <Panel title="Stock alerts & automated monitoring" subtitle="Configure automated inventory notifications for this branch without creating procurement orders.">
-          <div className="flex flex-col gap-4">
-            {STOCK_ALERTS.map((rule) => (
-              <GovernanceCard key={rule.id} rule={rule} on={toggles[rule.id]} onChange={setToggle(rule.id)} />
+            {STOCK_RULES.map(([title, detail]) => (
+              <div key={title} className="rounded-md border border-slate-200 p-4">
+                <p className="flex flex-wrap items-center gap-2 text-[13px] font-semibold text-on-surface">{title}<StatusPill tone="brand">Always on</StatusPill></p>
+                <p className="mt-1 text-xs leading-4 text-on-surface-variant">{detail}</p>
+              </div>
             ))}
           </div>
         </Panel>
 
         <Panel
           title="Inventory access & governance"
-          subtitle="Role allocations for stock handling, movements, adjustments, and batch reconciliation."
+          subtitle="Roles at this branch that hold inventory permissions."
           action={<ActionButton variant="soft" size="sm" to={pathFor(ROUTES.branchAccess, { branchId })}>Manage inventory access & permissions</ActionButton>}
         >
           <div className="grid gap-4 md:grid-cols-3">
-            {INVENTORY_ROLES.map((role) => (
-              <div key={role.id} className="rounded-md border border-slate-200 bg-surface-lowest p-4">
-                <p className="flex items-center justify-between text-[13px] font-semibold text-on-surface">
-                  {role.title}
-                  <StatusPill>{role.count} Users</StatusPill>
-                </p>
-                <p className="mt-1 text-xs leading-4 text-on-surface-variant">{role.detail}</p>
-                <p className="mt-3 text-[11px] text-outline">{role.people}</p>
-              </div>
-            ))}
+            {INVENTORY_ROLES.map(([title, permission, detail]) => {
+              const holding = roles.filter((role) => coversBranch(role, branchId) && role.permissions.includes(permission))
+              return (
+                <div key={permission} className="rounded-md border border-slate-200 bg-surface-lowest p-4">
+                  <p className="flex items-center justify-between text-[13px] font-semibold text-on-surface">
+                    {title}
+                    {can('settings.roles') && <StatusPill>{holding.length} roles</StatusPill>}
+                  </p>
+                  <p className="mt-1 text-xs leading-4 text-on-surface-variant">{detail}</p>
+                  {can('settings.roles') && <p className="mt-3 text-[11px] text-outline">{holding.map((role) => role.name).join(', ') || 'No role at this branch'}</p>}
+                </div>
+              )
+            })}
           </div>
-        </Panel>
-
-        <Panel title="Configuration revision & runtime snapshot">
-          <div className="flex flex-wrap items-end justify-between gap-4 text-xs text-on-surface-variant">
-            <ul className="space-y-1">
-              <li>Branch inventory: <strong className="text-on-surface">{enabled ? 'Enabled' : 'Paused'}</strong></li>
-              <li>Configured locations: <strong className="text-on-surface">{locations.length} Active Nodes</strong></li>
-              <li>Tracking protocols: <strong className="text-on-surface">Batch & FEFO Enforced</strong></li>
-            </ul>
-            <div className="flex gap-2">
-              <ActionButton onClick={() => navigate(branchPath)}>Discard changes</ActionButton>
-              <ActionButton variant="primary" onClick={() => navigate(branchPath)}>Save configuration</ActionButton>
-            </div>
-          </div>
+          <p className="mt-3 text-[11px] text-outline">Day-to-day stock work happens in <Link to={ROUTES.inventory} className="font-semibold text-brand hover:underline">Inventory</Link>.</p>
         </Panel>
       </div>
 
-      <AddInventoryLocationDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} onCreate={(location) => setLocations((current) => [...current, location])} />
+      {manage && <AddInventoryLocationDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} branch={current} onCreated={reload} />}
     </ConfigPage>
   )
 }

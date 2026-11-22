@@ -1,7 +1,9 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { pathFor, ROUTES } from '../../../config/routes'
+import { billingFake } from '../../../test/fixtures/billingFake'
+import { apiBranch, createConfigApi } from '../../../test/fixtures/configApi'
 import { renderRoute } from '../../../test/renderRoute'
 
 // Pasting keeps long form fills fast; typing every key re-renders the whole page.
@@ -11,11 +13,11 @@ async function fill(user, field, text) {
 }
 
 describe('organisation page', () => {
-  it('lists every branch and highlights Configuration in the sidebar', () => {
+  it('lists every branch and highlights Configuration in the sidebar', async () => {
     renderRoute(ROUTES.organisation)
 
+    expect(await screen.findByRole('heading', { name: 'Kondapur Clinic' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Organization & branches' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Kondapur Clinic' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /configuration/i })).toHaveAttribute('aria-current', 'page')
   })
 
@@ -23,133 +25,235 @@ describe('organisation page', () => {
     const user = userEvent.setup()
     renderRoute(ROUTES.organisation)
 
-    await user.type(screen.getByPlaceholderText('Search locations...'), 'kondapur')
+    await user.type(await screen.findByPlaceholderText('Search locations...'), 'kondapur')
     expect(screen.queryByRole('heading', { name: 'Main Clinic' })).not.toBeInTheDocument()
 
     await user.type(screen.getByPlaceholderText('Search locations...'), 'zzz')
     expect(screen.getByText('No locations match your filters.')).toBeInTheDocument()
   })
 
-  it('opens a branch and the create-branch form', async () => {
+  it('saves the organisation profile', async () => {
     const user = userEvent.setup()
-    const router = renderRoute(ROUTES.organisation)
+    renderRoute(ROUTES.organisation)
 
-    await user.click(screen.getAllByRole('link', { name: 'View' })[1])
-    expect(router.state.location.pathname).toBe(pathFor(ROUTES.branch, { branchId: 'kondapur' }))
+    await user.click(await screen.findByRole('button', { name: 'Edit organization profile' }))
+    const name = screen.getByLabelText(/Organization name/)
+    await user.clear(name)
+    await fill(user, name, 'Aura Health Clinics')
+    await user.click(screen.getByRole('button', { name: 'Save profile' }))
+
+    await waitFor(() => expect(billingFake.config.state.organisation.displayName).toBe('Aura Health Clinics'))
+    expect(billingFake.config.state.organisation.version).toBe(2)
   })
 })
 
 describe('create branch page', () => {
-  it('shows errors for required fields and stays put', async () => {
+  it('validates the form, then creates the branch and opens it', async () => {
     const user = userEvent.setup()
     const router = renderRoute(ROUTES.branchNew)
 
-    await user.click(screen.getAllByRole('button', { name: 'Create branch' })[0])
-
+    await user.click((await screen.findAllByRole('button', { name: 'Create branch' }))[0])
     expect(screen.getByText('Enter the branch name.')).toBeInTheDocument()
-    expect(screen.getByText('Enter a branch code.')).toBeInTheDocument()
-    expect(screen.getByText('Enter the PIN code.')).toBeInTheDocument()
-    expect(router.state.location.pathname).toBe(ROUTES.branchNew)
-  })
 
-  it('returns to the organisation page once the form is valid', async () => {
-    const user = userEvent.setup({ delay: null })
-    const router = renderRoute(ROUTES.branchNew)
-
-    await fill(user, screen.getByLabelText(/Branch name/), 'Kondapur Specialty Clinic')
-    await fill(user, screen.getByLabelText(/Branch code/), 'KDP-01')
-    await user.selectOptions(screen.getByLabelText(/Facility type/), 'Specialty & Surgical Hub')
-    await fill(user, screen.getByLabelText(/Address line 1/), 'Plot No. 42, Hitec City Main Road')
+    await fill(user, screen.getByLabelText(/Branch name/), 'Gachibowli Clinic')
+    await fill(user, screen.getByLabelText(/Branch code/), 'GCB-01')
+    await user.selectOptions(screen.getByLabelText(/Facility type/), 'Outpatient Practice')
+    await fill(user, screen.getByLabelText(/Address line 1/), 'DLF Road')
     await fill(user, screen.getByLabelText(/^City/), 'Hyderabad')
     await fill(user, screen.getByLabelText(/^State/), 'Telangana')
-    await fill(user, screen.getByLabelText(/PIN code/), '500084')
-    await fill(user, screen.getByLabelText(/Branch phone/), '4023456789')
-    await fill(user, screen.getByLabelText(/Branch email/), 'kondapur@carepointhealth.in')
+    await fill(user, screen.getByLabelText(/PIN/), '500032')
+    await fill(user, screen.getByLabelText(/phone/i), '9876543210')
+    await fill(user, screen.getByLabelText(/email/i), 'gcb@aura.test')
     await user.click(screen.getAllByRole('button', { name: 'Create branch' })[0])
 
-    expect(router.state.location.pathname).toBe(ROUTES.organisation)
-  }, 15000)
-})
-
-describe('operating hours page', () => {
-  it('adds and removes a schedule exception', async () => {
-    const user = userEvent.setup()
-    renderRoute(pathFor(ROUTES.branchHours, { branchId: 'kondapur' }))
-
-    const form = screen.getByRole('heading', { name: 'Quick add exception' }).closest('section')
-    await user.click(within(form).getByRole('button', { name: 'Add exception' }))
-    expect(within(form).getByText('Pick a date.')).toBeInTheDocument()
-    expect(within(form).getByText('Add a reason for the exception.')).toBeInTheDocument()
-
-    await user.type(within(form).getByLabelText(/^Date/), '2026-12-25')
-    await user.type(within(form).getByLabelText(/Reason/), 'Christmas Day')
-    await user.click(within(form).getByRole('button', { name: 'Add exception' }))
-
-    expect(screen.getByText('Christmas Day')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Remove Christmas Day' }))
-    expect(screen.queryByText('Christmas Day')).not.toBeInTheDocument()
-  })
-})
-
-describe('branch staff page', () => {
-  it('filters the roster and clears the filters again', async () => {
-    const user = userEvent.setup()
-    renderRoute(pathFor(ROUTES.branchStaff, { branchId: 'main' }))
-
-    await user.selectOptions(screen.getByLabelText('All Types'), 'Doctor')
-    expect(screen.queryByText('Rahul Kumar')).not.toBeInTheDocument()
-    expect(screen.getByText('Dr. Arjun Mehta, MD')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: /clear filters/i }))
-    expect(screen.getByText('Rahul Kumar')).toBeInTheDocument()
+    await waitFor(() => expect(billingFake.config.state.branches).toHaveLength(3))
+    const created = billingFake.config.state.branches[2]
+    expect(created).toMatchObject({ name: 'Gachibowli Clinic', code: 'GCB-01', pinCode: '500032', isPrimary: false })
+    await waitFor(() => expect(router.state.location.pathname).toBe(pathFor(ROUTES.branch, { branchId: created.id })))
   })
 
-  it('selects people in the add-people drawer and keeps assigned people locked', async () => {
+  it('shows the server error when the branch code is taken', async () => {
     const user = userEvent.setup()
-    renderRoute(pathFor(ROUTES.branchStaff, { branchId: 'main' }))
+    renderRoute(ROUTES.branchNew)
 
-    await user.click(screen.getByRole('button', { name: /add people/i }))
-    const drawer = screen.getByRole('dialog')
+    await fill(user, await screen.findByLabelText(/Branch name/), 'Second Main')
+    await fill(user, screen.getByLabelText(/Branch code/), 'MAIN')
+    await user.selectOptions(screen.getByLabelText(/Facility type/), 'Outpatient Practice')
+    await fill(user, screen.getByLabelText(/Address line 1/), 'Road 1')
+    await fill(user, screen.getByLabelText(/^City/), 'Hyderabad')
+    await fill(user, screen.getByLabelText(/^State/), 'Telangana')
+    await fill(user, screen.getByLabelText(/PIN/), '500033')
+    await fill(user, screen.getByLabelText(/phone/i), '9876543210')
+    await fill(user, screen.getByLabelText(/email/i), 'x@aura.test')
+    await user.click(screen.getAllByRole('button', { name: 'Create branch' })[0])
 
-    expect(within(drawer).getByRole('button', { name: /^Add 0 people/ })).toBeDisabled()
-    expect(within(drawer).getByRole('checkbox', { name: 'Dr. Ananya Rao' })).toBeDisabled()
-
-    await user.click(within(drawer).getByRole('checkbox', { name: 'Dr. Rajesh Kannan, MD' }))
-    await user.click(within(drawer).getByRole('checkbox', { name: 'Meera Nambiar' }))
-    expect(within(drawer).getByRole('button', { name: 'Add 2 people' })).toBeEnabled()
-
-    await user.keyboard('{Escape}')
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-  })
-})
-
-describe('staff profile page', () => {
-  it('shows the person and their branch affiliations', () => {
-    renderRoute(pathFor(ROUTES.staffProfile, { staffId: 'ananya-rao' }))
-
-    expect(screen.getByRole('heading', { name: 'Dr. Ananya Rao' })).toBeInTheDocument()
-    expect(screen.getByText('Kondapur Clinic')).toBeInTheDocument()
+    expect(await screen.findByText('Branch not created')).toBeInTheDocument()
+    expect(billingFake.config.state.branches).toHaveLength(2)
   })
 })
 
 describe('branch detail page', () => {
-  it('links to hours and staff for the branch in the URL', () => {
-    renderRoute(pathFor(ROUTES.branch, { branchId: 'main' }))
-
-    expect(screen.getByRole('link', { name: /configure operating hours/i })).toHaveAttribute(
-      'href',
-      pathFor(ROUTES.branchHours, { branchId: 'main' }),
-    )
-    expect(screen.getByRole('link', { name: /staff & doctors/i })).toHaveAttribute('href', pathFor(ROUTES.branchStaff, { branchId: 'main' }))
+  it('keeps the primary branch active', async () => {
+    renderRoute(pathFor(ROUTES.branch, { branchId: 'b-main' }))
+    expect(await screen.findByText(/This is the primary branch/)).toBeInTheDocument()
   })
 
-  it('asks for confirmation before deactivating', async () => {
+  it('asks for confirmation before pausing a branch', async () => {
     const user = userEvent.setup()
-    renderRoute(pathFor(ROUTES.branch, { branchId: 'main' }))
+    renderRoute(pathFor(ROUTES.branch, { branchId: 'b-kdp' }))
 
-    await user.click(screen.getByRole('button', { name: 'Deactivate branch' }))
-    expect(screen.getByRole('button', { name: 'Confirm deactivation' })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Keep active' }))
-    expect(screen.queryByRole('button', { name: 'Confirm deactivation' })).not.toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'Pause branch' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm: Paused' }))
+
+    await waitFor(() => expect(billingFake.config.state.branches[1].status).toBe('paused'))
+  })
+
+  it('says when the branch does not exist', async () => {
+    renderRoute(pathFor(ROUTES.branch, { branchId: 'missing' }))
+    expect(await screen.findByRole('heading', { name: 'Branch not found' })).toBeInTheDocument()
+  })
+})
+
+describe('operating hours page', () => {
+  const path = pathFor(ROUTES.branchHours, { branchId: 'b-main' })
+
+  it('edits the weekly schedule and saves it', async () => {
+    const user = userEvent.setup()
+    renderRoute(path)
+
+    await user.click(await screen.findByRole('button', { name: 'Open on Tuesday' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(billingFake.config.state.branches[0].hours.filter((session) => session.weekday === 2)).toHaveLength(1))
+    expect(await screen.findByText('Operating hours saved.')).toBeInTheDocument()
+  })
+
+  it('copies Monday to the other weekdays', async () => {
+    const user = userEvent.setup()
+    renderRoute(path)
+
+    await user.click(await screen.findByRole('button', { name: 'Copy Monday to weekdays' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(billingFake.config.state.branches[0].hours).toHaveLength(10))
+  })
+
+  it('adds and removes a schedule exception', async () => {
+    const user = userEvent.setup()
+    renderRoute(path)
+
+    const submit = () => screen.getAllByRole('button', { name: 'Add exception' }).at(-1)
+    await screen.findByLabelText(/^Date/)
+    await user.click(submit())
+    expect(screen.getByText('Pick a date.')).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText(/^Date/), '2026-12-25')
+    await fill(user, screen.getByLabelText(/Reason/), 'Christmas')
+    await user.click(submit())
+
+    expect(await screen.findByText('Christmas')).toBeInTheDocument()
+    expect(billingFake.config.state.closures[0]).toMatchObject({ branchId: 'b-main', date: '2026-12-25', kind: 'closed', reason: 'Christmas' })
+
+    await user.click(screen.getByRole('button', { name: 'Remove Christmas' }))
+    await waitFor(() => expect(screen.queryByText('Christmas')).not.toBeInTheDocument())
+    expect(billingFake.config.state.closures).toHaveLength(0)
+  })
+
+  it('shows the server error for a date in the past', async () => {
+    const user = userEvent.setup()
+    billingFake.useConfig(createConfigApi({ branches: [apiBranch()] }))
+    renderRoute(path)
+
+    await user.type(await screen.findByLabelText(/^Date/), '2026-01-01')
+    await fill(user, screen.getByLabelText(/Reason/), 'Old date')
+    await user.click(screen.getAllByRole('button', { name: 'Add exception' }).at(-1))
+
+    expect(await screen.findByText('Choose today or a later date.')).toBeInTheDocument()
+  })
+})
+
+describe('departments', () => {
+  it('lists departments with their people and filters them by status', async () => {
+    const user = userEvent.setup()
+    renderRoute(ROUTES.departments)
+
+    const table = await screen.findByRole('table')
+    expect(within(table).getByRole('link', { name: 'Cardiology' })).toBeInTheDocument()
+    expect(within(table).getByRole('link', { name: 'General Medicine' })).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText(/Status/), 'inactive')
+    expect(screen.getByText('No departments match your filters.')).toBeInTheDocument()
+  })
+
+  it('creates a department at the chosen branches', async () => {
+    const user = userEvent.setup()
+    const router = renderRoute(ROUTES.departmentNew)
+
+    await user.click((await screen.findAllByRole('button', { name: 'Create department' }))[0])
+    expect(screen.getByText('Enter the department name.')).toBeInTheDocument()
+    expect(screen.getByText('Choose at least one clinic location.')).toBeInTheDocument()
+
+    await fill(user, screen.getByLabelText(/Department name/), 'Orthopedics')
+    await fill(user, screen.getByLabelText(/Department code/), 'ORTHO')
+    await user.click(await screen.findByRole('checkbox', { name: 'Kondapur Clinic' }))
+    await user.click(screen.getAllByRole('button', { name: 'Create department' })[0])
+
+    await waitFor(() => expect(billingFake.config.state.departments).toHaveLength(3))
+    const created = billingFake.config.state.departments[2]
+    expect(created).toMatchObject({ name: 'Orthopedics', code: 'ORTHO', type: 'Clinical', branchIds: ['b-kdp'] })
+    await waitFor(() => expect(router.state.location.pathname).toBe(pathFor(ROUTES.department, { departmentId: created.id })))
+  })
+
+  it('refuses a department name that already exists', async () => {
+    const user = userEvent.setup()
+    renderRoute(ROUTES.departmentNew)
+
+    await fill(user, await screen.findByLabelText(/Department name/), 'cardiology')
+    await fill(user, screen.getByLabelText(/Department code/), 'CARD2')
+    await user.click(await screen.findByRole('checkbox', { name: 'Main Clinic' }))
+    await user.click(screen.getAllByRole('button', { name: 'Create department' })[0])
+
+    expect(await screen.findByText('Department not created')).toBeInTheDocument()
+    expect(billingFake.config.state.departments).toHaveLength(2)
+  })
+
+  it('renames a department and its people follow', async () => {
+    const user = userEvent.setup()
+    renderRoute(pathFor(ROUTES.department, { departmentId: 'd-card' }))
+
+    await user.click(await screen.findByRole('button', { name: 'Edit department' }))
+    const name = screen.getByLabelText(/Department name/)
+    await user.clear(name)
+    await fill(user, name, 'Cardiology & Vascular')
+    await user.click(screen.getByRole('button', { name: 'Save details' }))
+
+    expect(await screen.findByText(/Department renamed/)).toBeInTheDocument()
+    expect(billingFake.config.state.people[0].department).toBe('Cardiology & Vascular')
+  })
+
+  it('deactivates a department after confirmation', async () => {
+    const user = userEvent.setup()
+    renderRoute(pathFor(ROUTES.department, { departmentId: 'd-card' }))
+
+    await user.click(await screen.findByRole('button', { name: 'Deactivate Cardiology' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm deactivation' }))
+
+    await waitFor(() => expect(billingFake.config.state.departments[0].status).toBe('inactive'))
+  })
+
+  it('adds and removes department locations', async () => {
+    const user = userEvent.setup()
+    renderRoute(pathFor(ROUTES.departmentLocations, { departmentId: 'd-card' }))
+
+    await user.click(await screen.findByRole('button', { name: 'Add location' }))
+    await user.click(await screen.findByRole('checkbox', { name: 'Kondapur Clinic' }))
+    await user.click(screen.getByRole('button', { name: 'Add 1 location to department' }))
+
+    await waitFor(() => expect(billingFake.config.state.departments[0].branchIds).toEqual(['b-main', 'b-kdp']))
+
+    const row = screen.getAllByRole('row').find((entry) => within(entry).queryByText('Kondapur Clinic'))
+    await user.click(within(row).getByRole('button', { name: 'Remove' }))
+    await user.click(within(row).getByRole('button', { name: 'Confirm remove' }))
+    await waitFor(() => expect(billingFake.config.state.departments[0].branchIds).toEqual(['b-main']))
   })
 })

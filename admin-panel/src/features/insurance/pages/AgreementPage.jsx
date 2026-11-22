@@ -12,7 +12,7 @@ import { ROUTES } from '../../../config/routes'
 import { CheckOption, FieldError, Notice, StepActions } from '../components/InsuranceKit'
 import InsuranceLayout from '../components/InsuranceLayout'
 import { useInsuranceSetup } from '../context/useInsuranceSetup'
-import { COVERAGE_BRANCHES, COVERAGE_SERVICES } from '../data/options'
+import { COVERAGE_SERVICES } from '../data/options'
 import { agreementFileError, validateAgreement } from '../validation'
 
 const NO_TPA = 'Direct with insurer (no TPA)'
@@ -21,9 +21,11 @@ const fileSize = (bytes) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(byt
 
 export default function AgreementPage() {
   const navigate = useNavigate()
-  const { draft, getPartner, update, saveDraft } = useInsuranceSetup()
+  const { draft, getPartner, update, saveAgreement, branches } = useInsuranceSetup()
   const [submitted, setSubmitted] = useState(false)
   const [fileError, setFileError] = useState('')
+  const [pending, setPending] = useState(false)
+  const [failure, setFailure] = useState('')
 
   if (draft.acceptance !== 'yes' || !draft.partnerIds.length) return <Navigate to={ROUTES.insurance} replace />
 
@@ -42,22 +44,29 @@ export default function AgreementPage() {
   const handleFile = (file) => {
     const message = agreementFileError(file)
     setFileError(message)
-    update({ document: file && !message ? { name: file.name, size: file.size } : null })
+    update(file && !message ? { file, document: null } : { file: null })
   }
 
-  const handleSubmit = (event) => {
-    event.preventDefault()
+  const save = async (next) => {
     setSubmitted(true)
+    setFailure('')
     if (fileError || Object.keys(validateAgreement(fields)).length) return
     update({ insurerId: fields.insurerId, tpaId: fields.tpaId })
-    saveDraft()
-    navigate(ROUTES.insuranceReview)
+    setPending(true)
+    try {
+      await saveAgreement()
+      navigate(next)
+    } catch (failed) {
+      setFailure(failed.message)
+      setPending(false)
+    }
   }
-
-  const finishLater = () => {
-    saveDraft()
-    navigate(ROUTES.dashboard)
+  const handleSubmit = (event) => {
+    event.preventDefault()
+    save(ROUTES.insuranceReview)
   }
+  const finishLater = () => save(ROUTES.dashboard)
+  const attached = draft.file ?? (draft.document ? { name: draft.document.fileName, size: draft.document.size } : null)
 
   return (
     <InsuranceLayout step={2}>
@@ -94,9 +103,9 @@ export default function AgreementPage() {
           <p className="text-[11px] text-slate-500">* Required for review. End date must be after the start date.</p>
           <FileUploadField label="Agreement document" hint="Optional" title="Upload the agreement" helper="PDF up to 10 MB" accept="application/pdf,.pdf" onFileChange={handleFile} />
           <FieldError>{fileError}</FieldError>
-          {draft.document && !fileError && (
+          {attached && !fileError && (
             <p className="flex items-center gap-2 text-xs text-slate-600">
-              <img src={icons.check} alt="" /> Attached: {draft.document.name} · {fileSize(draft.document.size)}
+              <img src={icons.check} alt="" /> {draft.file ? 'Will upload' : 'Attached'}: {attached.name} · {fileSize(attached.size)}
             </p>
           )}
         </section>
@@ -105,14 +114,14 @@ export default function AgreementPage() {
           <SectionLabel title="Branch & service coverage" tag={`${draft.branchIds.length} branch${draft.branchIds.length === 1 ? '' : 'es'}`} />
           <p className="text-xs leading-[18px] text-slate-500">Choose at least one branch. Coverage applies only to the branches and services selected here.</p>
           <div className="flex flex-col gap-2.5">
-            {COVERAGE_BRANCHES.map((branch) => {
+            {branches.map((branch) => {
               const included = draft.branchIds.includes(branch.id)
               return (
                 <SelectableCard
                   key={branch.id}
                   role="checkbox"
                   title={branch.name}
-                  description={branch.detail}
+                  description={`${branch.code} · ${branch.city}, ${branch.state}`}
                   tag={included ? 'Included' : 'Not included'}
                   indicator
                   selected={included}
@@ -133,8 +142,10 @@ export default function AgreementPage() {
           <p className="text-[11px] leading-4 text-slate-500">Proposed scope only. Patient eligibility, authorisation and benefits must be checked separately for each encounter.</p>
         </section>
 
+        <FieldError>{failure}</FieldError>
         <StepActions
-          submitLabel="Review insurance setup"
+          pending={pending}
+          submitLabel={pending ? 'Saving…' : 'Review insurance setup'}
           back={
             <TextLink to={ROUTES.insurance}>
               <img src={icons.arrowLeft} alt="" />

@@ -18,7 +18,9 @@ const toggle = (list, id) => (list.includes(id) ? list.filter((value) => value !
 
 export default function AcceptancePage() {
   const navigate = useNavigate()
-  const { draft, partners, update, addPartner, saveDraft } = useInsuranceSetup()
+  const { draft, partners, update, addPartner, saveAcceptance, ready, error } = useInsuranceSetup()
+  const [pending, setPending] = useState(false)
+  const [failure, setFailure] = useState('')
   const [query, setQuery] = useState('')
   const [submitted, setSubmitted] = useState(false)
   const [adding, setAdding] = useState(false)
@@ -39,16 +41,27 @@ export default function AcceptancePage() {
     setAdding(false)
   }
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
     setSubmitted(true)
+    setFailure('')
     if (Object.keys(validateAcceptance(draft)).length) return
-    if (accepting) {
-      navigate(ROUTES.insuranceAgreement)
-      return
+    setPending(true)
+    try {
+      await saveAcceptance()
+      navigate(accepting ? ROUTES.insuranceAgreement : ROUTES.dashboard)
+    } catch (failed) {
+      setFailure(failed.message)
+      setPending(false)
     }
-    saveDraft()
-    navigate(ROUTES.dashboard)
+  }
+
+  if (!ready) {
+    return (
+      <InsuranceLayout step={1}>
+        <PageHeading title="How will your clinic accept insurance?" description={error ? error.message : 'Loading your insurance setup…'} />
+      </InsuranceLayout>
+    )
   }
 
   return (
@@ -120,8 +133,10 @@ export default function AcceptancePage() {
           Add organization-level agreements and branch coverage next. No patient policy number or personal insurance details are required.
         </Notice>
 
+        <FieldError>{failure}</FieldError>
         <StepActions
-          submitLabel={draft.acceptance === 'no' ? 'Save and return to workspace' : 'Continue to agreement details'}
+          pending={pending}
+          submitLabel={pending ? 'Saving…' : draft.acceptance === 'no' ? 'Save and return to workspace' : 'Continue to agreement details'}
           back={
             <TextLink to={ROUTES.dashboard}>
               <img src={icons.arrowLeft} alt="" />

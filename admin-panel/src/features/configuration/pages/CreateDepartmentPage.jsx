@@ -5,48 +5,67 @@ import { CheckRow, RadioCard } from '../../../components/workspace/controls'
 import { TextInput } from '../../../components/workspace/FormControls'
 import PageIntro from '../../../components/workspace/PageIntro'
 import Panel from '../../../components/workspace/Panel'
+import { Banner } from '../../../components/workspace/RecordKit'
 import StatusPill from '../../../components/workspace/StatusPill'
-import { ROUTES } from '../../../config/routes'
+import { pathFor, ROUTES } from '../../../config/routes'
+import { useApiResource } from '../../../hooks/useApiResource'
 import { useFormFields } from '../../../hooks/useFormFields'
+import { configApi } from '../api'
 import ConfigPage from '../components/ConfigPage'
+import { BRANCH_STATUS, branchAddress } from '../configView'
 import { validateDepartment } from '../validation'
 
 const TYPES = [
-  { value: 'clinical', title: 'Clinical', detail: 'Direct patient consultations, OPD or procedure care.' },
-  { value: 'diagnostic', title: 'Diagnostic', detail: 'Pathology, labs, imaging and tests ordered by clinicians.' },
-  { value: 'administrative', title: 'Administrative', detail: 'Billing, reception and operational support units.' },
-]
-
-const LOCATIONS = [
-  { id: 'main', name: 'Main Surgical Pavilion (HQ)', detail: 'Jubilee Hills Rd. 36, Hyderabad · 6 OPD Suites · 2 Surgical Cath Labs', tag: 'Primary Hub' },
-  { id: 'kondapur', name: 'Kondapur Clinic (Active OPD Hub)', detail: 'Capsule Cyber Gateway, Hitec City Corridor · 4 Consultation Suites, Diagnostic', tag: 'High-Density OPD' },
-  { id: 'banjara', name: 'Banjara Hills Specialty Outpost', detail: 'Road No. 2, Banjara Hills, Hyderabad', tag: 'Satellite Outpost', unavailable: true },
+  { value: 'Clinical', title: 'Clinical', detail: 'Direct patient consultations, OPD or procedure care.' },
+  { value: 'Diagnostic', title: 'Diagnostic', detail: 'Pathology, labs, imaging and tests ordered by clinicians.' },
+  { value: 'Therapy', title: 'Therapy', detail: 'Physiotherapy, rehabilitation and other allied therapy.' },
+  { value: 'Support', title: 'Support', detail: 'Nursing, pharmacy and other care support units.' },
+  { value: 'Administrative', title: 'Administrative', detail: 'Billing, reception and operational support units.' },
 ]
 
 const LIFECYCLE = [
   ['Department Master', 'Establishes core identity, specialties, classification and clinical governance.'],
-  ['Linked Services & Tariffs', 'Map CPT/HSN codes, clinical definitions and baseline fee schedules.'],
-  ['Rostered Practitioners', 'Assign doctors and care staff to this department.'],
-  ['Proposal Consultation Suites', 'Allocate rooms, chambers and OPD slots per branch.'],
+  ['Linked services & prices', 'Services in the billing catalogue name this department; prices are set per branch.'],
+  ['Staff & doctors', 'Staff and doctor records choose this department from the list.'],
+  ['Availability', 'Doctors’ sessions at each branch, within the branch’s hours.'],
 ]
 
-const INITIAL_VALUES = { name: '', code: '', type: 'clinical', scope: '', status: 'active' }
+const INITIAL_VALUES = { name: '', code: '', type: 'Clinical', scope: '', status: 'active' }
 
 export default function CreateDepartmentPage() {
   const navigate = useNavigate()
+  const branches = useApiResource(() => configApi.branches(), 'config-branches').data ?? []
   const [values, handleChange] = useFormFields(INITIAL_VALUES)
   const [locationIds, setLocationIds] = useState([])
   const [submitted, setSubmitted] = useState(false)
-  const errors = submitted ? validateDepartment({ ...values, locationCount: locationIds.length }) : {}
+  const [serverErrors, setServerErrors] = useState({})
+  const [failure, setFailure] = useState('')
+  const [pending, setPending] = useState(false)
+  const errors = { ...(submitted ? validateDepartment({ ...values, locationCount: locationIds.length }) : {}), ...serverErrors }
+  const usable = branches.filter((branch) => branch.status !== 'inactive')
 
   const toggleLocation = (id) => setLocationIds((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id]))
   const cancel = () => navigate(ROUTES.departments)
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
     setSubmitted(true)
-    if (Object.keys(validateDepartment({ ...values, locationCount: locationIds.length })).length === 0) navigate(ROUTES.departments)
+    setServerErrors({})
+    setFailure('')
+    if (Object.keys(validateDepartment({ ...values, locationCount: locationIds.length })).length) return
+    setPending(true)
+    try {
+      const department = await configApi.createDepartment({ name: values.name.trim(), code: values.code.trim(), type: values.type, description: values.scope.trim(), status: values.status, branchIds: locationIds })
+      navigate(pathFor(ROUTES.department, { departmentId: department.id }))
+    } catch (error) {
+      const fields = error.fieldErrors?.() ?? {}
+      setServerErrors({ ...fields, ...(fields.branchIds ? { locations: fields.branchIds } : {}), ...(error.code === 'DEPARTMENT_EXISTS' ? { name: error.message } : {}) })
+      setFailure(error.message)
+      setPending(false)
+    }
   }
+
+  const submitButton = <ActionButton variant="primary" type="submit" disabled={pending}>{pending ? 'Creating…' : 'Create department'}</ActionButton>
 
   return (
     <ConfigPage>
@@ -54,20 +73,21 @@ export default function CreateDepartmentPage() {
         <PageIntro
           eyebrow={<span className="text-on-surface-variant">Department taxonomy · Master builder</span>}
           title="Create department"
-          description="Create a reusable department master that can be deployed across your organization's clinic locations. Services, doctors, and consultation suites are linked in subsequent steps."
+          description="Create a reusable department master that can be deployed across your organization's clinic locations. Services, doctors, and staff then choose it from the list."
           actions={
             <>
               <ActionButton onClick={cancel}>Cancel</ActionButton>
-              <ActionButton variant="primary" type="submit">Create department</ActionButton>
+              {submitButton}
             </>
           }
         />
 
+        {failure && <Banner tone="danger" title="Department not created" className="mb-5">{failure}</Banner>}
         <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
           <div className="flex min-w-0 flex-col gap-5">
             <Panel title="1 · Department information" subtitle="Required fields *" bodyClassName="flex flex-col gap-5">
               <TextInput label="Department name" name="name" required value={values.name} onChange={handleChange} error={errors.name} placeholder="e.g. Cardiology" />
-              <TextInput label="Department code" name="code" required hint="ABDM / SNOMED-CT mapping" value={values.code} onChange={handleChange} error={errors.code} placeholder="e.g. DEP-CARD" />
+              <TextInput label="Department code" name="code" required hint="Short code, e.g. CARD" value={values.code} onChange={handleChange} error={errors.code} placeholder="e.g. CARD" />
               <fieldset>
                 <legend className="mb-1.5 text-[13px] font-semibold text-slate-800">Department classification type</legend>
                 <div className="grid gap-2 sm:grid-cols-3">
@@ -82,29 +102,34 @@ export default function CreateDepartmentPage() {
               </label>
             </Panel>
 
-            <Panel title="2 · Available at" subtitle="Select the clinic locations where this department operates." action={<StatusPill>{locationIds.length} of 3 branches selected</StatusPill>} bodyClassName="flex flex-col gap-2">
-              {LOCATIONS.map((location) => (
-                <CheckRow key={location.id} checked={locationIds.includes(location.id)} disabled={location.unavailable} onChange={() => toggleLocation(location.id)} label={location.name}>
+            <Panel title="2 · Available at" subtitle="Select the clinic locations where this department operates." action={<StatusPill>{locationIds.length} of {usable.length} branches selected</StatusPill>} bodyClassName="flex flex-col gap-2">
+              {usable.map((location) => (
+                <CheckRow key={location.id} checked={locationIds.includes(location.id)} onChange={() => toggleLocation(location.id)} label={location.name}>
                   <p className="flex items-center justify-between gap-2 text-[13px] font-semibold text-on-surface">
                     {location.name}
-                    <StatusPill>{location.tag}</StatusPill>
+                    <StatusPill tone={BRANCH_STATUS[location.status][1]}>{location.isPrimary ? 'Primary' : BRANCH_STATUS[location.status][0]}</StatusPill>
                   </p>
-                  <p className="text-xs text-on-surface-variant">{location.detail}</p>
+                  <p className="text-xs text-on-surface-variant">{branchAddress(location) || location.code}</p>
                 </CheckRow>
               ))}
+              {usable.length > 1 && (
+                <button type="button" onClick={() => setLocationIds(locationIds.length === usable.length ? [] : usable.map((branch) => branch.id))} className="self-start text-xs font-semibold text-brand hover:underline">
+                  {locationIds.length === usable.length ? 'Clear all' : 'Select all branches'}
+                </button>
+              )}
               {errors.locations && <p role="alert" className="text-xs text-rose-600">{errors.locations}</p>}
             </Panel>
 
-            <Panel title="3 · Local tariff information" subtitle="Configured by branch after creation." action={<StatusPill>Configurable by branch</StatusPill>}>
+            <Panel title="3 · Services & prices" subtitle="Set in the billing catalogue after creation." action={<StatusPill>Configurable by branch</StatusPill>}>
               <p className="text-xs leading-5 text-on-surface-variant">
-                Services and prices follow the pipeline: Department Master → Branch Association → Local Tariff Context → Services & Pricing. Tariffs are assigned per branch once services are linked.
+                Services in the billing catalogue choose this department. Each service has a standard price and can have its own price at each branch.
               </p>
             </Panel>
 
-            <Panel title="4 · Master department status" action={<StatusPill tone="success">Ready for master activation</StatusPill>}>
+            <Panel title="4 · Master department status">
               <div className="grid gap-2 sm:grid-cols-2">
-                <RadioCard name="status" value="active" checked={values.status === 'active'} onChange={handleChange} title="Active (Default)" detail="Immediately available for branch associations, roster allocation and OPD configuration." />
-                <RadioCard name="status" value="draft" checked={values.status === 'draft'} onChange={handleChange} title="Inactive (Draft)" detail="Hidden from branch lists. Master records remain preserved for later activation." />
+                <RadioCard name="status" value="active" checked={values.status === 'active'} onChange={handleChange} title="Active (Default)" detail="Offered at once on staff, doctor and service forms." />
+                <RadioCard name="status" value="inactive" checked={values.status === 'inactive'} onChange={handleChange} title="Inactive" detail="Not offered on staff, doctor or service forms until you activate it." />
               </div>
             </Panel>
 
@@ -112,7 +137,7 @@ export default function CreateDepartmentPage() {
               <p className="text-xs text-on-surface-variant">Department is created at the organization level and linked to the selected branches.</p>
               <div className="flex gap-2">
                 <ActionButton onClick={cancel}>Discard changes</ActionButton>
-                <ActionButton variant="primary" type="submit">Create department</ActionButton>
+                {submitButton}
               </div>
             </div>
           </div>
@@ -139,14 +164,6 @@ export default function CreateDepartmentPage() {
               <p className="mt-3 rounded-md border border-teal-200 bg-teal-50/60 p-3 text-xs leading-5 text-on-surface-variant">
                 <strong className="text-brand">The ClinicOS way:</strong> Create one master department, then check off the branches it operates in.
               </p>
-            </Panel>
-
-            <Panel title="Registry pre-flight check" action={<StatusPill tone="success">Valid</StatusPill>}>
-              <ul className="space-y-1.5 text-xs text-on-surface-variant">
-                <li className="flex justify-between"><span>Duplicate identifier</span><span className="font-medium text-brand">Clear (Unique)</span></li>
-                <li className="flex justify-between"><span>ABDM master registry</span><span className="font-medium text-brand">Open, Synced</span></li>
-                <li className="flex justify-between"><span>Clinic type</span><span className="font-medium text-on-surface">Multi-Specialty</span></li>
-              </ul>
             </Panel>
           </div>
         </div>

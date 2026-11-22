@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { icons } from '../../../assets/icons'
 import Button from '../../../components/ui/Button'
@@ -5,10 +6,11 @@ import PageHeading from '../../../components/ui/PageHeading'
 import SectionLabel from '../../../components/ui/SectionLabel'
 import TextLink from '../../../components/ui/TextLink'
 import { ROUTES } from '../../../config/routes'
-import { Notice } from '../components/InsuranceKit'
+import { CheckOption, FieldError, Notice } from '../components/InsuranceKit'
+import { configApi } from '../../configuration/api'
 import InsuranceLayout from '../components/InsuranceLayout'
 import { useInsuranceSetup } from '../context/useInsuranceSetup'
-import { BILLING_METHODS, COVERAGE_BRANCHES, COVERAGE_SERVICES } from '../data/options'
+import { BILLING_METHODS, COVERAGE_SERVICES } from '../data/options'
 import { validateAgreement } from '../validation'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -39,14 +41,29 @@ function SummaryCard({ title, editTo, rows, children }) {
 
 export default function ReviewPage() {
   const navigate = useNavigate()
-  const { draft, getPartner } = useInsuranceSetup()
+  const { draft, getPartner, branches, agreement, activate } = useInsuranceSetup()
+  const [confirmed, setConfirmed] = useState(false)
+  const [pending, setPending] = useState(false)
+  const [failure, setFailure] = useState('')
 
   if (draft.acceptance !== 'yes' || !draft.partnerIds.length) return <Navigate to={ROUTES.insurance} replace />
   if (Object.keys(validateAgreement(draft)).length) return <Navigate to={ROUTES.insuranceAgreement} replace />
 
   const methods = BILLING_METHODS.filter((method) => draft.methods.includes(method.id)).map((method) => method.label)
-  const included = COVERAGE_BRANCHES.filter((branch) => draft.branchIds.includes(branch.id))
-  const excludedBranches = COVERAGE_BRANCHES.filter((branch) => !draft.branchIds.includes(branch.id)).map((branch) => branch.name)
+  const included = branches.filter((branch) => draft.branchIds.includes(branch.id))
+  const excludedBranches = branches.filter((branch) => !draft.branchIds.includes(branch.id)).map((branch) => branch.name)
+  const active = agreement?.status === 'active'
+  const turnOn = async () => {
+    setPending(true)
+    setFailure('')
+    try {
+      await activate()
+    } catch (failed) {
+      setFailure(failed.message)
+    } finally {
+      setPending(false)
+    }
+  }
   const excludedServices = COVERAGE_SERVICES.filter((service) => !draft.services.includes(service.id)).map((service) => service.label)
   const notIncluded = [...excludedBranches, ...excludedServices]
 
@@ -55,9 +72,15 @@ export default function ReviewPage() {
       <PageHeading title="Your insurance draft is ready for review." description="Review your organization's proposed insurance setup. No agreement has been verified and no billing has been enabled." />
 
       <div className="flex flex-col gap-6 pt-7">
-        <Notice tone="success" icon={icons.completeCheck} title="Saved for internal review">
-          Your setup is saved as a draft. It has not been submitted to an insurer or TPA, and is not an active agreement.
-        </Notice>
+        {active ? (
+          <Notice tone="success" icon={icons.completeCheck} title={`Active · ${agreement.code}`}>
+            Activated by {agreement.activatedBy}. To change the terms, end this agreement and draft a new one.
+          </Notice>
+        ) : (
+          <Notice tone="success" icon={icons.completeCheck} title={`Saved as draft${agreement ? ` · ${agreement.code}` : ''}`}>
+            Your setup is saved. It has not been submitted to an insurer or TPA, and is not an active agreement until you activate it below.
+          </Notice>
+        )}
 
         <div className="flex flex-col gap-3">
           <SectionLabel title="Setup summary" tag="Draft" />
@@ -78,21 +101,22 @@ export default function ReviewPage() {
               ['Servicing TPA', draft.tpaId ? getPartner(draft.tpaId).name : 'Direct with insurer'],
               ['Reference', draft.reference],
               ['Proposed dates', `${formatDate(draft.startDate)} – ${formatDate(draft.endDate)}`],
+              ['Status', active ? 'Active' : 'Draft'],
             ]}
           >
             <p className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-3 text-xs text-slate-600">
               <span className="flex items-center gap-2">
                 <img src={icons.department} alt="" />
-                {draft.document ? draft.document.name : 'No agreement document attached'}
+                {draft.document ? <a href={configApi.documentUrl(draft.document.id)} target="_blank" rel="noreferrer" className="font-semibold text-teal-700 hover:underline">{draft.document.fileName}</a> : 'No agreement document attached'}
               </span>
-              <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-semibold tracking-[0.5px] text-slate-500 uppercase">Draft</span>
+              <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-semibold tracking-[0.5px] text-slate-500 uppercase">{active ? 'Active' : 'Draft'}</span>
             </p>
           </SummaryCard>
           <SummaryCard
             title="Branch & service coverage"
             editTo={ROUTES.insuranceAgreement}
             rows={[
-              ['Included branches', included.map((branch) => `${branch.name} · Karnataka, IN`).join(', ')],
+              ['Included branches', included.map((branch) => `${branch.name} · ${branch.state}`).join(', ')],
               ['Services', COVERAGE_SERVICES.filter((service) => draft.services.includes(service.id)).map((service) => service.label).join(' · ')],
               ['Not included', notIncluded.length ? notIncluded.join(' · ') : 'Everything is included'],
             ]}
@@ -118,6 +142,15 @@ export default function ReviewPage() {
             </li>
           </ul>
         </div>
+
+        {agreement && !active && (
+          <div className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4">
+            <p className="text-[13px] font-semibold text-slate-900">Activate this agreement</p>
+            <CheckOption checked={confirmed} onChange={() => setConfirmed((current) => !current)}>I have checked the signed agreement, its dates and branch coverage with the partner.</CheckOption>
+            <FieldError>{failure}</FieldError>
+            <Button fullWidth disabled={!confirmed || pending} onClick={turnOn}>{pending ? 'Activating…' : 'Activate agreement'}</Button>
+          </div>
+        )}
 
         <div className="flex flex-col gap-3.5 border-t border-slate-200/70 pt-5">
           <Button fullWidth trailing={<img src={icons.arrowRight} alt="" />} onClick={() => navigate(ROUTES.dashboard)}>

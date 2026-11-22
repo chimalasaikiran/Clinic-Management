@@ -6,7 +6,7 @@ import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
 import { formatINR } from '../../patients/format'
 import BillingFrame, { Note } from '../components/BillingFrame'
-import { SERVICE_CATEGORIES, SERVICE_DEPARTMENTS, SERVICE_PAGE_SIZE, TAX_TREATMENTS } from '../constants'
+import { SERVICE_CATEGORIES, SERVICE_PAGE_SIZE, TAX_TREATMENTS } from '../constants'
 import { useBilling } from '../context/useBilling'
 import { branchSummary } from '../serviceLogic'
 
@@ -41,7 +41,7 @@ export default function ServicesPricingPage() {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><SearchBox value={get('q')} onChange={(value) => change('q', value)} label="Search services" placeholder="Search by service name or unique code" className="min-w-80 flex-1" /><strong className="text-xs">{rows.length} service{rows.length === 1 ? '' : 's'} · {get('status') || 'all statuses'}</strong></div>
       <div className="mb-2 grid gap-3 sm:grid-cols-5">
         {select('category', 'Category', 'All categories', SERVICE_CATEGORIES.map((entry) => [entry, entry]))}
-        {select('department', 'Department / specialty', 'All departments', SERVICE_DEPARTMENTS.map((entry) => [entry, entry]))}
+        {select('department', 'Department / specialty', 'All departments', [...new Set(services.map((service) => service.department).filter(Boolean))].sort().map((entry) => [entry, entry]))}
         {select('branch', 'Branch', `All locations (${branches.length})`, branches.map((entry) => [entry.id, entry.name]))}
         {select('status', 'Status', 'All statuses', [['Active', 'Active'], ['Inactive', 'Inactive']])}
         {select('tax', 'Tax configuration', 'All treatments', TAX_TREATMENTS.map(([, label]) => [label, label]))}

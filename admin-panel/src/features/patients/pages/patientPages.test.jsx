@@ -228,6 +228,18 @@ describe('booking', () => {
     expect(await screen.findByText('That slot has just been booked by someone else. Choose another time.')).toBeInTheDocument()
   })
 
+  it('shows a closed branch day instead of its slots', async () => {
+    install({ closures: { [`b-main:${tomorrow()}`]: 'Diwali' } })
+    const user = setup()
+    renderRoute(pathFor(ROUTES.appointmentNew, ananya))
+
+    const closed = await screen.findByRole('button', { name: /Branch closed/ })
+    expect(screen.getAllByRole('button', { name: /slots left|Branch closed/ }).indexOf(closed)).toBe(1)
+    await user.click(closed)
+    expect(screen.getByText(/The branch is closed on this day:/).parentElement).toHaveTextContent('Diwali. Choose another date.')
+    expect(screen.queryByRole('button', { name: /AM available/ })).not.toBeInTheDocument()
+  })
+
   it('explains when no therapist is set up yet', async () => {
     install({ patients: [ANANYA], practitioners: [] })
     renderRoute(pathFor(ROUTES.appointmentNew, ananya))

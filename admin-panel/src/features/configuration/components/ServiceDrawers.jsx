@@ -1,28 +1,52 @@
 import { useState } from 'react'
-import { Check, Plus } from 'lucide-react'
+import { ShieldCheck } from 'lucide-react'
 import ActionButton from '../../../components/workspace/ActionButton'
-import { CheckRow, InfoNote, RadioCard, SearchBox } from '../../../components/workspace/controls'
+import { CheckRow, InfoNote, SearchBox } from '../../../components/workspace/controls'
 import Drawer from '../../../components/workspace/Drawer'
 import { TextInput } from '../../../components/workspace/FormControls'
+import { Banner } from '../../../components/workspace/RecordKit'
 import StatusPill from '../../../components/workspace/StatusPill'
-import { cn } from '../../../lib/cn'
-import { CARDIOLOGY_CONSULT } from '../data/services'
-import { validatePrice } from '../validation'
+import { toServiceRequest } from '../../billing/adapters'
+import { billingApi } from '../../billing/api'
+import { money } from '../../billing/financeFormat'
+import { BRANCH_STATUS } from '../configView'
 
-export function AddServiceLocationsDrawer({ open, onClose }) {
-  const { addLocationOptions, alreadyAdded } = CARDIOLOGY_CONSULT
+// Saves the service with a new set of branches and prices; the rest of the record is sent unchanged.
+async function saveBranches(service, branches) {
+  await billingApi.updateService(service.id, service.version, toServiceRequest({ ...service, branches }))
+}
+
+export function AddServiceLocationsDrawer({ open, onClose, service, branches, onSaved }) {
   const [query, setQuery] = useState('')
   const [selectedIds, setSelectedIds] = useState([])
+  const [failure, setFailure] = useState('')
+  const [pending, setPending] = useState(false)
 
+  const candidates = branches.filter((branch) => !service.branches[branch.id] && branch.status !== 'inactive')
+  const already = branches.filter((branch) => service.branches[branch.id])
   const needle = query.trim().toLowerCase()
-  const visible = addLocationOptions.filter((option) => !needle || `${option.name} ${option.code} ${option.detail}`.toLowerCase().includes(needle))
+  const visible = candidates.filter((option) => !needle || `${option.name} ${option.code} ${option.city}`.toLowerCase().includes(needle))
   const count = selectedIds.length
 
   const toggle = (id) => setSelectedIds((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id]))
   const finish = () => {
     setQuery('')
     setSelectedIds([])
+    setFailure('')
     onClose()
+  }
+  const save = async () => {
+    setPending(true)
+    setFailure('')
+    try {
+      await saveBranches(service, { ...service.branches, ...Object.fromEntries(selectedIds.map((id) => [id, { available: true, price: null }])) })
+      onSaved(`${count} ${count === 1 ? 'location' : 'locations'} added at the default price.`)
+      finish()
+    } catch (error) {
+      setFailure(error.message)
+    } finally {
+      setPending(false)
+    }
   }
 
   return (
@@ -30,117 +54,112 @@ export function AddServiceLocationsDrawer({ open, onClose }) {
       open={open}
       onClose={finish}
       title="Add Locations"
-      description="Select existing clinic locations to authorize and schedule Cardiology Consultation."
+      description={`Select clinic locations where ${service.name} can be charged. They start at the default price.`}
       footer={
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs text-on-surface-variant">
-            <strong className="text-on-surface">{count} {count === 1 ? 'location' : 'locations'} selected</strong>
-            <span className="block text-[11px] text-outline">Staged for deployment</span>
-          </p>
+          <p className="text-xs text-on-surface-variant"><strong className="text-on-surface">{count} {count === 1 ? 'location' : 'locations'} selected</strong></p>
           <div className="flex gap-2">
             <ActionButton onClick={finish}>Cancel</ActionButton>
-            <ActionButton variant="brand" icon={Plus} disabled={count === 0} onClick={finish}>Add selected {count === 1 ? 'location' : 'locations'}</ActionButton>
+            <ActionButton variant="primary" icon={ShieldCheck} disabled={count === 0 || pending} onClick={save}>{pending ? 'Saving…' : `Add ${count} ${count === 1 ? 'location' : 'locations'}`}</ActionButton>
           </div>
         </div>
       }
     >
       <div className="flex flex-col gap-3 p-5">
-        <SearchBox value={query} onChange={setQuery} label="Search locations" placeholder="Search locations by name, code or city…" />
+        {failure && <Banner tone="danger" title="Not saved">{failure}</Banner>}
+        <SearchBox value={query} onChange={setQuery} label="Search locations" placeholder="Search by branch name, city or code…" />
         <ul className="flex flex-col gap-2">
           {visible.map((option) => (
             <li key={option.id}>
               <CheckRow checked={selectedIds.includes(option.id)} onChange={() => toggle(option.id)} label={option.name}>
-                <p className="flex items-center justify-between gap-2 text-[13px] font-semibold text-on-surface">
+                <p className="flex flex-wrap items-center gap-2 text-[13px] font-semibold text-on-surface">
                   {option.name}
-                  <span className="font-mono text-[11px] font-normal text-outline">{option.code}</span>
+                  <StatusPill tone={BRANCH_STATUS[option.status][1]}>{BRANCH_STATUS[option.status][0]}</StatusPill>
+                  <span className="ml-auto font-mono text-[11px] font-normal text-outline">{option.code}</span>
                 </p>
-                <p className="text-xs text-on-surface-variant">{option.detail}</p>
-                <p className="mt-1 flex flex-wrap gap-1.5">
-                  <StatusPill tone="success">{option.hours}</StatusPill>
-                  <StatusPill>{option.wing}</StatusPill>
-                </p>
-                {option.note && selectedIds.includes(option.id) && (
-                  <InfoNote tone="warning" className="mt-2"><strong>Note:</strong> {option.note}</InfoNote>
-                )}
+                <p className="text-xs text-on-surface-variant">{option.city}</p>
               </CheckRow>
             </li>
           ))}
-          {visible.length === 0 && <li className="py-6 text-center text-sm text-on-surface-variant">No locations match your search.</li>}
+          {visible.length === 0 && <li className="py-6 text-center text-sm text-on-surface-variant">{candidates.length ? 'No locations match your search.' : 'Offered at every open branch already.'}</li>}
         </ul>
-        <p className="flex items-center justify-between rounded-md border border-slate-200 bg-surface-lowest px-3 py-2 text-xs">
-          <span className="text-on-surface-variant">{alreadyAdded}</span>
-          <StatusPill>Already added</StatusPill>
-        </p>
+        <p className="mt-2 text-[11px] font-semibold tracking-wide text-outline uppercase">Already offered ({already.length})</p>
+        <ul className="flex flex-col gap-2">
+          {already.map((branch) => (
+            <li key={branch.id} className="flex items-center justify-between rounded-md border border-slate-200 bg-surface-lowest px-3 py-2 text-xs opacity-70">
+              {branch.name}
+              <StatusPill tone="success">Already added</StatusPill>
+            </li>
+          ))}
+        </ul>
       </div>
     </Drawer>
   )
 }
 
-export function SetBranchPriceDrawer({ open, onClose }) {
-  const branches = CARDIOLOGY_CONSULT.addLocationOptions
-  const [branchId, setBranchId] = useState(branches[0].id)
-  const [values, setValues] = useState({ price: '', effectiveFrom: '', status: 'active' })
-  const [submitted, setSubmitted] = useState(false)
-  const errors = submitted ? validatePrice(values) : {}
+// One branch's price for the service: the default, a local price, or not offered there.
+export function SetBranchPriceDrawer({ open, onClose, service, branch, onSaved }) {
+  const entry = branch ? service.branches[branch.id] : null
+  const [mode, setMode] = useState(entry?.price != null ? 'custom' : 'default')
+  const [price, setPrice] = useState(entry?.price != null ? String(entry.price) : '')
+  const [failure, setFailure] = useState('')
+  const [pending, setPending] = useState(false)
+  if (!branch) return null
 
-  const update = (event) => setValues((current) => ({ ...current, [event.target.name]: event.target.value }))
   const finish = () => {
-    setValues({ price: '', effectiveFrom: '', status: 'active' })
-    setBranchId(branches[0].id)
-    setSubmitted(false)
+    setFailure('')
     onClose()
   }
-  const submit = (event) => {
-    event.preventDefault()
-    setSubmitted(true)
-    if (Object.keys(validatePrice(values)).length === 0) finish()
+  const save = async (remove = false) => {
+    if (!remove && mode === 'custom' && !(price.trim() !== '' && Number(price) >= 0)) return setFailure('Enter a price of zero or more.')
+    setPending(true)
+    setFailure('')
+    const next = { ...service.branches }
+    if (remove) delete next[branch.id]
+    else next[branch.id] = { available: true, price: mode === 'custom' ? Number(price) : null }
+    try {
+      await saveBranches(service, next)
+      onSaved(remove ? `${service.name} is no longer offered at ${branch.name}.` : `Price at ${branch.name} saved.`)
+      finish()
+    } catch (error) {
+      setFailure(error.message)
+    } finally {
+      setPending(false)
+    }
   }
+  const lastActive = service.status === 'Active' && entry && Object.keys(service.branches).length === 1
 
   return (
     <Drawer
       open={open}
       onClose={finish}
-      title="Set Branch Price"
-      description="Configure a localized tariff for this facility."
+      title={`Price at ${branch.name}`}
+      description={`Default price ${money(service.price)}. A branch price applies to new charges at ${branch.name} only.`}
       footer={
-        <div className="flex justify-end gap-2">
-          <ActionButton onClick={finish}>Cancel</ActionButton>
-          <ActionButton variant="brand" icon={Check} type="submit" form="branch-price-form">
-            Apply Price{values.price && ` (₹${values.price})`}
-          </ActionButton>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {entry && !lastActive ? <ActionButton variant="danger" onClick={() => save(true)} disabled={pending}>Stop offering here</ActionButton> : <span />}
+          <div className="flex gap-2">
+            <ActionButton onClick={finish}>Cancel</ActionButton>
+            <ActionButton variant="primary" onClick={() => save(false)} disabled={pending}>{pending ? 'Saving…' : entry ? 'Save price' : 'Offer at this branch'}</ActionButton>
+          </div>
         </div>
       }
     >
-      <form id="branch-price-form" onSubmit={submit} noValidate className="flex flex-col gap-4 p-5">
-        <fieldset>
-          <legend className="mb-1.5 text-[13px] font-semibold text-slate-800">Branch</legend>
-          <div className="flex flex-col gap-2">
-            {branches.map((branch) => (
-              <label key={branch.id} className={cn('flex cursor-pointer items-start gap-3 rounded-md border p-3', branchId === branch.id ? 'border-brand bg-teal-50/60' : 'border-slate-200')}>
-                <input type="radio" name="branch" checked={branchId === branch.id} onChange={() => setBranchId(branch.id)} className="mt-1 accent-[#006a61]" />
-                <span>
-                  <span className="block text-[13px] font-semibold text-on-surface">{branch.name} <span className="font-mono text-[11px] font-normal text-outline">{branch.code}</span></span>
-                  <span className="block text-xs text-on-surface-variant">{branch.detail}</span>
-                </span>
-              </label>
-            ))}
-          </div>
+      <div className="flex flex-col gap-4 p-5">
+        {failure && <Banner tone="danger" title={failure} />}
+        <fieldset className="flex flex-col gap-2">
+          <legend className="mb-1.5 text-[13px] font-semibold text-slate-800">Price</legend>
+          {[['default', `Use the default (${money(service.price)})`], ['custom', 'Set a branch price']].map(([value, label]) => (
+            <label key={value} className="flex items-center gap-2 text-xs">
+              <input type="radio" name="mode" value={value} checked={mode === value} onChange={() => setMode(value)} className="accent-brand" />
+              {label}
+            </label>
+          ))}
         </fieldset>
-
-        <InfoNote tone="brand"><strong className="text-brand">Local Branch Tariff.</strong> Overrides the base tariff for this branch only. Staff-level modification is configured under Facility Architecture and role controls.</InfoNote>
-
-        <TextInput label="Service price (INR)" name="price" required inputMode="decimal" prefix="₹" value={values.price} onChange={update} error={errors.price} placeholder="900" />
-        <TextInput label="Effective from" name="effectiveFrom" type="date" required value={values.effectiveFrom} onChange={update} error={errors.effectiveFrom} />
-
-        <fieldset>
-          <legend className="mb-1.5 text-[13px] font-semibold text-slate-800">Pricing activation status</legend>
-          <div className="grid grid-cols-2 gap-2">
-            <RadioCard name="status" value="active" checked={values.status === 'active'} onChange={update} title="Active" detail="Immediately billing" />
-            <RadioCard name="status" value="inactive" checked={values.status === 'inactive'} onChange={update} title="Inactive" detail="Not billing" />
-          </div>
-        </fieldset>
-        <InfoNote><strong className="text-on-surface">Financial audit guarantee:</strong> Setting this price creates a forward-looking tariff rule. Existing appointments and billed invoices prior to this effective date, generated invoices, and GST reconciliations remain unchanged.</InfoNote>
-      </form>
+        {mode === 'custom' && <TextInput label="Branch price (INR ₹)" type="number" min="0" value={price} onChange={(event) => setPrice(event.target.value)} />}
+        {lastActive && <InfoNote>This is the only location of an active service; deactivate the service before removing it here.</InfoNote>}
+        <InfoNote tone="brand">Past charges and invoices keep the price they were raised at.</InfoNote>
+      </div>
     </Drawer>
   )
 }

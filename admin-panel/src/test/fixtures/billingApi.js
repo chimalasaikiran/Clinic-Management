@@ -163,6 +163,7 @@ export function createBillingApi({ seed = ledgerSeed(), today = '2026-10-21', ac
       data.patients = data.patients.filter((patient) => used.has(patient.id))
       return data
     },
+    services: async () => clone(state.services),
     createService: async (body) => {
       record('createService', body)
       if (state.services.some((entry) => entry.code === body.code.toUpperCase())) fail(409, 'SERVICE_CODE_TAKEN', 'This service code is already used in your organisation.')

@@ -1,8 +1,10 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ROUTES } from '../../../config/routes'
 import { authState } from '../../../test/auth'
+import { billingFake } from '../../../test/fixtures/billingFake'
+import { createConfigApi } from '../../../test/fixtures/configApi'
 import { renderRoute } from '../../../test/renderRoute'
 
 const api = vi.hoisted(() => ({ createOrganisation: vi.fn() }))
@@ -73,14 +75,32 @@ describe('practice contact page', () => {
     expect(router.state.location.pathname).toBe(ROUTES.contact)
   })
 
-  it('continues with only a valid phone number', async () => {
+  it('saves a valid phone number and continues', async () => {
     const user = userEvent.setup()
+    const config = billingFake.config
     const router = renderRoute(ROUTES.contact)
 
     await user.type(screen.getByLabelText(/clinic phone/i), '9876543210')
     await user.click(screen.getByRole('button', { name: /continue/i }))
 
-    expect(router.state.location.pathname).toBe(ROUTES.operations)
+    await waitFor(() => expect(router.state.location.pathname).toBe(ROUTES.operations))
+    expect(config.state.calls).toContainEqual(['saveContact', { phone: '9876543210', email: '' }])
+    expect(config.state.organisation.phone).toBe('9876543210')
+  })
+
+  it('stays on the page when the contact details cannot be saved', async () => {
+    const user = userEvent.setup()
+    const config = billingFake.useConfig(createConfigApi())
+    config.api.saveContact = async () => {
+      throw new Error('Cannot reach ClinicOS. Check your connection and try again.')
+    }
+    const router = renderRoute(ROUTES.contact)
+
+    await user.type(screen.getByLabelText(/clinic phone/i), '9876543210')
+    await user.click(screen.getByRole('button', { name: /continue/i }))
+
+    expect(await screen.findByText(/cannot reach clinicos/i)).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe(ROUTES.contact)
   })
 })
 
@@ -115,7 +135,8 @@ describe('operating model page', () => {
     await user.click(screen.getByRole('radio', { name: /solo practitioner/i }))
     await user.click(screen.getByRole('button', { name: /continue to clinical specialties/i }))
 
-    expect(router.state.location.pathname).toBe(ROUTES.specialties)
+    await waitFor(() => expect(router.state.location.pathname).toBe(ROUTES.specialties))
+    expect(billingFake.config.state.organisation).toMatchObject({ classification: 'general', structure: 'solo' })
   })
 })
 
@@ -157,13 +178,16 @@ describe('clinical specialties page', () => {
     expect(screen.queryByText('Cardiology Wing')).not.toBeInTheDocument()
   })
 
-  it('finishes setup once a specialty is selected', async () => {
+  it('saves the specialties, creates their departments and finishes setup', async () => {
     const user = userEvent.setup()
+    const config = billingFake.useConfig(createConfigApi({ departments: [], organisation: { ...createConfigApi().state.organisation, status: 'onboarding', specialties: [] } }))
     const router = renderRoute(ROUTES.specialties)
 
     await user.click(screen.getByRole('checkbox', { name: /cardiology/i }))
     await user.click(screen.getByRole('button', { name: /complete practice setup/i }))
 
-    expect(router.state.location.pathname).toBe(ROUTES.complete)
+    await waitFor(() => expect(router.state.location.pathname).toBe(ROUTES.complete))
+    expect(config.state.organisation.status).toBe('active')
+    expect(config.state.departments.map((department) => department.name)).toContain(config.state.organisation.specialties[0])
   })
 })

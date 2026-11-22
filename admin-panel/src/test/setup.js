@@ -3,6 +3,7 @@ import { cleanup, configure } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
 import { createBillingApi } from './fixtures/billingApi'
 import { createCampaignsApi } from './fixtures/campaignsApi'
+import { createConfigApi } from './fixtures/configApi'
 import { createContentApi } from './fixtures/contentApi'
 import { billingFake } from './fixtures/billingFake'
 import { createDashboardApi } from './fixtures/dashboardApi'
@@ -56,6 +57,10 @@ vi.mock('../features/growth/contentApi', () => ({
   contentApi: new Proxy({}, { get: (_, method) => (...args) => billingFake.content.api[method](...args) }),
 }))
 
+vi.mock('../features/configuration/api', () => ({
+  configApi: new Proxy({}, { get: (_, method) => (...args) => billingFake.config.api[method](...args) }),
+}))
+
 vi.mock('../features/payroll/api', () => ({
   payrollApi: new Proxy({}, { get: (_, method) => (...args) => billingFake.payroll.api[method](...args) }),
 }))
@@ -71,6 +76,7 @@ beforeEach(() => {
   billingFake.useMessaging(createMessagingApi())
   billingFake.useCampaigns(createCampaignsApi())
   billingFake.useContent(createContentApi())
+  billingFake.useConfig(createConfigApi())
   localStorage.clear()
 })
 

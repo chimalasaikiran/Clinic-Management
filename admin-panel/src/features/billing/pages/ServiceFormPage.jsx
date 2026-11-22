@@ -8,7 +8,8 @@ import { OptionSelect, TextArea } from '../../patients/components/parts'
 import { formatINR } from '../../patients/format'
 import BillingFrame, { Card, Note } from '../components/BillingFrame'
 import { toServiceRequest } from '../adapters'
-import { SERVICE_CATEGORIES, SERVICE_DEPARTMENTS, TAX_CONFIGS, TAX_TREATMENTS } from '../constants'
+import { useDepartmentNames } from '../../configuration/useDepartments'
+import { SERVICE_CATEGORIES, TAX_CONFIGS, TAX_TREATMENTS } from '../constants'
 import { useBilling } from '../context/useBilling'
 import { blankService, buildService, effectivePrice, formFromService, validateService } from '../serviceLogic'
 
@@ -20,6 +21,7 @@ export default function ServiceFormPage() {
   const BRANCHES = allBranches.filter((branch) => branch.active || services.find((entry) => entry.id === serviceId)?.branches[branch.id])
   const navigate = useNavigate()
   const editing = services.find((entry) => entry.id === serviceId)
+  const departments = useDepartmentNames(editing?.department).names
   const [values, setValues] = useState(() => (editing ? formFromService(editing, BRANCHES) : blankService(BRANCHES)))
   const [saving, setSaving] = useState(false)
   const [serverError, setServerError] = useState('')
@@ -56,7 +58,7 @@ export default function ServiceFormPage() {
             <TextInput label="Service name" required value={values.name} onChange={(event) => set('name', event.target.value)} error={errors.name} hint="Use a clear name for clinical and billing teams." placeholder="Enter service name" />
             <TextInput label="Unique service code" required value={values.code} onChange={(event) => set('code', event.target.value)} error={errors.code} hint="Must be unique across your organisation; checked again on save." placeholder="e.g. SRV-CARD-NEW" />
             <OptionSelect label="Category" required placeholder="Select category" value={values.category} onChange={(event) => set('category', event.target.value)} error={errors.category} options={SERVICE_CATEGORIES.map((entry) => ({ value: entry, label: entry }))} />
-            <OptionSelect label="Department / specialty (optional)" placeholder="Unassigned" value={values.department} onChange={(event) => set('department', event.target.value)} hint="Leave unassigned if your organization does not use departments." options={SERVICE_DEPARTMENTS.map((entry) => ({ value: entry, label: entry }))} />
+            <OptionSelect label="Department / specialty (optional)" placeholder="Unassigned" value={values.department} onChange={(event) => set('department', event.target.value)} hint="From Configuration › Departments. Leave unassigned if your organization does not use departments." options={departments.map((entry) => ({ value: entry, label: entry }))} />
           </div>
           <div className="mt-4"><TextArea label="Description (optional)" rows={3} value={values.description} onChange={(event) => set('description', event.target.value)} /></div>
           <fieldset className="mt-4 flex flex-wrap items-center gap-5 text-xs"><legend className="sr-only">Service status</legend><span className="font-semibold">Service status</span>{['Active', 'Inactive'].map((status) => <label key={status} className="flex items-center gap-1.5"><input type="radio" name="status" value={status} checked={values.status === status} onChange={() => set('status', status)} className="accent-[#006a61]" />{status}</label>)}<span className="text-outline">{values.status === 'Inactive' ? 'Inactive drafts are not selectable for new records.' : 'Active services need a tax decision and a location.'}</span></fieldset>

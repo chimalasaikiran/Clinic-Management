@@ -3,46 +3,61 @@ import { UserPlus } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import ActionButton from '../../../components/workspace/ActionButton'
 import Avatar from '../../../components/workspace/Avatar'
-import { FilterSelect, SearchBox, Toggle } from '../../../components/workspace/controls'
+import { FilterSelect, SearchBox } from '../../../components/workspace/controls'
 import { Cell, Row, Table, TableFooter } from '../../../components/workspace/DataTable'
 import PageIntro from '../../../components/workspace/PageIntro'
 import Panel from '../../../components/workspace/Panel'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
-import { cn } from '../../../lib/cn'
+import { useApiResource } from '../../../hooks/useApiResource'
+import { accessApi } from '../../auth/api'
+import { useAuth } from '../../auth/context/useAuth'
+import LoadingState from '../../patients/components/LoadingState'
+import { ACCESS_LEVEL_TONES, accessLevel, accessRoster, coversBranch } from '../access'
+import { configApi } from '../api'
 import ConfigPage from '../components/ConfigPage'
-import DepartmentAccessDrawer from '../components/DepartmentAccessDrawer'
-import DetailUnavailable from '../components/DetailUnavailable'
-import { DEPARTMENT_ACCESS } from '../data/departments'
+import { initialsOf } from '../configView'
 
-const LEVEL_TONES = { 'Full access': 'success', 'Work access': 'warning', 'View only': 'neutral' }
-
+// Access is granted per branch through roles, so a department's access is that of the branches it operates at.
 export default function DepartmentAccessPage() {
   const { departmentId } = useParams()
+  const { can } = useAuth()
   const [query, setQuery] = useState('')
   const [level, setLevel] = useState('')
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const [modes, setModes] = useState(() => Object.fromEntries(DEPARTMENT_ACCESS.modes.map((mode) => [mode.id, mode.on])))
+  const department = useApiResource(() => configApi.department(departmentId), `department:${departmentId}`)
+  const roles = useApiResource(() => accessApi.roles(), 'roles')
+  const members = useApiResource(() => accessApi.members(), 'members')
 
-  if (departmentId !== 'cardiology') {
-    return <DetailUnavailable title="Access & permissions" backTo={ROUTES.departments} backLabel="Back to departments" />
+  if (!department.data || !roles.data || !members.data) {
+    return (
+      <ConfigPage>
+        <PageIntro title={department.error?.status === 404 ? 'Department not found' : 'Access & Permissions'} />
+        {department.error?.status !== 404 && <LoadingState label="Loading access…" error={department.error ?? roles.error ?? members.error} onRetry={() => { department.reload(); roles.reload(); members.reload() }} />}
+      </ConfigPage>
+    )
   }
 
-  const { summary, principals, capabilities } = DEPARTMENT_ACCESS
+  const current = department.data
+  const branchIds = current.branches.map((branch) => branch.id)
+  const roster = accessRoster(members.data, roles.data, branchIds)
   const needle = query.trim().toLowerCase()
-  const rows = principals.filter((entry) => (!level || entry.level === level) && (!needle || `${entry.name} ${entry.detail}`.toLowerCase().includes(needle)))
+  const rows = roster.filter((entry) => (!level || entry.level === level) && (!needle || `${entry.member.user.fullName} ${entry.member.user.email} ${entry.roles.map((role) => role.name).join(' ')}`.toLowerCase().includes(needle)))
+  const coveringRoles = roles.data.filter((role) => branchIds.some((branchId) => coversBranch(role, branchId)))
+  const summary = [
+    { label: 'Department', value: current.name, hint: current.code },
+    { label: 'Branches', value: current.branches.length, hint: current.branches.map((branch) => branch.name).join(', ') },
+    { label: 'People with access', value: roster.length, hint: 'Through their roles' },
+    { label: 'Full access', value: roster.filter((entry) => entry.level === 'Full').length, hint: 'Can change settings or roles' },
+    { label: 'Roles involved', value: coveringRoles.length, hint: `${coveringRoles.filter((role) => role.scope === 'org').length} organisation-wide` },
+  ]
+  const where = (role) => (role.scope === 'org' ? 'Every branch' : current.branches.filter((branch) => role.branchIds.includes(branch.id)).map((branch) => branch.name).join(', '))
 
   return (
     <ConfigPage>
       <PageIntro
         title="Access & Permissions"
-        description="Control which users and roles can access this department and what they can do within it."
-        actions={
-          <>
-            <ActionButton to={pathFor(ROUTES.department, { departmentId })}>Discard</ActionButton>
-            <ActionButton variant="primary" disabled>Save changes</ActionButton>
-          </>
-        }
+        description="Who can work with this department. Access is granted by role and branch: anyone whose role covers a branch where this department operates can work with it there."
+        actions={<ActionButton to={pathFor(ROUTES.department, { departmentId })}>Back to department</ActionButton>}
       />
 
       <dl className="mb-5 grid gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 sm:grid-cols-2 lg:grid-cols-5">
@@ -55,79 +70,65 @@ export default function DepartmentAccessPage() {
         ))}
       </dl>
 
-      <Panel title="Department access policy & inheritance" action={<StatusPill>Policy: Strict RBAC</StatusPill>} className="mb-5">
-        <p className="text-xs leading-5 text-on-surface-variant">
-          Grant the appropriate organization or branch roles inherit baseline access. Department-specific grants provide elevated clinical work, scheduling privileges, or administrative governance.
-        </p>
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          {DEPARTMENT_ACCESS.modes.map((mode) => (
-            <div key={mode.id} className={cn('flex items-start justify-between gap-3 rounded-md border p-3', modes[mode.id] ? 'border-brand bg-teal-50/50' : 'border-slate-200')}>
-              <div>
-                <p className="flex flex-wrap items-center gap-2 text-[13px] font-semibold text-on-surface">
-                  {mode.title}
-                  <StatusPill tone={modes[mode.id] ? 'success' : 'neutral'}>{modes[mode.id] ? mode.badge : 'OFF'}</StatusPill>
-                </p>
-                <p className="mt-1 text-xs leading-4 text-on-surface-variant">{mode.detail}</p>
-              </div>
-              <Toggle checked={modes[mode.id]} onChange={(value) => setModes((current) => ({ ...current, [mode.id]: value }))} label={mode.title} />
-            </div>
+      <Panel title="Department access policy & inheritance" action={<StatusPill>Policy: Role-based</StatusPill>} className="mb-5" bodyClassName="p-0">
+        <p className="px-5 pt-4 text-xs leading-5 text-on-surface-variant">To give someone access, add it at a branch where {current.name} operates:</p>
+        <ul className="divide-y divide-slate-100">
+          {current.branches.map((branch) => (
+            <li key={branch.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+              <p className="text-[13px] font-semibold text-on-surface">{branch.name} <span className="font-normal text-outline">· {branch.code}</span></p>
+              <span className="flex gap-2">
+                <ActionButton size="sm" to={pathFor(ROUTES.branchAccess, { branchId: branch.id })}>View access</ActionButton>
+                {can('settings.roles') && <ActionButton size="sm" variant="primary" icon={UserPlus} to={pathFor(ROUTES.branchAccessAdd, { branchId: branch.id })}>Add access</ActionButton>}
+              </span>
+            </li>
           ))}
-        </div>
+        </ul>
       </Panel>
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
           <h2 className="flex items-center gap-2 text-base font-semibold text-on-surface">
-            Principals with Department Access <StatusPill>{principals.length} entities</StatusPill>
+            People with Department Access <StatusPill>{roster.length} people</StatusPill>
           </h2>
           <div className="flex flex-wrap items-center gap-2">
-            <SearchBox value={query} onChange={setQuery} label="Search principals" placeholder="Search users or roles…" className="w-56" />
-            <FilterSelect label="Access level" value={level} onChange={setLevel} allLabel="All Levels" options={Object.keys(LEVEL_TONES)} />
-            <ActionButton variant="primary" size="sm" icon={UserPlus} onClick={() => setDrawerOpen(true)}>Add access</ActionButton>
+            <SearchBox value={query} onChange={setQuery} label="Search people" placeholder="Search people or roles…" className="w-56" />
+            <FilterSelect label="Access level" value={level} onChange={setLevel} allLabel="All Levels" options={Object.keys(ACCESS_LEVEL_TONES)} />
           </div>
         </div>
 
-        <Table headings={['User / role', 'Principal type', 'Access level', 'Scope & origin', 'Department status', 'Actions']} minWidth={900} empty={rows.length ? null : 'No principals match your filters.'}>
+        <Table headings={['Person', 'Access level', 'Roles giving access', 'Status']} minWidth={760} empty={rows.length ? null : roster.length ? 'No people match your filters.' : 'No one has a role covering this department’s branches.'}>
           {rows.map((entry) => (
-            <Row key={entry.id}>
+            <Row key={entry.member.id} muted={entry.member.status !== 'active'}>
               <Cell>
                 <div className="flex items-center gap-3">
-                  <Avatar initials={entry.initials || 'R'} tone={entry.initials ? 'teal' : 'slate'} size="sm" />
+                  <Avatar initials={initialsOf(entry.member.user.fullName)} tone="teal" size="sm" />
                   <div>
-                    <p className="font-semibold">{entry.name}</p>
-                    <p className="text-[11px] text-outline">{entry.detail}</p>
+                    <p className="font-semibold">{entry.member.user.fullName}</p>
+                    <p className="text-[11px] text-outline">{entry.member.user.email}</p>
                   </div>
                 </div>
               </Cell>
-              <Cell><StatusPill className="rounded">{entry.kind}</StatusPill></Cell>
-              <Cell><StatusPill tone={LEVEL_TONES[entry.level]}>{entry.level}</StatusPill></Cell>
+              <Cell><StatusPill tone={ACCESS_LEVEL_TONES[entry.level]}>{entry.level}</StatusPill></Cell>
               <Cell>
-                <p className="font-medium">{entry.scope}</p>
-                <p className="text-[11px] text-outline">{entry.scopeNote}</p>
+                <span className="flex flex-wrap gap-1">
+                  {entry.roles.map((role) => <span key={role.id} className="rounded bg-surface-high px-1.5 py-0.5 text-[11px]">{role.name}</span>)}
+                </span>
               </Cell>
-              <Cell>
-                <StatusPill tone="success" dot>Active</StatusPill>
-                <p className="text-[11px] text-outline">{entry.modified}</p>
-              </Cell>
-              <Cell>
-                <button type="button" className="text-xs font-medium text-brand hover:underline">Edit</button>
-              </Cell>
+              <Cell><StatusPill tone={entry.member.status === 'active' ? 'success' : 'neutral'} dot>{entry.member.status === 'active' ? 'Active' : entry.member.status}</StatusPill></Cell>
             </Row>
           ))}
         </Table>
-        <TableFooter summary={`Displaying all ${rows.length} configured principals for Cardiology.`}>
-          <span className="text-[11px] text-outline">Encrypted RBAC Ledger</span>
-        </TableFooter>
+        <TableFooter summary={`Showing ${rows.length} of ${roster.length} people with access to ${current.name}.`} />
       </div>
 
-      <Panel title="Department granular capability matrix" subtitle="Explicit entitlement resolution for operations performed within Cardiology department resources." action={<StatusPill>RBAC v4.2 Spec</StatusPill>} className="mt-5" bodyClassName="p-0">
-        <Table headings={['Capability', 'Full access', 'Work access', 'View only']} minWidth={640}>
-          {capabilities.map(([name, ...cells]) => (
-            <Row key={name}>
-              <Cell>{name}</Cell>
-              {cells.map((value, index) => (
-                <Cell key={index} className={cn('text-xs font-semibold', value.startsWith('Allowed') ? 'text-brand' : 'text-outline')}>{value}</Cell>
-              ))}
+      <Panel title="Roles reaching this department" subtitle="Each role’s access level and where it applies." className="mt-5" bodyClassName="p-0">
+        <Table headings={['Role', 'Access level', 'Permissions', 'Where']} minWidth={640} empty={coveringRoles.length ? null : 'No active role covers these branches.'}>
+          {coveringRoles.map((role) => (
+            <Row key={role.id}>
+              <Cell className="font-semibold">{role.name}</Cell>
+              <Cell><StatusPill tone={ACCESS_LEVEL_TONES[accessLevel(role.permissions)]}>{accessLevel(role.permissions)}</StatusPill></Cell>
+              <Cell className="text-xs">{role.permissions.length}</Cell>
+              <Cell className="text-xs">{where(role)}</Cell>
             </Row>
           ))}
         </Table>
@@ -136,18 +137,14 @@ export default function DepartmentAccessPage() {
       <div className="mt-5 grid gap-5 md:grid-cols-2">
         <Panel title="Zero-data loss guarantee & audit continuity">
           <p className="text-xs leading-5 text-on-surface-variant">
-            Removing or modifying department access does not delete or alter historical records, past encounters, completed clinical notes, prescriptions, or billing ledger events signed by that person. Historical records remain preserved under HIPAA & ABDM rules.
+            Changing someone’s access does not delete or alter historical records, past encounters, clinical notes, prescriptions or invoices signed by that person.
           </p>
         </Panel>
         <Panel title="Administrative lockout protection">
-          <p className="text-xs leading-5 text-on-surface-variant">
-            The primary organization administrator (Dr. Siddharth Verma, MD) maintains immutable supervisory access to prevent accidental lockout. All access and role changes are continuously logged into the Sovereign immutable audit trail.
-          </p>
-          <Link to={pathFor(ROUTES.department, { departmentId })} className="mt-3 inline-block text-xs font-semibold text-brand hover:underline">Back to department</Link>
+          <p className="text-xs leading-5 text-on-surface-variant">The Owner role is a system role and cannot be changed or removed here, so the organisation cannot lock itself out. Every role and access change is recorded in the audit log.</p>
+          <Link to={ROUTES.roles} className="mt-3 inline-block text-xs font-semibold text-brand hover:underline">Roles & permissions</Link>
         </Panel>
       </div>
-
-      <DepartmentAccessDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
     </ConfigPage>
   )
 }

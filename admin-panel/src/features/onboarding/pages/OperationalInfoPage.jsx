@@ -9,6 +9,8 @@ import TextLink from '../../../components/ui/TextLink'
 import { ROUTES } from '../../../config/routes'
 import { cn } from '../../../lib/cn'
 import OnboardingLayout from '../components/OnboardingLayout'
+import FormMessage from '../../auth/components/FormMessage'
+import { configApi } from '../../configuration/api'
 import { CLINIC_CLASSIFICATIONS, OPERATING_STRUCTURES } from '../data/clinicOptions'
 import { ONBOARDING_STEPS } from '../data/onboardingSteps'
 import { validateOperatingModel } from '../validation'
@@ -18,13 +20,23 @@ export default function OperationalInfoPage() {
   const [classification, setClassification] = useState('')
   const [structure, setStructure] = useState('')
   const [submitted, setSubmitted] = useState(false)
+  const [pending, setPending] = useState(false)
+  const [failure, setFailure] = useState('')
   const errors = submitted ? validateOperatingModel({ classification, structure }) : {}
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
     setSubmitted(true)
+    setFailure('')
     if (Object.keys(validateOperatingModel({ classification, structure })).length > 0) return
-    navigate(ROUTES.specialties)
+    setPending(true)
+    try {
+      await configApi.saveOperations({ classification, structure })
+      navigate(ROUTES.specialties)
+    } catch (error) {
+      setFailure(error.message)
+      setPending(false)
+    }
   }
 
   return (
@@ -87,8 +99,9 @@ export default function OperationalInfoPage() {
         </p>
 
         <div className="flex flex-col gap-3.5 border-t border-slate-200/70 pt-5">
-          <Button type="submit" fullWidth trailing={<img src={icons.arrowRight} alt="" />}>
-            Continue to Clinical Specialties
+          <FormMessage>{failure}</FormMessage>
+          <Button type="submit" fullWidth disabled={pending} trailing={<img src={icons.arrowRight} alt="" />}>
+            {pending ? 'Saving…' : 'Continue to Clinical Specialties'}
           </Button>
           <div className="flex justify-center">
             <TextLink to={ROUTES.contact} className="py-1 text-xs leading-4 font-semibold">

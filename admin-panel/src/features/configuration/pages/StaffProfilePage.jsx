@@ -1,68 +1,75 @@
 import { useState } from 'react'
-import { BadgeCheck, Building2, History, KeyRound, Stethoscope, UserRound } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Building2, History, KeyRound, Stethoscope, UserRound } from 'lucide-react'
+import { Link, useParams } from 'react-router-dom'
 import ActionButton from '../../../components/workspace/ActionButton'
 import Avatar from '../../../components/workspace/Avatar'
 import DetailList from '../../../components/workspace/DetailList'
+import PageIntro from '../../../components/workspace/PageIntro'
 import Panel from '../../../components/workspace/Panel'
+import { Banner } from '../../../components/workspace/RecordKit'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
-import { cn } from '../../../lib/cn'
+import { useApiResource } from '../../../hooks/useApiResource'
+import { useAuth } from '../../auth/context/useAuth'
+import LoadingState from '../../patients/components/LoadingState'
+import { ENGAGEMENT_LABELS, STATUS_LABELS, TYPE_LABELS } from '../../staff/adapters'
+import { staffApi } from '../../staff/api'
 import BranchAssignmentDrawer from '../components/BranchAssignmentDrawer'
 import ConfigPage from '../components/ConfigPage'
-import { STAFF_PROFILE as profile } from '../data/staff'
+import { initialsOf } from '../configView'
 
-function ProfileHeader() {
+const ACTION_TEXT = {
+  'staff.created': 'Record created',
+  'staff.updated': 'Details updated',
+  'staff.branches_changed': 'Branch assignments changed',
+  'staff.invited': 'Invited to ClinicOS',
+  'staff.account_linked': 'Linked to a ClinicOS account',
+  'staff.attendance_recorded': 'Attendance recorded',
+  'staff.attendance_corrected': 'Attendance corrected',
+  'staff.leave_created': 'Leave or block added',
+  'staff.leave_cancelled': 'Leave or block cancelled',
+}
+const when = (iso) => new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+
+function ProfileHeader({ person, canEdit }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 pb-6">
       <div className="flex items-center gap-4">
-        <Avatar initials={profile.initials} tone="ink" size="lg" />
+        <Avatar initials={initialsOf(person.fullName)} tone="ink" size="lg" />
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold text-on-surface">{profile.name}</h1>
-            <StatusPill tone="success" dot>Active</StatusPill>
-            <StatusPill className="rounded">Doctor</StatusPill>
+            <h1 className="text-2xl font-bold text-on-surface">{person.fullName}</h1>
+            <StatusPill tone={person.status === 'active' ? 'success' : 'neutral'} dot>{person.onLeave ? 'On leave' : STATUS_LABELS[person.status] ?? person.status}</StatusPill>
+            <StatusPill className="rounded">{TYPE_LABELS[person.type]}</StatusPill>
           </div>
-          <p className="mt-1 text-xs text-on-surface-variant">
-            {profile.designation} · Master ID: {profile.masterId} ·{' '}
-            <Link to={pathFor(ROUTES.branchStaff, { branchId: 'main' })} className="font-medium text-brand hover:underline">
-              Main Clinic Scope
-            </Link>
-          </p>
+          <p className="mt-1 text-xs text-on-surface-variant">{[person.designation, `Staff code: ${person.staffCode}`].filter(Boolean).join(' · ')}</p>
         </div>
       </div>
       <div className="flex gap-2">
-        <ActionButton>Edit profile</ActionButton>
-        <ActionButton>More actions</ActionButton>
+        {canEdit && <ActionButton to={pathFor(ROUTES.staffEdit, { staffId: person.id })}>Edit profile</ActionButton>}
+        <ActionButton to={pathFor(ROUTES.staffMember, { staffId: person.id })}>Full staff record</ActionButton>
       </div>
     </div>
   )
 }
 
-function Affiliation({ branch }) {
+function Affiliation({ branch, department, staffId }) {
   return (
-    <li
-      className={cn(
-        'flex flex-wrap items-start justify-between gap-3 rounded-md border p-4',
-        branch.current ? 'border-brand bg-teal-50/50' : 'border-slate-200',
-      )}
-    >
+    <li className={`flex flex-wrap items-start justify-between gap-3 rounded-md border p-4 ${branch.isPrimary ? 'border-brand bg-teal-50/50' : 'border-slate-200'}`}>
       <div className="flex min-w-0 gap-3">
         <span className="flex size-8 shrink-0 items-center justify-center rounded bg-surface-low text-on-surface-variant">
           <Building2 className="size-4" aria-hidden="true" />
         </span>
         <div className="min-w-0">
           <p className="flex flex-wrap items-center gap-2 text-[13px] font-semibold text-on-surface">
-            {branch.name}
-            {branch.current && <span className="rounded bg-brand px-1.5 py-0.5 text-[10px] font-bold text-white">CURRENT VIEW</span>}
+            <Link to={pathFor(ROUTES.branchStaff, { branchId: branch.id })} className="hover:text-brand">{branch.name}</Link>
+            {branch.isPrimary && <span className="rounded bg-brand px-1.5 py-0.5 text-[10px] font-bold text-white">PRIMARY</span>}
             <StatusPill tone="success">Assigned</StatusPill>
-            {branch.flag && !branch.current && <StatusPill tone="warning">{branch.flag}</StatusPill>}
           </p>
-          <dl className="mt-2 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-3">
+          <dl className="mt-2 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
             {[
-              ['Department', branch.department],
-              ['Chamber allocation', branch.chamber],
-              ['Operational status', branch.status],
+              ['Department', department ?? '—'],
+              ['City', branch.city],
             ].map(([label, value]) => (
               <div key={label}>
                 <dt className="text-[11px] text-outline">{label}</dt>
@@ -72,143 +79,159 @@ function Affiliation({ branch }) {
           </dl>
         </div>
       </div>
-      {branch.current ? (
-        <span className="text-xs font-medium text-brand">{branch.flag}</span>
-      ) : (
-        <ActionButton size="sm">View schedule</ActionButton>
-      )}
+      <ActionButton size="sm" to={pathFor(ROUTES.staffSchedule, { staffId })}>View schedule</ActionButton>
     </li>
   )
 }
 
-function AuditLog() {
+function AuditLog({ staffId }) {
+  const history = useApiResource(() => staffApi.history(staffId), `staff-history:${staffId}`)
+  const entries = history.data ?? []
   return (
-    <Panel icon={History} title="Operational audit log" action={<span className="font-mono text-[10px] text-outline">SEC_IMMUTABLE</span>}>
-      <ol className="space-y-4 border-l border-slate-200 pl-4">
-        {profile.audit.map((entry) => (
-          <li key={entry.id} className="relative text-xs leading-4">
-            <span className="absolute top-1 -left-[21px] size-2 rounded-full bg-brand ring-2 ring-white" />
-            <p className="font-medium text-on-surface">{entry.text}</p>
-            <p className="mt-0.5 text-outline">{entry.by}</p>
-            <p className="text-outline">{entry.at}</p>
-          </li>
-        ))}
-      </ol>
-      <button type="button" className="mt-4 block w-full text-center text-xs font-semibold text-brand hover:underline">
-        View full immutable audit trail
-      </button>
+    <Panel icon={History} title="Operational audit log">
+      {!history.data ? (
+        <p role={history.error ? 'alert' : 'status'} className="text-xs text-on-surface-variant">{history.error ? history.error.message : 'Loading history…'}</p>
+      ) : (
+        <ol className="space-y-4 border-l border-slate-200 pl-4">
+          {entries.slice(0, 8).map((entry) => (
+            <li key={entry.id} className="relative text-xs leading-4">
+              <span className="absolute top-1 -left-[21px] size-2 rounded-full bg-brand ring-2 ring-white" />
+              <p className="font-medium text-on-surface">{ACTION_TEXT[entry.action] ?? entry.action}</p>
+              <p className="mt-0.5 text-outline">{entry.actor ?? 'System'}</p>
+              <p className="text-outline">{when(entry.at)}</p>
+            </li>
+          ))}
+          {entries.length === 0 && <li className="text-xs text-on-surface-variant">No changes recorded yet.</li>}
+        </ol>
+      )}
+      <Link to={pathFor(ROUTES.staffMember, { staffId })} className="mt-4 block w-full text-center text-xs font-semibold text-brand hover:underline">View full staff record</Link>
     </Panel>
   )
 }
 
 export default function StaffProfilePage() {
-  const { access, clinical } = profile
+  const { staffId } = useParams()
+  const { can } = useAuth()
+  const resource = useApiResource(() => staffApi.get(staffId), `staff:${staffId}`)
+  const [updated, setUpdated] = useState(null)
   const [assignmentOpen, setAssignmentOpen] = useState(false)
-  const openAssignment = () => setAssignmentOpen(true)
+  const [notice, setNotice] = useState('')
+  const person = updated?.id === staffId ? updated : resource.data
+
+  if (!person) {
+    return (
+      <ConfigPage>
+        <PageIntro title={resource.error?.status === 404 ? 'Staff member not found' : 'Staff profile'} />
+        {resource.error?.status !== 404 && <LoadingState label="Loading profile…" error={resource.error} onRetry={resource.reload} />}
+      </ConfigPage>
+    )
+  }
+
+  const canAssign = can('staff.create')
+  const identification = [
+    { label: 'Staff code', value: person.staffCode },
+    { label: 'Type', value: TYPE_LABELS[person.type] },
+    { label: 'Email', value: person.email ?? '—' },
+    { label: 'Mobile', value: person.mobile ?? '—' },
+    { label: 'Engagement', value: ENGAGEMENT_LABELS[person.engagement] ?? person.engagement },
+    ...(person.type === 'doctor' ? [{ label: 'Council registration', value: [person.council, person.councilNumber].filter(Boolean).join(' · ') || '—' }] : []),
+  ]
 
   return (
     <ConfigPage>
-      <ProfileHeader />
+      <ProfileHeader person={person} canEdit={canAssign} />
+      {notice && <Banner tone="brand" title={notice} className="mb-5" />}
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex min-w-0 flex-col gap-5">
-          <Panel icon={UserRound} title="Master identification & contact" action={<span className="font-mono text-[10px] text-outline">SYNCD_ABDM_HPR</span>}>
-            <DetailList items={profile.identification} />
+          <Panel icon={UserRound} title="Master identification & contact">
+            <DetailList items={identification} />
           </Panel>
 
           <Panel
             icon={Building2}
             title="Organization & branch roster affiliations"
-            subtitle="Dr. Ananya Rao holds active clinical privileges across 3 health system facilities. Branch assignment governs local chamber booking and encounter signing."
-            action={<ActionButton variant="brand" size="sm" onClick={openAssignment}>Manage branch assignment</ActionButton>}
+            subtitle={`${person.fullName} works at ${person.branches.length} branch${person.branches.length === 1 ? '' : 'es'}.`}
+            action={canAssign && <ActionButton variant="brand" size="sm" onClick={() => setAssignmentOpen(true)}>Manage branch assignment</ActionButton>}
           >
             <ul className="flex flex-col gap-3">
-              {profile.affiliations.map((branch) => (
-                <Affiliation key={branch.id} branch={branch} />
+              {person.branches.map((branch) => (
+                <Affiliation key={branch.id} branch={branch} department={person.department} staffId={person.id} />
               ))}
+              {person.branches.length === 0 && <li className="text-xs text-on-surface-variant">Not deployed to any branch yet.</li>}
             </ul>
           </Panel>
 
-          <Panel icon={Stethoscope} title="Professional & clinical information" action={<span className="text-[10px] text-outline">OPD Clinical Scope</span>}>
+          <Panel icon={Stethoscope} title="Professional & clinical information">
             <DetailList
               items={[
-                { label: 'Primary department', value: `${clinical.department} ${clinical.departmentCode}` },
-                { label: 'Core clinical specialty', value: clinical.specialty },
+                { label: 'Primary department', value: person.department ?? '—' },
+                { label: 'Designation', value: person.designation || '—' },
                 {
-                  label: 'Secondary clinical competencies',
+                  label: 'Qualifications',
                   full: true,
-                  value: (
+                  value: person.qualifications.length ? (
                     <span className="mt-1 flex flex-wrap gap-2">
-                      {clinical.competencies.map((item) => (
-                        <span key={item} className="rounded border border-slate-200 bg-surface-lowest px-2 py-1 text-xs font-normal">
-                          {item}
-                        </span>
+                      {person.qualifications.map((item) => (
+                        <span key={item} className="rounded border border-slate-200 bg-surface-lowest px-2 py-1 text-xs font-normal">{item}</span>
                       ))}
                     </span>
-                  ),
+                  ) : '—',
                 },
-                { label: 'Consultation languages', value: clinical.languages },
-                { label: 'Clinical signing authority', value: <span className="text-brand">{clinical.signing}</span> },
               ]}
             />
           </Panel>
         </div>
 
         <div className="flex flex-col gap-5">
-          <aside className="rounded-lg border border-teal-200 bg-teal-50/60 p-5">
-            <h2 className="text-sm font-semibold text-on-surface">Managing Main Clinic Assignment?</h2>
-            <p className="mt-1 text-xs leading-5 text-on-surface-variant">
-              Adjust local chamber slots, consultation shifts, or toggle OPD availability specifically for <strong>Main Clinic (HYD-HQ-01)</strong>.
-            </p>
-            <ActionButton variant="brand" className="mt-4 w-full" onClick={openAssignment}>
-              Open Branch Assignment
-            </ActionButton>
-          </aside>
+          {canAssign && (
+            <aside className="rounded-lg border border-teal-200 bg-teal-50/60 p-5">
+              <h2 className="text-sm font-semibold text-on-surface">Managing branch assignment?</h2>
+              <p className="mt-1 text-xs leading-5 text-on-surface-variant">Choose the branches this person works at and their primary branch.</p>
+              <ActionButton variant="brand" className="mt-4 w-full" onClick={() => setAssignmentOpen(true)}>Open Branch Assignment</ActionButton>
+            </aside>
+          )}
 
-          <Panel icon={KeyRound} title="Role & access summary" action={<ActionButton variant="soft" size="sm">Manage access</ActionButton>}>
-            <dl className="space-y-4 text-xs">
-              <div>
-                <dt className="text-outline">Global role profile</dt>
-                <dd className="mt-0.5 text-[13px] font-semibold text-on-surface">{access.profile}</dd>
-              </div>
-              <div>
-                <dt className="text-outline">Role permission matrix</dt>
-                <dd className="mt-1 rounded-md bg-surface-lowest p-3">
-                  <p className="font-semibold text-on-surface">{access.tier}</p>
-                  <ul className="mt-1 list-inside list-disc space-y-0.5 text-on-surface-variant">
-                    {access.permissions.map((permission) => (
-                      <li key={permission}>{permission}</li>
-                    ))}
-                  </ul>
-                </dd>
-              </div>
-              <div>
-                <dt className="text-outline">Authorized facility access scope</dt>
-                <dd className="mt-1 flex flex-wrap gap-1.5">
-                  {access.facilities.map((facility) => (
-                    <StatusPill key={facility} className="rounded">{facility}</StatusPill>
-                  ))}
-                </dd>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <dt className="text-outline">Two-factor authentication</dt>
-                <dd>
-                  <StatusPill tone="success">
-                    <BadgeCheck className="size-3" aria-hidden="true" />
-                    {access.twoFactor}
-                  </StatusPill>
-                </dd>
-              </div>
-            </dl>
-            <p className="mt-4 rounded-md bg-surface-lowest p-3 text-xs leading-4 text-on-surface-variant">
-              Access permissions are managed centrally. Modifying RBAC matrices requires Organization Admin privileges.
-            </p>
+          <Panel icon={KeyRound} title="Role & access summary" action={person.account.linked && can('settings.roles') && <ActionButton variant="soft" size="sm" to={ROUTES.roles}>Manage access</ActionButton>}>
+            {person.account.linked ? (
+              <dl className="space-y-4 text-xs">
+                <div>
+                  <dt className="text-outline">ClinicOS account</dt>
+                  <dd className="mt-0.5 text-[13px] font-semibold text-on-surface">{person.account.email}</dd>
+                </div>
+                <div>
+                  <dt className="text-outline">Roles</dt>
+                  <dd className="mt-1 flex flex-wrap gap-1.5">
+                    {person.account.roles.map((role) => <StatusPill key={role} className="rounded">{role}</StatusPill>)}
+                    {person.account.roles.length === 0 && <span className="text-on-surface-variant">No roles</span>}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-outline">Last sign-in</dt>
+                  <dd className="font-medium text-on-surface">{person.account.lastLoginAt ? when(person.account.lastLoginAt) : 'Never'}</dd>
+                </div>
+              </dl>
+            ) : (
+              <p className="text-xs leading-5 text-on-surface-variant">{person.account.invitationPending ? `Invitation sent to ${person.account.invitedEmail}; not accepted yet.` : 'Has no ClinicOS account. Invite them from their staff record to give them access.'}</p>
+            )}
+            <p className="mt-4 rounded-md bg-surface-lowest p-3 text-xs leading-4 text-on-surface-variant">Access comes from roles; changing roles needs the Roles & permissions privilege.</p>
           </Panel>
 
-          <AuditLog />
+          <AuditLog staffId={person.id} />
         </div>
       </div>
-      <BranchAssignmentDrawer open={assignmentOpen} onClose={() => setAssignmentOpen(false)} person={profile} />
+      {canAssign && (
+        <BranchAssignmentDrawer
+          key={person.branches.map((branch) => branch.id).join(',')}
+          open={assignmentOpen}
+          onClose={() => setAssignmentOpen(false)}
+          person={person}
+          onSaved={(next) => {
+            setUpdated(next)
+            setNotice('Branch assignment saved.')
+          }}
+        />
+      )}
     </ConfigPage>
   )
 }

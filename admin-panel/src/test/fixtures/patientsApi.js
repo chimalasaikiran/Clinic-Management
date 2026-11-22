@@ -128,8 +128,10 @@ export function apiAppointment(state, overrides = {}) {
 const notFound = (what) => new ApiError(404, 'NOT_FOUND', `${what} not found.`)
 const clone = (value) => JSON.parse(JSON.stringify(value))
 
-export function createPatientsApi({ patients = [apiPatient()], practitioners = [apiPractitioner()], appointments = [], candidates = [] } = {}) {
-  const state = { patients: clone(patients), practitioners: clone(practitioners), appointments: [], candidates: clone(candidates), calls: [] }
+// `closures` maps `${branchId}:${date}` to the reason the branch is closed that day; `hoursWarnings` is what
+// saving availability reports for sessions outside a branch's opening hours.
+export function createPatientsApi({ patients = [apiPatient()], practitioners = [apiPractitioner()], appointments = [], candidates = [], closures = {}, hoursWarnings = [] } = {}) {
+  const state = { patients: clone(patients), practitioners: clone(practitioners), appointments: [], candidates: clone(candidates), closures: clone(closures), hoursWarnings: clone(hoursWarnings), calls: [] }
   for (const overrides of appointments) state.appointments.push(apiAppointment(state, overrides))
   const record = (name, ...args) => state.calls.push([name, ...args])
 
@@ -269,7 +271,7 @@ export function createPatientsApi({ patients = [apiPatient()], practitioners = [
       record('practitioners.setAvailability', id, windows)
       const practitioner = state.practitioners.find((entry) => entry.id === id)
       practitioner.availability = windows.map((window) => ({ ...window, branchName: API_BRANCHES.find((b) => b.id === window.branchId)?.name }))
-      return clone(practitioner)
+      return { ...clone(practitioner), hoursWarnings: clone(state.hoursWarnings) }
     },
     slots: async (id, { branchId, from, days = 7, excludeAppointmentId }) => {
       const practitioner = state.practitioners.find((entry) => entry.id === id)
@@ -279,6 +281,8 @@ export function createPatientsApi({ patients = [apiPatient()], practitioners = [
         slotMinutes: practitioner.slotMinutes,
         days: Array.from({ length: days }, (_, index) => {
           const date = addDays(from, index)
+          const closed = state.closures[`${branchId}:${date}`]
+          if (closed) return { date, slots: [], closed }
           const slots = []
           for (const window of practitioner.availability.filter((entry) => entry.branchId === branchId && entry.weekday === weekdayOf(date))) {
             for (let minute = toMinutes(window.start); minute + practitioner.slotMinutes <= toMinutes(window.end); minute += practitioner.slotMinutes) {

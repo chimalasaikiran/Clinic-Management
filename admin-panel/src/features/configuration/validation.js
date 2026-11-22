@@ -58,7 +58,7 @@ export function validateDepartment({ name, code, locationCount }) {
   const errors = {}
   if (isBlank(name)) errors.name = 'Enter the department name.'
   if (isBlank(code)) errors.code = 'Enter a department code.'
-  else if (!/^[A-Z0-9-]{3,12}$/.test(code.trim().toUpperCase())) errors.code = 'Use 3–12 letters, numbers or hyphens.'
+  else if (!/^[A-Z0-9-]{2,20}$/.test(code.trim().toUpperCase())) errors.code = 'Use 2–20 letters, numbers or hyphens.'
   if (locationCount === 0) errors.locations = 'Choose at least one clinic location.'
   return errors
 }

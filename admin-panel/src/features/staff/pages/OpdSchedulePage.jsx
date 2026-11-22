@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import ActionButton from '../../../components/workspace/ActionButton'
 import { InfoNote, Toggle } from '../../../components/workspace/controls'
 import { SelectInput, TextInput } from '../../../components/workspace/FormControls'
+import { useDepartmentNames } from '../../configuration/useDepartments'
 import PageIntro from '../../../components/workspace/PageIntro'
 import Panel from '../../../components/workspace/Panel'
 import StatusPill from '../../../components/workspace/StatusPill'
@@ -72,6 +73,9 @@ function ScheduleEditor({ existing, staff, onCreated }) {
   const canManage = can('bookings.assign')
   const branches = useApiResource(() => branchesApi.list(), 'branches')
   const activeBranches = (branches.data ?? []).filter((branch) => branch.status === 'active')
+  const departments = useDepartmentNames(existing?.department ?? staff.department)
+  // Sessions outside the branch's opening hours: shown, not refused (Configuration › Operating hours).
+  const [hoursWarnings, setHoursWarnings] = useState(existing?.hoursWarnings ?? [])
 
   const [profile, setProfile] = useState(() =>
     existing
@@ -128,7 +132,8 @@ function ScheduleEditor({ existing, staff, onCreated }) {
     const body = { displayName: profile.displayName.trim(), credentials: profile.credentials, specialty: profile.specialty.trim(), department: profile.department.trim(), room: profile.room, slotMinutes }
     try {
       const saved = existing ? await practitionersApi.update(existing.id, { ...body, status: profile.status }) : await practitionersApi.create({ ...body, membershipId: profile.membershipId })
-      await practitionersApi.setAvailability(saved.id, windows.map(({ branchId, weekday, start, end }) => ({ branchId, weekday, start, end })))
+      const withHours = await practitionersApi.setAvailability(saved.id, windows.map(({ branchId, weekday, start, end }) => ({ branchId, weekday, start, end })))
+      setHoursWarnings(withHours.hoursWarnings ?? [])
       setDirty(false)
       setSaving(false)
       if (!existing) onCreated()
@@ -167,6 +172,13 @@ function ScheduleEditor({ existing, staff, onCreated }) {
           ]}
         />
 
+        {hoursWarnings.length > 0 && (
+          <InfoNote tone="warning" className="mb-5">
+            <strong>Outside the branch’s opening hours:</strong>
+            <ul className="mt-1 list-inside list-disc">{hoursWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+          </InfoNote>
+        )}
+
         {!canManage && <InfoNote tone="warning" className="mb-5">You can view this schedule. Changing it needs the “Assign &amp; dispatch therapist” permission.</InfoNote>}
 
         <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -176,7 +188,11 @@ function ScheduleEditor({ existing, staff, onCreated }) {
               <TextInput label="Display name" required value={profile.displayName} onChange={setField('displayName')} error={errors.displayName} placeholder="Dr. Preeti Deshmukh" />
               <TextInput label="Credentials" value={profile.credentials} onChange={setField('credentials')} error={errors.credentials} placeholder="BPT, MPT" hint="Optional" />
               <TextInput label="Specialty" required value={profile.specialty} onChange={setField('specialty')} error={errors.specialty} placeholder="Physiotherapy" />
-              <TextInput label="Clinical department" required value={profile.department} onChange={setField('department')} error={errors.department} placeholder="Physical Medicine & Rehab" />
+              {departments.loaded && !departments.names.length ? (
+                <TextInput label="Clinical department" required value={profile.department} onChange={setField('department')} error={errors.department} placeholder="Physical Medicine & Rehab" />
+              ) : (
+                <SelectInput label="Clinical department" required placeholder="Choose a department" options={departments.names} value={profile.department} onChange={setField('department')} error={errors.department} />
+              )}
               <TextInput label="Dedicated OPD chamber / suite" value={profile.room} onChange={setField('room')} error={errors.room} placeholder="Chamber 104" hint="Optional" />
               <SelectInput label="Appointment slot length" required value={profile.slotMinutes} onChange={setField('slotMinutes')} error={errors.slotMinutes} options={SLOT_LENGTHS.map((minutes) => ({ value: String(minutes), label: `${minutes} minutes` }))} />
               {existing && <SelectInput label="Booking status" value={profile.status} onChange={setField('status')} options={[{ value: 'active', label: 'Taking appointments' }, { value: 'inactive', label: 'Not taking appointments' }]} />}

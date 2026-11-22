@@ -10,6 +10,7 @@ export const billingApi = {
 
   createService: (service) => post('/v1/billing/services', service),
   updateService: (id, version, service) => api(`/v1/billing/services/${id}`, { method: 'PATCH', body: { version, service } }),
+  services: () => api('/v1/billing/services'),
   setServiceStatus: (id, body) => post(`/v1/billing/services/${id}/status`, body),
   saveSettings: (body) => api('/v1/billing/settings', { method: 'PUT', body }),
 

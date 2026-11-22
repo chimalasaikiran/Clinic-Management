@@ -11,6 +11,8 @@ import { ROUTES } from '../../../config/routes'
 import { cn } from '../../../lib/cn'
 import { isBlank } from '../../../lib/validators'
 import OnboardingLayout from '../components/OnboardingLayout'
+import FormMessage from '../../auth/components/FormMessage'
+import { configApi } from '../../configuration/api'
 import { ONBOARDING_STEPS } from '../data/onboardingSteps'
 import { SPECIALTIES } from '../data/specialties'
 import { validateSpecialties } from '../validation'
@@ -64,6 +66,8 @@ export default function ClinicalSpecialtiesPage() {
   const [departments, setDepartments] = useState([])
   const [addingDepartment, setAddingDepartment] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [pending, setPending] = useState(false)
+  const [failure, setFailure] = useState('')
   const errors = submitted ? validateSpecialties(selected) : {}
 
   const visibleSpecialties = SPECIALTIES.filter((specialty) =>
@@ -80,11 +84,21 @@ export default function ClinicalSpecialtiesPage() {
 
   const removeDepartment = (id) => setDepartments((current) => current.filter((item) => item.id !== id))
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
     setSubmitted(true)
+    setFailure('')
     if (Object.keys(validateSpecialties(selected)).length > 0) return
-    navigate(ROUTES.complete)
+    setPending(true)
+    try {
+      const names = SPECIALTIES.filter((specialty) => selected.includes(specialty.id)).map((specialty) => specialty.name)
+      await configApi.saveSpecialties({ specialties: names, departments: departments.map((department) => department.name) })
+      await configApi.completeSetup()
+      navigate(ROUTES.complete)
+    } catch (error) {
+      setFailure(error.message)
+      setPending(false)
+    }
   }
 
   return (
@@ -202,8 +216,9 @@ export default function ClinicalSpecialtiesPage() {
         </section>
 
         <div className="flex flex-col gap-4 pt-7">
-          <Button type="submit" fullWidth trailing={<img src={icons.arrowRight} alt="" />}>
-            Complete Practice Setup & Launch Workspace
+          <FormMessage>{failure}</FormMessage>
+          <Button type="submit" fullWidth disabled={pending} trailing={<img src={icons.arrowRight} alt="" />}>
+            {pending ? 'Saving…' : 'Complete Practice Setup & Launch Workspace'}
           </Button>
           <div className="flex justify-center">
             <TextLink to={ROUTES.operations} className="text-xs leading-4 font-medium">

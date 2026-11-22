@@ -15,7 +15,8 @@ import LoadingState from '../../patients/components/LoadingState'
 import StaffNotFound from '../components/StaffNotFound'
 import { digitsOf } from '../../patients/format'
 import { staffApi } from '../api'
-import { DEPARTMENTS, ENGAGEMENT_TYPES, MEDICAL_COUNCILS } from '../data/directory'
+import { useDepartmentNames } from '../../configuration/useDepartments'
+import { ENGAGEMENT_TYPES, MEDICAL_COUNCILS } from '../data/directory'
 import { validatePerson } from '../validation'
 
 const INITIAL_VALUES = {
@@ -104,6 +105,7 @@ export default function AddPersonPage() {
 function PersonForm({ existing }) {
   const navigate = useNavigate()
   const [values, handleChange] = useFormFields(existing ? valuesFrom(existing) : INITIAL_VALUES)
+  const departments = useDepartmentNames(existing?.department)
   const [qualifications, setQualifications] = useState(existing?.qualifications ?? [])
   const [proceed, setProceed] = useState(true)
   const [submitted, setSubmitted] = useState(false)
@@ -155,7 +157,7 @@ function PersonForm({ existing }) {
   const saveDraft = () => {
     setSubmitted(true)
     if (!values.fullName.trim()) return
-    save(body({ status: 'draft', designation: values.designation.trim() || 'Draft profile', department: values.department || 'Unassigned' }), () => ROUTES.staffDirectory)
+    save(body({ status: 'draft', designation: values.designation.trim() || 'Draft profile', department: values.department || (departments.names.length ? '' : 'Unassigned') }), () => ROUTES.staffDirectory)
   }
 
   return (
@@ -192,7 +194,11 @@ function PersonForm({ existing }) {
 
           <Panel title="3 · Professional credentials & council registration" subtitle="Statutory registration for clinicians; optional for operational staff." action={<StatusPill tone="success">{isDoctor ? 'Active for Doctor' : 'Optional for Staff'}</StatusPill>} bodyClassName="flex flex-col gap-5">
             <div className="grid gap-5 sm:grid-cols-2">
-              <SelectInput label="Primary department" name="department" required placeholder="Choose a department" options={DEPARTMENTS} value={values.department} onChange={handleChange} error={errors.department} />
+              {departments.loaded && !departments.names.length ? (
+                <TextInput label="Primary department" name="department" required value={values.department} onChange={handleChange} error={errors.department} hint="Add departments in Configuration › Departments to choose from a list" />
+              ) : (
+                <SelectInput label="Primary department" name="department" required placeholder="Choose a department" options={departments.names} value={values.department} onChange={handleChange} error={errors.department} />
+              )}
               <TextInput label="Professional title / designation" name="designation" required value={values.designation} onChange={handleChange} error={errors.designation} placeholder="e.g. Senior Consultant Interventional Cardiologist" />
               <SelectInput label="Medical council" name="council" required={isDoctor} placeholder="Choose a council" options={MEDICAL_COUNCILS} value={values.council} onChange={handleChange} error={errors.council} />
               <TextInput label="Council registration number" name="councilNumber" required={isDoctor} value={values.councilNumber} onChange={handleChange} error={errors.councilNumber} placeholder="e.g. NMC-TS-2016-89412" />
