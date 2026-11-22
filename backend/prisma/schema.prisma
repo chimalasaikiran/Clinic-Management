@@ -132,6 +132,17 @@ model User {
   workflowsUpdated    Workflow[]          @relation("WorkflowUpdatedBy")
   workflowsActivated  Workflow[]          @relation("WorkflowActivatedBy")
 
+  contentTemplatesUpdated  ContentTemplate[] @relation("ContentTemplateUpdatedBy")
+  contentCreated           ContentPost[]     @relation("ContentCreatedBy")
+  contentSubmitted         ContentPost[]     @relation("ContentSubmittedBy")
+  contentApproved          ContentPost[]     @relation("ContentApprovedBy")
+  contentEvents            ContentEvent[]    @relation("ContentEventActor")
+  branchProfilesUpdated    BranchProfile[]   @relation("BranchProfileUpdatedBy")
+  reviewResponsesSubmitted ReviewResponse[]  @relation("ReviewResponseSubmittedBy")
+  reviewResponsesApproved  ReviewResponse[]  @relation("ReviewResponseApprovedBy")
+  reviewNotes              ReviewNote[]      @relation("ReviewNoteAuthor")
+  escalationsCreated       Escalation[]      @relation("EscalationCreatedBy")
+
   @@map("users")
 }
 
@@ -271,6 +282,14 @@ model Organisation {
   workflows    Workflow[]
   workflowRuns WorkflowRun[]
 
+  growthIntegrations GrowthIntegration[]
+  mediaAssets        MediaAsset[]
+  contentTemplates   ContentTemplate[]
+  contentPosts       ContentPost[]
+  branchProfiles     BranchProfile[]
+  reviews            Review[]
+  escalations        Escalation[]
+
   @@map("organisations")
 }
 
@@ -320,6 +339,10 @@ model Branch {
   campaigns Campaign[]
   workflows Workflow[]
 
+  contentPosts ContentPost[]
+  profile      BranchProfile?
+  reviews      Review[]
+
   @@unique([orgId, code])
   @@map("branches")
 }
@@ -355,6 +378,9 @@ model Membership {
 
   ownedCampaigns Campaign[] @relation("CampaignOwner")
   ownedWorkflows Workflow[] @relation("WorkflowOwner")
+
+  ownedContent     ContentPost[] @relation("ContentOwner")
+  ownedEscalations Escalation[]  @relation("EscalationOwner")
 
   @@unique([orgId, userId])
   @@index([userId, status])
@@ -3387,6 +3413,8 @@ enum WorkflowTrigger {
   no_show
   lead_not_booked
   revisit_due
+  // A completed visit, asking for honest feedback with the branch's public review link.
+  review_request
 
   @@map("workflow_trigger")
 }
@@ -3474,4 +3502,368 @@ model WorkflowRun {
   @@unique([workflowId, subjectKey])
   @@index([orgId, createdAt])
   @@map("workflow_runs")
+}
+
+// ─── Growth: content, business profiles and reviews ─────────────────────────
+
+enum IntegrationProvider {
+  meta
+  google
+
+  @@map("integration_provider")
+}
+
+// Each organisation's Meta (Facebook Page + Instagram) and Google Business Profile connection. Credentials are
+// encrypted with MESSAGING_SECRET_KEY and never returned.
+model GrowthIntegration {
+  id          String              @id @default(uuid(7)) @db.Uuid
+  orgId       String              @map("org_id") @db.Uuid
+  provider    IntegrationProvider
+  status      ChannelStatus       @default(not_connected)
+  config      Json                @default("{}")
+  secret      String?
+  verifiedAt  DateTime?           @map("verified_at") @db.Timestamptz(6)
+  // What the provider reported when checked, for example the Page name.
+  description String?             @db.VarChar(200)
+  lastError   String?             @map("last_error") @db.VarChar(500)
+  updatedById String?             @map("updated_by") @db.Uuid
+  version     Int                 @default(1)
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, provider])
+  @@map("growth_integrations")
+}
+
+// An uploaded image (JPEG, PNG or WebP, at most 5 MB). Served to Meta through a signed, expiring link.
+model MediaAsset {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  fileName    String   @map("file_name") @db.VarChar(200)
+  mimeType    String   @map("mime_type") @db.VarChar(40)
+  size        Int
+  data        Bytes
+  createdById String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation  @relation(fields: [orgId], references: [id])
+  posts        ContentPost[]
+
+  @@map("media_assets")
+}
+
+enum ContentTarget {
+  facebook
+  instagram
+
+  @@map("content_target")
+}
+
+// Reusable post copy. Saving moves the version on; posts record the version they started from.
+model ContentTemplate {
+  id          String          @id @default(uuid(7)) @db.Uuid
+  orgId       String          @map("org_id") @db.Uuid
+  code        String          @db.VarChar(20)
+  title       String          @db.VarChar(120)
+  category    String          @db.VarChar(40)
+  body        String          @db.VarChar(2200)
+  cta         String          @db.VarChar(120)
+  targets     ContentTarget[]
+  archived    Boolean         @default(false)
+  version     Int             @default(1)
+  updatedById String?         @map("updated_by") @db.Uuid
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation  @relation(fields: [orgId], references: [id])
+  updatedBy    User?         @relation("ContentTemplateUpdatedBy", fields: [updatedById], references: [id])
+  posts        ContentPost[]
+
+  @@unique([orgId, code])
+  @@map("content_templates")
+}
+
+// draft → in_review (submitted with a time) → scheduled (approved by a different person) → publishing →
+// published, or failed. Only a draft can be edited; a rejected or failed post goes back to draft.
+enum ContentStatus {
+  draft
+  in_review
+  scheduled
+  publishing
+  published
+  failed
+
+  @@map("content_status")
+}
+
+model ContentPost {
+  id                String          @id @default(uuid(7)) @db.Uuid
+  orgId             String          @map("org_id") @db.Uuid
+  code              String          @db.VarChar(20)
+  branchId          String          @map("branch_id") @db.Uuid
+  title             String          @db.VarChar(120)
+  category          String          @db.VarChar(40)
+  caption           String          @db.VarChar(2200)
+  targets           ContentTarget[]
+  cta               String          @db.VarChar(120)
+  url               String          @db.VarChar(500)
+  altText           String          @map("alt_text") @db.VarChar(1000)
+  mediaId           String?         @map("media_id") @db.Uuid
+  templateId        String?         @map("template_id") @db.Uuid
+  templateVersion   Int?            @map("template_version")
+  scheduledAt       DateTime?       @map("scheduled_at") @db.Timestamptz(6)
+  status            ContentStatus   @default(draft)
+  rightsReviewed    Boolean         @default(false) @map("rights_reviewed")
+  ownerMembershipId String          @map("owner_membership_id") @db.Uuid
+  submittedById     String?         @map("submitted_by") @db.Uuid
+  submittedAt       DateTime?       @map("submitted_at") @db.Timestamptz(6)
+  approvedById      String?         @map("approved_by") @db.Uuid
+  approvedAt        DateTime?       @map("approved_at") @db.Timestamptz(6)
+  // Why it was sent back, when a reviewer rejected it.
+  reviewNote        String?         @map("review_note") @db.VarChar(500)
+  claimedAt         DateTime?       @map("claimed_at") @db.Timestamptz(6)
+  publishedAt       DateTime?       @map("published_at") @db.Timestamptz(6)
+  version           Int             @default(1)
+  createdById       String          @map("created_by") @db.Uuid
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation         @relation(fields: [orgId], references: [id])
+  branch       Branch               @relation(fields: [branchId], references: [id])
+  media        MediaAsset?          @relation(fields: [mediaId], references: [id])
+  template     ContentTemplate?     @relation(fields: [templateId], references: [id])
+  owner        Membership           @relation("ContentOwner", fields: [ownerMembershipId], references: [id])
+  submittedBy  User?                @relation("ContentSubmittedBy", fields: [submittedById], references: [id])
+  approvedBy   User?                @relation("ContentApprovedBy", fields: [approvedById], references: [id])
+  createdBy    User                 @relation("ContentCreatedBy", fields: [createdById], references: [id])
+  publications ContentPublication[]
+  events       ContentEvent[]
+
+  @@unique([orgId, code])
+  @@index([orgId, scheduledAt])
+  @@index([status, scheduledAt])
+  @@map("content_posts")
+}
+
+enum PublicationStatus {
+  pending
+  publishing
+  published
+  failed
+  unknown
+
+  @@map("publication_status")
+}
+
+// The post on one network. `unknown` (a timeout after sending) is never retried automatically.
+model ContentPublication {
+  id             String            @id @default(uuid(7)) @db.Uuid
+  postId         String            @map("post_id") @db.Uuid
+  target         ContentTarget
+  status         PublicationStatus @default(pending)
+  providerPostId String?           @map("provider_post_id") @db.VarChar(200)
+  permalink      String?           @db.VarChar(500)
+  errorCode      String?           @map("error_code") @db.VarChar(80)
+  errorMessage   String?           @map("error_message") @db.VarChar(500)
+  attempts       Int               @default(0)
+  publishedAt    DateTime?         @map("published_at") @db.Timestamptz(6)
+  updatedAt      DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  post ContentPost @relation(fields: [postId], references: [id])
+
+  @@unique([postId, target])
+  @@map("content_publications")
+}
+
+// The post's history: saved, submitted, approved or sent back, published, failed.
+model ContentEvent {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  postId    String   @map("post_id") @db.Uuid
+  kind      String   @db.VarChar(40)
+  text      String   @db.VarChar(1000)
+  actorId   String?  @map("actor_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  post  ContentPost @relation(fields: [postId], references: [id])
+  actor User?       @relation("ContentEventActor", fields: [actorId], references: [id])
+
+  @@index([postId, createdAt])
+  @@map("content_events")
+}
+
+// What the clinic publishes about a branch: address, description, categories, public review link, and the Google
+// Business Profile location it is synced to.
+model BranchProfile {
+  id                String    @id @default(uuid(7)) @db.Uuid
+  orgId             String    @map("org_id") @db.Uuid
+  branchId          String    @unique @map("branch_id") @db.Uuid
+  businessName      String    @map("business_name") @db.VarChar(120)
+  street            String    @db.VarChar(240)
+  city              String    @db.VarChar(80)
+  state             String    @db.VarChar(80)
+  postalCode        String    @map("postal_code") @db.Char(6)
+  country           String    @default("India") @db.VarChar(60)
+  description       String    @default("") @db.VarChar(750)
+  primaryCategory   String    @map("primary_category") @db.VarChar(80)
+  secondaryCategory String?   @map("secondary_category") @db.VarChar(80)
+  phone             String?   @db.VarChar(10)
+  websiteUrl        String?   @map("website_url") @db.VarChar(500)
+  // The public "write a review" link used by review requests.
+  reviewUrl         String?   @map("review_url") @db.VarChar(500)
+  // Google Business Profile location, "locations/1234567890".
+  googleLocation    String?   @map("google_location") @db.VarChar(120)
+  syncedAt          DateTime? @map("synced_at") @db.Timestamptz(6)
+  syncError         String?   @map("sync_error") @db.VarChar(500)
+  reviewsSyncedAt   DateTime? @map("reviews_synced_at") @db.Timestamptz(6)
+  version           Int       @default(1)
+  updatedById       String?   @map("updated_by") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation   @relation(fields: [orgId], references: [id])
+  branch       Branch         @relation(fields: [branchId], references: [id])
+  updatedBy    User?          @relation("BranchProfileUpdatedBy", fields: [updatedById], references: [id])
+  specialHours SpecialHours[]
+
+  @@map("branch_profiles")
+}
+
+// One day's exception to the regular hours: different hours, or closed.
+model SpecialHours {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  profileId String   @map("profile_id") @db.Uuid
+  date      DateTime @db.Date
+  closed    Boolean  @default(false)
+  opensAt   String?  @map("opens_at") @db.VarChar(5)
+  closesAt  String?  @map("closes_at") @db.VarChar(5)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  profile BranchProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, date])
+  @@map("special_hours")
+}
+
+// A public review, as Google reported it. Reviewer names are public display names, never linked to patients.
+model Review {
+  id                String    @id @default(uuid(7)) @db.Uuid
+  orgId             String    @map("org_id") @db.Uuid
+  branchId          String    @map("branch_id") @db.Uuid
+  source            String    @default("google") @db.VarChar(20)
+  providerReviewId  String    @map("provider_review_id") @db.VarChar(300)
+  reviewerName      String    @map("reviewer_name") @db.VarChar(120)
+  rating            Int
+  comment           String?   @db.VarChar(4096)
+  postedAt          DateTime  @map("posted_at") @db.Timestamptz(6)
+  providerUpdatedAt DateTime  @map("provider_updated_at") @db.Timestamptz(6)
+  // The reply currently shown on Google, however it was posted.
+  publicReply       String?   @map("public_reply") @db.VarChar(4096)
+  publicReplyAt     DateTime? @map("public_reply_at") @db.Timestamptz(6)
+  syncedAt          DateTime  @map("synced_at") @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation    @relation(fields: [orgId], references: [id])
+  branch       Branch          @relation(fields: [branchId], references: [id])
+  response     ReviewResponse?
+  notes        ReviewNote[]
+  escalations  Escalation[]
+
+  @@unique([orgId, providerReviewId])
+  @@index([orgId, branchId, postedAt])
+  @@map("reviews")
+}
+
+// draft → in_review → posting (approved by a different person) → posted, or failed (back to draft to fix).
+enum ResponseStatus {
+  draft
+  in_review
+  posting
+  posted
+  failed
+
+  @@map("response_status")
+}
+
+model ReviewResponse {
+  id            String         @id @default(uuid(7)) @db.Uuid
+  reviewId      String         @unique @map("review_id") @db.Uuid
+  text          String         @db.VarChar(4096)
+  status        ResponseStatus @default(draft)
+  submittedById String?        @map("submitted_by") @db.Uuid
+  submittedAt   DateTime?      @map("submitted_at") @db.Timestamptz(6)
+  approvedById  String?        @map("approved_by") @db.Uuid
+  approvedAt    DateTime?      @map("approved_at") @db.Timestamptz(6)
+  postedAt      DateTime?      @map("posted_at") @db.Timestamptz(6)
+  reviewNote    String?        @map("review_note") @db.VarChar(500)
+  errorMessage  String?        @map("error_message") @db.VarChar(500)
+  version       Int            @default(1)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  review      Review @relation(fields: [reviewId], references: [id])
+  submittedBy User?  @relation("ReviewResponseSubmittedBy", fields: [submittedById], references: [id])
+  approvedBy  User?  @relation("ReviewResponseApprovedBy", fields: [approvedById], references: [id])
+
+  @@map("review_responses")
+}
+
+// Internal notes on a review; never public.
+model ReviewNote {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  reviewId  String   @map("review_id") @db.Uuid
+  text      String   @db.VarChar(2000)
+  authorId  String   @map("author_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  review Review @relation(fields: [reviewId], references: [id])
+  author User   @relation("ReviewNoteAuthor", fields: [authorId], references: [id])
+
+  @@index([reviewId, createdAt])
+  @@map("review_notes")
+}
+
+enum EscalationSeverity {
+  low
+  medium
+  high
+
+  @@map("escalation_severity")
+}
+
+enum EscalationStatus {
+  open
+  in_progress
+  resolved
+
+  @@map("escalation_status")
+}
+
+// Operations follow-up on a review. Independent of the public reply: resolving one never posts anything.
+model Escalation {
+  id                String             @id @default(uuid(7)) @db.Uuid
+  orgId             String             @map("org_id") @db.Uuid
+  code              String             @db.VarChar(20)
+  reviewId          String             @map("review_id") @db.Uuid
+  topic             String             @db.VarChar(120)
+  severity          EscalationSeverity
+  ownerMembershipId String             @map("owner_membership_id") @db.Uuid
+  dueAt             DateTime           @map("due_at") @db.Timestamptz(6)
+  status            EscalationStatus   @default(open)
+  note              String             @default("") @db.VarChar(2000)
+  resolvedAt        DateTime?          @map("resolved_at") @db.Timestamptz(6)
+  version           Int                @default(1)
+  createdById       String             @map("created_by") @db.Uuid
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+  review       Review       @relation(fields: [reviewId], references: [id])
+  owner        Membership   @relation("EscalationOwner", fields: [ownerMembershipId], references: [id])
+  createdBy    User         @relation("EscalationCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([orgId, code])
+  @@index([orgId, status, dueAt])
+  @@map("escalations")
 }

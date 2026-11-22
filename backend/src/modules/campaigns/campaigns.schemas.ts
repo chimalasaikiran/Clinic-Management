@@ -96,7 +96,7 @@ export const launchBroadcastSchema = z.object({
   confirm: z.literal(true, { error: 'Confirm the broadcast before sending.' }),
 })
 
-const TRIGGERS = ['no_show', 'lead_not_booked', 'revisit_due'] as const
+const TRIGGERS = ['no_show', 'lead_not_booked', 'revisit_due', 'review_request'] as const
 
 export const workflowSchema = z.object({
   name: text('a workflow name', 120),

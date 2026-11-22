@@ -70,6 +70,7 @@ export class WorkflowsService {
     if (!(await this.channels.connected(orgId, template.channel))) problems.push(`The ${template.channel === 'whatsapp' ? 'WhatsApp' : template.channel === 'sms' ? 'SMS' : 'email'} channel is not connected.`)
     const unfilled = unfilledVariables(templateVariables(template.body), row.variables as Record<string, string>, TRIGGER_VARIABLES[row.trigger])
     if (unfilled.length) problems.push(`Give a value for ${unfilled.map((name) => `{{${name}}}`).join(', ')}.`)
+    if (row.trigger === 'review_request' && !templateVariables(template.body).includes('review_link')) problems.push('A review request template must include {{review_link}}.')
     return problems
   }
 
@@ -273,8 +274,16 @@ export class WorkflowsService {
     const visits = await this.prisma.appointment.findMany({
       where: { orgId, ...branch, status: 'completed', startsAt: window, workflowRuns: { none: { workflowId } } },
       orderBy: { startsAt: 'asc' }, take: BATCH,
-      select: { id: true, startsAt: true, branchId: true, patient: { select: patientContact } },
+      select: { id: true, startsAt: true, branchId: true, patient: { select: patientContact }, branch: { select: { profile: { select: { reviewUrl: true } } } } },
     })
+    // Every completed visit is asked the same way: no filtering by how the visit went.
+    if (trigger === 'review_request') {
+      return visits.map((visit) => {
+        const candidate = this.appointmentCandidate(visit, due(visit.startsAt), false)
+        const link = visit.branch.profile?.reviewUrl
+        return { ...candidate, subjectKey: `review:${visit.id}`, values: { ...candidate.values, ...(link ? { review_link: link } : {}) }, skip: candidate.skip ?? (link ? undefined : 'NO_REVIEW_LINK' as const) }
+      })
+    }
     const rebooked = await this.bookedSince(orgId, visits.map((visit) => ({ patientId: visit.patient.id, after: visit.startsAt, field: 'startsAt' as const, excludeId: visit.id })))
     return visits.map((visit) => this.appointmentCandidate(visit, due(visit.startsAt), rebooked.has(visit.id)))
   }

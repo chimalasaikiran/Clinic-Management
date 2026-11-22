@@ -264,6 +264,22 @@ Amounts are stored in whole paise and rates in basis points. CHECK constraints k
 between 1 and 28, an IFSC and four-digit account ending, months as `YYYY-MM`, positive amounts, 1 to 12 instalments, and
 status, decision, processing and payment timestamps in step with each other.
 
+`prisma/migrations/20261122090000_content_reviews` adds:
+
+| Table | Holds |
+| --- | --- |
+| `growth_integrations` | each organisation's Meta and Google Business Profile connection: status, settings, encrypted credentials, last check |
+| `media_assets` | uploaded post images (JPEG, PNG, WebP, at most 5 MB) |
+| `content_templates` | versioned post copy |
+| `content_posts`, `content_publications`, `content_events` | posts with their submitter and approver, the result on each network, and the post's history |
+| `branch_profiles`, `special_hours` | each branch's public details, review link, Google location and special hours |
+| `reviews`, `review_responses`, `review_notes` | fetched Google reviews, the reply's draft-to-posted path, and internal notes |
+| `escalations` | operations follow-up on reviews |
+
+It also adds the `review_request` workflow trigger. CHECK constraints keep the submitter and approver of a post or
+reply different people, approved posts and replies with an approver, images within type and size, ratings 1–5, and
+special hours with an opening before closing (or closed).
+
 `prisma/migrations/20261121090000_campaigns` adds:
 
 | Table | Holds |
@@ -379,8 +395,8 @@ same, so it never reveals whether an email address has an account.
 | `TRUST_PROXY` | | `0` | number of proxies in front (set `1` behind a load balancer) |
 | `CLINIC_TIMEZONE` | | `Asia/Kolkata` | IANA zone used for appointment dates, slots and daily queue tokens |
 | `MESSAGING_SECRET_KEY` | to connect channels | | 32 random bytes, base64: encrypts each organisation's WhatsApp, SMS and email credentials. Changing it makes saved credentials unreadable |
-| `MESSAGING_WORKER` | | `true` | Send queued messages, start due broadcasts and run workflows from this process |
-| `PUBLIC_API_URL` | for webhooks | | Public https address of this API, shown as the webhook URL (a tunnel in development) |
+| `MESSAGING_WORKER` | | `true` | Send queued messages, start due broadcasts, run workflows, publish approved posts and replies, and fetch Google reviews from this process |
+| `PUBLIC_API_URL` | for webhooks and post images | | Public https address of this API, shown as the webhook URL and used for the signed image links Meta fetches (a tunnel in development) |
 | `REALTIME_DATABASE_URL` | | | Neon **direct** connection string, so live inbox updates reach every API instance |
 
 The backend refuses to start with a missing, placeholder or unsafe value and names the variable.
@@ -830,6 +846,37 @@ restart never sends twice; it stops if its audience rules or template changed si
 only on events falling due after it was switched on, records each event once, skips a patient who has booked again or
 a lead already converted or closed, and pauses itself if its template or channel stops being usable. The worker runs
 every 30 seconds with the messaging worker (`MESSAGING_WORKER`).
+
+### Content, business profiles and reviews (`/v1/content`, `/v1/media`, `/v1/branch-profiles`, `/v1/reviews`, `/v1/integrations`)
+
+Facebook Page and Instagram publishing goes through the Meta Graph API; reviews, replies, the description and special
+hours go through the Google Business Profile APIs. Each organisation connects its own accounts on the Channels screen;
+credentials are encrypted with `MESSAGING_SECRET_KEY` and never returned. Reading needs `growth.view`; drafting,
+approving and syncing need `growth.manage`. **Every public post and review reply needs two people**: whoever submitted it
+cannot approve it (`403 SECOND_PERSON_REQUIRED`, also a database CHECK).
+
+| Endpoint | Does |
+| --- | --- |
+| `GET`, `PUT /v1/integrations/:provider`, `DELETE` | Meta (`pageId`, `instagramAccountId?`, `pageAccessToken`) or Google (`accountId`, `clientId`, `clientSecret`, `refreshToken`), checked with the provider on save (`settings.organisation`). `GET /v1/integrations/google/locations` lists the Google locations for linking branches |
+| `POST /v1/media` | Uploads a post image as the raw body (`Content-Type` JPEG, PNG or WebP, at most 5 MB, checked by its bytes). `GET /v1/media/:id?orgId=` shows it in the admin panel; Meta fetches it from `/v1/media/public/:id` with a signed link that expires after an hour |
+| `GET`, `POST /v1/content`, `GET`, `PATCH /:id` | Posts (`CNT-0001`) for Facebook and/or Instagram with caption, call to action, link, alt text, image and intended time. Only a draft can be edited (`409 CONTENT_LOCKED`) |
+| `POST /v1/content/:id/submit`, `/decision`, `/withdraw` | Submit with a time (Instagram needs an image); a second person approves (needs Meta connected, and `PUBLIC_API_URL` for images) or sends it back with a note; withdraw back to draft before anything is published |
+| `POST /v1/content/:id/retry`, `/publications/:target/resolve` | Publish again only the networks that failed; record what the Page shows for a network whose outcome is unknown |
+| `GET`, `POST /v1/content/templates`, `PATCH /:id` | Versioned post copy; a post records the template version it started from |
+| `GET`, `PUT /v1/branch-profiles/:branchId`, `POST /:branchId/sync` | The branch's public details, review link, Google location and special hours; sync (with `confirm: true`) publishes the description and special hours to Google |
+| `GET /v1/reviews`, `GET /:id`, `GET /report` | Fetched Google reviews with filters (rating, reply state, escalated, dates), and the reputation report (volume, average, distribution, replies, median hours to reply, escalations) |
+| `PUT /v1/reviews/:id/response`, `POST /response/submit`, `/response/decision` | Draft a public reply, submit it (blocked by a privacy check for phone numbers, emails and clinical wording, `422 PRIVACY_CHECK`), and a second person approves it for posting or sends it back |
+| `POST /v1/reviews/:id/notes`, `GET`, `POST /v1/reviews/escalations`, `PATCH /:id` | Internal notes and escalations (owner, severity, due time, status), for `growth.leads` or `growth.manage`; never public |
+| `POST /v1/reviews/sync/:branchId` | Fetches a linked branch's reviews now |
+
+Workers (with `MESSAGING_WORKER`): approved posts are published at their time (each network recorded separately; a
+timeout is *unknown* and never retried automatically); approved replies are posted to Google; each linked branch's
+reviews are fetched every 30 minutes. Review requests are a workflow trigger (`review_request`): every completed visit
+is asked the same way, with the branch's `{{review_link}}`; a branch without one is skipped (`NO_REVIEW_LINK`).
+
+Not done yet: reading Facebook or Instagram comments and messages, changing the business name or address on Google
+(Google re-verifies those), and Google Posts. Replies posted directly on Google appear here on the next fetch.
+
 
 ### Search (`/v1/search`)
 

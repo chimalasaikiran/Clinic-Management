@@ -38,7 +38,7 @@ export const MESSAGING_TRANSPORT = Symbol('MESSAGING_TRANSPORT')
 
 const TIMEOUT_MS = 15_000
 
-async function call(url: string, init: RequestInit): Promise<{ status: number; body: unknown }> {
+export async function call(url: string, init: RequestInit): Promise<{ status: number; body: unknown }> {
   let response: Response
   try {
     response = await fetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) })
@@ -57,13 +57,13 @@ async function call(url: string, init: RequestInit): Promise<{ status: number; b
   return { status: response.status, body }
 }
 
-function httpError(status: number, code: string, message: string) {
+export function httpError(status: number, code: string, message: string) {
   if (status === 401 || status === 403) return new ProviderError('auth', code, message)
   if (status === 429 || status >= 500) return new ProviderError('retryable', code, message)
   return new ProviderError('rejected', code, message)
 }
 
-const clip = (text: string) => text.slice(0, 400)
+export const clip = (text: string) => text.slice(0, 400)
 
 // Meta WhatsApp Cloud API: config { phoneNumberId, graphVersion? }, secrets { accessToken, appSecret }.
 export class WhatsAppCloudProvider implements ChannelProvider {

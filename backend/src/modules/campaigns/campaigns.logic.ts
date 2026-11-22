@@ -121,6 +121,7 @@ export const TRIGGER_LABELS: Record<WorkflowTrigger, string> = {
   no_show: 'Appointment marked no-show',
   lead_not_booked: 'Lead not yet converted',
   revisit_due: 'Visit completed',
+  review_request: 'Visit completed · ask for a review',
 }
 
 // Filled for each event; other variables need a fixed value on the workflow.
@@ -128,6 +129,7 @@ export const TRIGGER_VARIABLES: Record<WorkflowTrigger, string[]> = {
   no_show: ['appointment_date', 'appointment_time'],
   lead_not_booked: ['service_name'],
   revisit_due: ['appointment_date', 'appointment_time'],
+  review_request: ['appointment_date', 'appointment_time', 'review_link'],
 }
 
 // Filled by ClinicOS for everyone.

@@ -16,6 +16,9 @@ import { DashboardModule } from './modules/dashboard/dashboard.module'
 import { LeadsModule } from './modules/leads/leads.module'
 import { MessagingModule } from './modules/messaging/messaging.module'
 import { CampaignsModule } from './modules/campaigns/campaigns.module'
+import { ContentModule } from './modules/content/content.module'
+import { IntegrationsModule } from './modules/integrations/integrations.module'
+import { ReviewsModule } from './modules/reviews/reviews.module'
 import { SearchModule } from './modules/search/search.module'
 import { PayrollModule } from './modules/payroll/payroll.module'
 import { ReportsModule } from './modules/reports/reports.module'
@@ -64,6 +67,9 @@ export class AppModule {
         LeadsModule,
         MessagingModule,
         CampaignsModule,
+        IntegrationsModule,
+        ContentModule,
+        ReviewsModule,
       ],
       providers: [
         // Order matters: authenticate the session first, then check organisation access.

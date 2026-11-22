@@ -3,7 +3,7 @@ import type { MessageChannel, MessageStatus } from '../../generated/prisma/clien
 export const CHANNEL_LABELS: Record<MessageChannel, string> = { whatsapp: 'WhatsApp', sms: 'SMS', email: 'Email' }
 
 // Variables a template may use; ClinicOS fills preferred_name, staff supply the rest when sending.
-export const TEMPLATE_VARIABLES = ['preferred_name', 'appointment_date', 'appointment_time', 'service_name', 'clinic_name'] as const
+export const TEMPLATE_VARIABLES = ['preferred_name', 'appointment_date', 'appointment_time', 'service_name', 'clinic_name', 'review_link'] as const
 
 // Reminders about a patient's own care may use the patient's notification settings; everything else is
 // marketing and needs a recorded opt-in.
@@ -114,7 +114,7 @@ export const inQuietHours = (localMinuteOfDay: number) => localMinuteOfDay >= QU
 export type AutomatedSkip = SendBlock | 'NO_ADDRESS' | 'VARIABLES_MISSING' | 'WEEKLY_CAP'
 
 // Reasons recorded against a skipped person: the sending checks, plus workflow events that no longer apply.
-export type SkipReason = AutomatedSkip | 'ALREADY_BOOKED' | 'LEAD_CLOSED' | 'CONVERTED' | 'PATIENT_INACTIVE'
+export type SkipReason = AutomatedSkip | 'ALREADY_BOOKED' | 'LEAD_CLOSED' | 'CONVERTED' | 'PATIENT_INACTIVE' | 'NO_REVIEW_LINK'
 
 export const SKIP_LABELS: Record<SkipReason, string> = {
   CONSENT_WITHDRAWN: 'Opted out on this channel',
@@ -128,4 +128,5 @@ export const SKIP_LABELS: Record<SkipReason, string> = {
   LEAD_CLOSED: 'Lead closed',
   CONVERTED: 'Lead already converted',
   PATIENT_INACTIVE: 'Patient record inactive',
+  NO_REVIEW_LINK: 'Branch has no review link',
 }

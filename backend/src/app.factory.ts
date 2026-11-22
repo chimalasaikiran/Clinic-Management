@@ -82,6 +82,9 @@ export function configureHttp(app: NestExpressApplication, env: Env, logger: pin
   app.use(cookieParser())
   // rawBody (set when the app is created) keeps the exact bytes, so webhook signatures can be checked.
   app.useBodyParser('json', { limit: '100kb' })
+  // Post images are uploaded as the raw request body (POST /v1/media). Slightly over 5 MB so the service, not the
+  // parser, gives the clear "at most 5 MB" message.
+  app.useBodyParser('raw', { type: ['image/jpeg', 'image/png', 'image/webp'], limit: '5200kb' })
   app.use(originCheck(env.CORS_ORIGINS, sessionCookieName(env)))
   app.enableVersioning({ type: VersioningType.URI })
   app.enableShutdownHooks()
