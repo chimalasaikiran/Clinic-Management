@@ -8,6 +8,7 @@ import { billingFake } from '../../../test/fixtures/billingFake'
 import { apiLead, createLeadsApi, overdueLead } from '../../../test/fixtures/leadsApi'
 import { apiConversation, apiTemplate, createMessagingApi } from '../../../test/fixtures/messagingApi'
 import { apiRun, apiWorkflow, createCampaignsApi } from '../../../test/fixtures/campaignsApi'
+import { apiEscalation, apiPost, apiReview, createContentApi } from '../../../test/fixtures/contentApi'
 import { apiPatient, createPatientsApi } from '../../../test/fixtures/patientsApi'
 import { localToday } from '../../patients/format'
 
@@ -55,12 +56,12 @@ const SCREENS = [
   ['GO-10A Edit segment', pathFor(ROUTES.segmentEdit, { segmentId: 'a-1' }), 'Create/Edit Audience Segment'],
   ['GO-11 Content Calendar', ROUTES.content, 'Content Calendar'],
   ['GO-12 Create content', ROUTES.contentNew, 'Create/Edit Content'],
-  ['GO-12 Edit content', pathFor(ROUTES.contentEdit, { contentId: 'CNT3101' }), 'Create/Edit Content'],
+  ['GO-12 Edit content', pathFor(ROUTES.contentEdit, { contentId: 'post-1' }), 'Create/Edit Content'],
   ['GO-13 Templates', ROUTES.contentTemplates, 'Content Templates'],
-  ['GO-14 Schedule/Publish', pathFor(ROUTES.contentSchedule, { contentId: 'CNT3101' }), 'Schedule/Publish'],
+  ['GO-14 Schedule/Publish', pathFor(ROUTES.contentSchedule, { contentId: 'post-1' }), 'Schedule/Publish'],
   ['GO-15 Business Profile', ROUTES.businessProfile, 'Business Profile & Locations'],
   ['GO-16 Reviews', ROUTES.reviews, 'Reviews & Reputation Register'],
-  ['GO-17 Review Details', pathFor(ROUTES.review, { reviewId: 'REV-DEMO104' }), 'Review Details & Response'],
+  ['GO-17 Review Details', pathFor(ROUTES.review, { reviewId: 'rev-1' }), 'Review Details & Response'],
   ['GO-18 Review Requests', ROUTES.reviewRequests, 'Review Request Workflow'],
   ['GO-19 Escalation', ROUTES.escalations, 'Feedback Escalation'],
   ['GO-20 Reputation', ROUTES.reputation, 'Reputation Reporting'],
@@ -92,7 +93,7 @@ describe('every Growth and Reports screen opens from its route', () => {
   it.each([
     [pathFor(ROUTES.lead, { leadId: 'l-9999' }), 'Lead not found'],
     [pathFor(ROUTES.campaign, { campaignId: 'cmp-9999' }), 'Campaign not found'],
-    [pathFor(ROUTES.review, { reviewId: 'REV-9999' }), 'Review not found'],
+    [pathFor(ROUTES.review, { reviewId: 'rev-9999' }), 'Review not found'],
     [pathFor(ROUTES.conversation, { threadId: 'c-9999' }), 'Conversation not found'],
   ])('shows a not-found page for %s', async (path, title) => {
     renderRoute(path)
@@ -119,10 +120,11 @@ describe('navigation', () => {
     expect(screen.getAllByRole('link', { name: 'Convert Lead' })[0]).toHaveAttribute('href', pathFor(ROUTES.leadConvert, { leadId: 'l-1' }))
   })
 
-  it('links the review, escalation and reporting screens to each other', () => {
+  it('links the review, escalation and reporting screens to each other', async () => {
+    billingFake.useContent(createContentApi({ escalations: [apiEscalation()] }))
     renderRoute(ROUTES.escalations)
     expect(screen.getByRole('link', { name: /Reputation report/ })).toHaveAttribute('href', ROUTES.reputation)
-    expect(screen.getByRole('link', { name: /Source review/ })).toHaveAttribute('href', pathFor(ROUTES.review, { reviewId: 'REV-DEMO102' }))
+    expect(await screen.findByRole('link', { name: /Source review/ })).toHaveAttribute('href', pathFor(ROUTES.review, { reviewId: 'rev-1' }))
   })
 })
 
@@ -347,56 +349,141 @@ describe('campaigns and audiences', () => {
 })
 
 describe('content', () => {
-  it('shows the sample plan on the calendar and switches to the list view', async () => {
+  it('shows live posts on the calendar and switches to the list view', async () => {
     const user = setup()
     renderRoute(ROUTES.content)
 
-    expect(screen.getByRole('button', { name: 'Plan your preventive health check Draft' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Plan your preventive health check Draft' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /^list/i }))
-    expect(screen.getByText('Content in October')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Plan your preventive health check' })).toBeInTheDocument()
   })
 
   it('starts a draft from a template with the template copy filled in', async () => {
     const user = setup()
+    billingFake.useContent(createContentApi({ templates: [{ id: 'tpl-1', code: 'TPL-0001', title: 'Bring your questions to your visit', category: 'Health education', body: 'Write down your questions.', cta: 'Contact the clinic', targets: ['facebook'], archived: false, version: 3, updatedAt: '2026-11-18T05:00:00.000Z', updatedBy: 'Meera Shah' }] }))
     const router = renderRoute(ROUTES.contentTemplates)
 
-    await user.click(screen.getAllByRole('button', { name: /Use template/ })[1])
+    await user.click(await screen.findByRole('button', { name: /Use template/ }))
 
     expect(router.state.location.pathname).toBe(ROUTES.contentNew)
-    expect(screen.getByLabelText(/^Title/)).toHaveValue('Bring your questions to your visit')
-    expect(screen.getByText(/New from template · TPL-EDU01/)).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByLabelText(/^Title/)).toHaveValue('Bring your questions to your visit'))
+    expect(screen.getByText(/New from template · TPL-0001 v3/)).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Instagram' })).not.toBeChecked()
   })
 
-  it('submits a ready draft for review without claiming it is published', async () => {
+  it('submits a draft for review only after both checks, and leaves approval to someone else', async () => {
     const user = setup()
-    renderRoute(pathFor(ROUTES.contentSchedule, { contentId: 'CNT3101' }))
+    const content = billingFake.content
+    renderRoute(pathFor(ROUTES.contentSchedule, { contentId: 'post-1' }))
 
-    expect(screen.getByRole('button', { name: 'Submit for review' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /Publish now/ })).toBeDisabled()
-    for (const label of [/Asset rights/, /Clinical approval recorded/, /Verify content-publish permission/]) await user.click(screen.getByRole('checkbox', { name: label }))
+    const submit = await screen.findByRole('button', { name: 'Submit for review' })
+    expect(submit).toBeDisabled()
+    await user.click(screen.getByRole('checkbox', { name: /rights to use the image/ }))
+    await user.click(screen.getByRole('checkbox', { name: /promises no results/ }))
     await user.click(screen.getByRole('button', { name: 'Submit for review' }))
 
-    expect(screen.getByText('Submitted for internal review')).toBeInTheDocument()
+    expect(await screen.findByText('Waiting for someone else to review')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Approve & schedule' })).not.toBeInTheDocument()
+    expect(content.state.calls.find(([name]) => name === 'submitPost')[2]).toMatchObject({ rightsReviewed: true, version: 1 })
+  })
+
+  it('lets a second person approve or send back a post with a reason', async () => {
+    const user = setup()
+    const content = billingFake.useContent(createContentApi({ posts: [apiPost({ status: 'in_review', submittedBy: 'Priya Nair', submittedById: 'user-2', submittedAt: '2026-11-19T05:00:00.000Z', version: 2 })] }))
+    renderRoute(pathFor(ROUTES.contentSchedule, { contentId: 'post-1' }))
+
+    expect(await screen.findByRole('button', { name: 'Send back to draft' })).toBeDisabled()
+    await fill(user, screen.getByLabelText(/^Note to the author/), 'Remove the word guarantee.')
+    await user.click(screen.getByRole('button', { name: 'Send back to draft' }))
+
+    await waitFor(() => expect(screen.getByText('Sent back to draft with your note.')).toBeInTheDocument())
+    expect(content.state.calls.find(([name]) => name === 'decidePost')[2]).toEqual({ decision: 'reject', note: 'Remove the word guarantee.', version: 2 })
+  })
+
+  it('uploads an image for a new post and saves the draft', async () => {
+    const user = setup()
+    const content = billingFake.content
+    const router = renderRoute(ROUTES.contentNew)
+
+    await fill(user, await screen.findByLabelText(/^Title/), 'Festive hours')
+    await fill(user, screen.getByLabelText(/^Caption/), 'Our festive opening hours.')
+    await fill(user, screen.getByLabelText(/^Call to action/), 'See hours')
+    await fill(user, screen.getByLabelText(/^Destination URL/), 'https://aura.example/hours')
+    await fill(user, screen.getByLabelText(/^Alt text/), 'Card listing the festive hours.')
+    await fill(user, screen.getByLabelText(/^Intended date/), addIsoDays(localToday(), 2))
+    await user.upload(screen.getByLabelText(/^Image/), new File(['png-bytes'], 'hours.png', { type: 'image/png' }))
+    expect(await screen.findByText(/hours\.png/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe(ROUTES.content))
+    expect(content.state.calls.find(([name]) => name === 'createPost')[1]).toMatchObject({ title: 'Festive hours', mediaId: 'media-9', targets: ['facebook', 'instagram'], time: '10:00' })
   })
 })
 
 describe('reviews and messaging', () => {
-  it('blocks a public reply that contains a phone number', async () => {
+  it('blocks a public reply that contains a phone number, then submits a clean one', async () => {
     const user = setup()
-    renderRoute(pathFor(ROUTES.review, { reviewId: 'REV-DEMO104' }))
+    const content = billingFake.content
+    renderRoute(pathFor(ROUTES.review, { reviewId: 'rev-1' }))
 
-    expect(screen.getByRole('button', { name: 'Request approval' })).toBeEnabled()
-    await fill(user, screen.getByLabelText(/^Response draft/), 'Please call me on 9876543210.')
+    await fill(user, await screen.findByLabelText(/^Reply/), 'Please call me on 9876543210.')
+    expect(screen.getByText('Possible personal or clinical detail')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Submit for approval' })).toBeDisabled()
 
-    expect(screen.getByText('Possible personal or clinical detail found')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Request approval' })).toBeDisabled()
+    await fill(user, screen.getByLabelText(/^Reply/), 'Thank you. We have updated our holiday hours on the listing.')
+    await user.click(screen.getByRole('button', { name: 'Save draft' }))
+    await waitFor(() => expect(screen.getByText('Draft saved. It is not posted.')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Submit for approval' })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: 'Submit for approval' }))
+
+    expect(await screen.findByText(/Waiting for someone else to approve/)).toBeInTheDocument()
+    expect(content.state.calls.map(([name]) => name)).toEqual(expect.arrayContaining(['saveResponse', 'submitResponse']))
   })
 
-  it('computes the reputation metrics from the sample reviews', () => {
+  it('opens an internal escalation from a review', async () => {
+    const user = setup()
+    const content = billingFake.content
+    renderRoute(pathFor(ROUTES.review, { reviewId: 'rev-1' }))
+
+    await waitFor(() => expect(screen.getByLabelText(/^Owner/)).toHaveValue('m-1'))
+    await user.click(screen.getByRole('button', { name: 'Open escalation' }))
+    await waitFor(() => expect(screen.getByText('Escalation opened.')).toBeInTheDocument())
+    expect(content.state.calls.find(([name]) => name === 'createEscalation')[1]).toMatchObject({ reviewId: 'rev-1', topic: 'Holiday hours were unclear on the listing', severity: 'high', ownerMembershipId: 'm-1' })
+  })
+
+  it('says why the register is empty when Google is not connected', async () => {
+    billingFake.useContent(createContentApi({ reviews: [], integrations: { meta: 'connected', google: 'not_connected' } }))
+    renderRoute(ROUTES.reviews)
+    expect(await screen.findByText('Google Business Profile is not connected')).toBeInTheDocument()
+    expect(screen.getByText('No reviews have been fetched yet.')).toBeInTheDocument()
+  })
+
+  it('reports reputation from the fetched reviews with their denominators', async () => {
+    billingFake.useContent(createContentApi({ reviews: [apiReview(), apiReview({ id: 'rev-2', rating: 5, publicReply: 'Thank you!', publicReplyAt: '2026-11-18T12:00:00.000Z' })] }))
     renderRoute(ROUTES.reputation)
-    expect(screen.getByText('4 examples')).toBeInTheDocument()
-    expect(screen.getByText('3.5 / 5')).toBeInTheDocument()
-    expect(screen.getByText('0 of 4')).toBeInTheDocument()
+    expect(await screen.findByText('3.5 / 5')).toBeInTheDocument()
+    expect(screen.getByText('1 of 2')).toBeInTheDocument()
+  })
+
+  it('saves the branch profile and syncs it to Google only after confirming', async () => {
+    const user = setup()
+    const content = billingFake.content
+    renderRoute(ROUTES.businessProfile)
+
+    await fill(user, await screen.findByLabelText(/^Street address/), 'Plot 42, Road 36')
+    await fill(user, screen.getByLabelText(/^PIN code/), '500033')
+    await user.selectOptions(screen.getByLabelText(/^Primary category/), 'Medical clinic')
+    await waitFor(() => expect(within(screen.getByLabelText(/^Google location/)).getAllByRole('option')).toHaveLength(2))
+    await user.selectOptions(screen.getByLabelText(/^Google location/), 'locations/1234567890')
+    await fill(user, screen.getByLabelText(/^Public review link/), 'https://g.page/r/aura/review')
+    await user.click(screen.getByRole('button', { name: 'Save profile' }))
+
+    const sync = await screen.findByRole('button', { name: 'Sync to Google' })
+    expect(sync).toBeDisabled()
+    await user.click(screen.getByRole('checkbox', { name: /details are correct for the public listing/ }))
+    await user.click(sync)
+    await waitFor(() => expect(content.state.calls.find(([name]) => name === 'syncProfile')).toEqual(['syncProfile', 'b-main', 1]))
+    expect(content.state.calls.find(([name]) => name === 'saveProfile')[2]).toMatchObject({ street: 'Plot 42, Road 36', postalCode: '500033', googleLocation: 'locations/1234567890', reviewUrl: 'https://g.page/r/aura/review' })
   })
 
   it('rejects a template variable that is not on the allowlist', async () => {
@@ -420,7 +507,7 @@ describe('reviews and messaging', () => {
     await fill(user, screen.getByLabelText(/^Change reason/), 'Approved by Meta')
     await user.click(screen.getByRole('button', { name: 'Save as new version' }))
 
-    expect(await screen.findByText('Saved MT-0001 as v2.')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('Saved MT-0001 as v2.')).toBeInTheDocument())
     expect(messaging.state.calls.find(([name]) => name === 'updateTemplate')[2]).toMatchObject({ status: 'approved', providerRef: 'follow_up_v1', changeNote: 'Approved by Meta', version: 1 })
   })
 
@@ -581,7 +668,7 @@ describe('workflows', () => {
     expect(retry).toBeDisabled()
     for (const gate of screen.getAllByRole('checkbox')) await user.click(gate)
     await user.click(retry)
-    expect(await screen.findByText('Queued again. Its status updates as the provider reports it.')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('Queued again. Its status updates as the provider reports it.')).toBeInTheDocument())
     expect(messaging.state.calls.map(([name]) => name)).toEqual(expect.arrayContaining(['resolve', 'retry']))
   })
 })

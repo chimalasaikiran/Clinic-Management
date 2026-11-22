@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import ActionButton from '../../../components/workspace/ActionButton'
 import { SelectInput, TextInput } from '../../../components/workspace/FormControls'
 import StatusPill from '../../../components/workspace/StatusPill'
@@ -18,9 +18,9 @@ import { CHANNELS } from '../messagingView'
 import { useLeadContext } from '../useLeads'
 
 // Filled for each event; the rest need a fixed value.
-const EVENT_VARIABLES = { no_show: ['appointment_date', 'appointment_time'], lead_not_booked: ['service_name'], revisit_due: ['appointment_date', 'appointment_time'] }
+const EVENT_VARIABLES = { no_show: ['appointment_date', 'appointment_time'], lead_not_booked: ['service_name'], revisit_due: ['appointment_date', 'appointment_time'], review_request: ['appointment_date', 'appointment_time', 'review_link'] }
 const AUTOMATIC = ['preferred_name', 'clinic_name']
-const EXAMPLE = { preferred_name: 'Ananya', clinic_name: 'your clinic', appointment_date: '27 Nov 2026', appointment_time: '10:30 am', service_name: 'knee physiotherapy' }
+const EXAMPLE = { preferred_name: 'Ananya', clinic_name: 'your clinic', appointment_date: '27 Nov 2026', appointment_time: '10:30 am', service_name: 'knee physiotherapy', review_link: 'https://g.page/r/your-branch/review' }
 const SAFEGUARDS = ['Only events that fall due after switching on are acted on, never history.', 'Each person is checked for an opt-out, channel permission and the weekly limit before the message is queued.', 'A patient who has booked again, or a lead already converted or closed, is skipped and the reason recorded.', 'Nothing is queued between 9 pm and 9 am; it waits until morning.']
 
 export default function WorkflowFormPage() {
@@ -48,10 +48,11 @@ function WorkflowForm({ workflow, reload }) {
   const { state } = useLocation()
   const { can, organisation } = useAuth()
   const context = useLeadContext()
+  const [params] = useSearchParams()
   const owners = useApiResource(() => campaignsApi.owners(), 'campaign-owners').data ?? []
   const templates = useApiResource(() => messagingApi.templates(), 'templates').data ?? []
   const orgWide = organisation?.branchScope === 'all'
-  const trigger0 = workflow?.trigger ?? 'no_show'
+  const trigger0 = workflow?.trigger ?? (TRIGGERS[params.get('trigger')] ? params.get('trigger') : 'no_show')
   const unit0 = workflow && workflow.delayHours % 24 !== 0 ? 'hours' : workflow ? 'days' : TRIGGER_UNIT[trigger0]
   const [values, setValues] = useState({
     name: workflow?.name ?? '', trigger: trigger0, delay: workflow ? String(unit0 === 'days' ? workflow.delayHours / 24 : workflow.delayHours) : unit0 === 'days' ? '2' : '4', unit: unit0,
@@ -116,7 +117,7 @@ function WorkflowForm({ workflow, reload }) {
               <div className="sm:col-span-2"><TextInput label="Workflow name" required value={values.name} onChange={(event) => set('name', event.target.value)} error={errors.name} /></div>
               <SelectInput label="Trigger" required value={values.trigger} onChange={(event) => { set('trigger', event.target.value); set('unit', TRIGGER_UNIT[event.target.value]) }} options={Object.entries(TRIGGERS).map(([value, label]) => ({ value, label }))} />
               <SelectInput label="Owner" required value={owner} onChange={(event) => set('ownerMembershipId', event.target.value)} options={owners.map((entry) => ({ value: entry.membershipId, label: entry.name }))} error={errors.ownerMembershipId} />
-              <TextInput label="Send after" required inputMode="numeric" value={values.delay} onChange={(event) => set('delay', event.target.value.replace(/\D/g, ''))} error={errors.delayHours} hint={values.trigger === 'no_show' ? 'After the appointment is marked no-show' : values.trigger === 'lead_not_booked' ? 'After the lead was recorded, if still not converted' : 'After the completed visit'} />
+              <TextInput label="Send after" required inputMode="numeric" value={values.delay} onChange={(event) => set('delay', event.target.value.replace(/\D/g, ''))} error={errors.delayHours} hint={values.trigger === 'no_show' ? 'After the appointment is marked no-show' : values.trigger === 'lead_not_booked' ? 'After the lead was recorded, if still not converted' : values.trigger === 'review_request' ? 'After the completed visit; every visit is asked the same way' : 'After the completed visit'} />
               <SelectInput label="Unit" value={values.unit} onChange={(event) => set('unit', event.target.value)} options={[{ value: 'hours', label: 'Hours' }, { value: 'days', label: 'Days' }]} />
               <SelectInput label="Branch" required value={values.branchId} onChange={(event) => set('branchId', event.target.value)} options={[...(orgWide ? [{ value: '', label: 'All branches' }] : []), ...context.branches.map((branch) => ({ value: branch.id, label: branch.name }))]} error={errors.branchId} />
               <TextInput label="Weekly limit per person" inputMode="numeric" value={values.weeklyCap} onChange={(event) => set('weeklyCap', event.target.value.replace(/\D/g, ''))} error={errors.weeklyCap} hint="Automated messages in 7 days, counting broadcasts" />

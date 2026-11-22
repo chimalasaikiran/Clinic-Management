@@ -3,6 +3,7 @@ import { cleanup, configure } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
 import { createBillingApi } from './fixtures/billingApi'
 import { createCampaignsApi } from './fixtures/campaignsApi'
+import { createContentApi } from './fixtures/contentApi'
 import { billingFake } from './fixtures/billingFake'
 import { createDashboardApi } from './fixtures/dashboardApi'
 import { createInventoryApi } from './fixtures/inventoryApi'
@@ -51,6 +52,10 @@ vi.mock('../features/growth/campaignsApi', () => ({
   campaignsApi: new Proxy({}, { get: (_, method) => (...args) => billingFake.campaigns.api[method](...args) }),
 }))
 
+vi.mock('../features/growth/contentApi', () => ({
+  contentApi: new Proxy({}, { get: (_, method) => (...args) => billingFake.content.api[method](...args) }),
+}))
+
 vi.mock('../features/payroll/api', () => ({
   payrollApi: new Proxy({}, { get: (_, method) => (...args) => billingFake.payroll.api[method](...args) }),
 }))
@@ -65,6 +70,7 @@ beforeEach(() => {
   billingFake.useLeads(createLeadsApi())
   billingFake.useMessaging(createMessagingApi())
   billingFake.useCampaigns(createCampaignsApi())
+  billingFake.useContent(createContentApi())
   localStorage.clear()
 })
 

@@ -1,72 +1,73 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import ActionButton from '../../../components/workspace/ActionButton'
-import { SelectInput, TextInput } from '../../../components/workspace/FormControls'
 import StatusPill from '../../../components/workspace/StatusPill'
 import { Banner, Section } from '../../../components/workspace/RecordKit'
-import { ROUTES } from '../../../config/routes'
-import { Check } from '../../patients/components/parts'
+import { pathFor, ROUTES } from '../../../config/routes'
+import { useApiResource } from '../../../hooks/useApiResource'
+import { useAuth } from '../../auth/context/useAuth'
+import LoadingState from '../../patients/components/LoadingState'
 import GrowthFrame, { GrowthFooter } from '../components/GrowthFrame'
-import { CHANNEL_FORMATS, GROWTH_BRANCH } from '../constants'
-import { useGrowth } from '../context/growthContext'
+import { campaignsApi } from '../campaignsApi'
+import { WORKFLOW_STATUSES, WORKFLOW_TONE } from '../campaignsView'
+import { contentApi } from '../contentApi'
+import { when } from '../format'
+import { renderTemplate } from '../growthLogic'
+import { stampOf } from '../leadsView'
+import { CHANNELS } from '../messagingView'
+import { useLeadContext } from '../useLeads'
 
-const TRIGGERS = ['Operational encounter completion event, excluding cancelled records', 'Appointment marked completed, excluding no-shows', 'Visit closed at the front desk']
-const READINESS = [['persisted', 'Persisted version & scoped access'], ['profile', 'Verified business profile and public review link'], ['template', 'Approved message template for the channel'], ['consent', 'Verified channel consent, preferences and suppression']]
+const EXAMPLE = { preferred_name: 'Ananya', clinic_name: 'your clinic', appointment_date: '27 Nov 2026', appointment_time: '10:30 am' }
 
+// Review requests are a workflow: after a completed visit, an approved template with the branch's public review link.
 export default function ReviewRequestPage() {
-  const { data, setSingle } = useGrowth()
-  const navigate = useNavigate()
-  const saved = data.reviewRequest
-  const [values, setValues] = useState(saved)
-  const [checks, setChecks] = useState({ persisted: false, profile: false, template: false, consent: false })
-  const [message, setMessage] = useState('')
-  const template = data.messageTemplates.find((entry) => entry.id === values.template)
-  const dirty = Object.keys(values).some((key) => values[key] !== saved[key])
-  const delayError = !(Number(values.delay) >= 0) || values.delay === '' ? 'Enter the delay in hours.' : undefined
-  const set = (name, value) => { setValues((current) => ({ ...current, [name]: value })); setMessage('') }
-
-  const saveDraft = () => {
-    if (delayError) return
-    setSingle('reviewRequest', { ...values, version: saved.version + (dirty ? 1 : 0) })
-    setMessage(`Draft saved as v${saved.version + (dirty ? 1 : 0)}. The workflow stays Disabled; nothing is sent.`)
-  }
+  const { can } = useAuth()
+  const context = useLeadContext()
+  const workflows = useApiResource(() => campaignsApi.workflows(), 'workflows')
+  const branchId = context.branchId || context.branches[0]?.id || ''
+  const profile = useApiResource(() => (branchId ? contentApi.profile(branchId) : Promise.resolve(null)), `profile:${branchId}`)
+  const requests = (workflows.data ?? []).filter((workflow) => workflow.trigger === 'review_request')
+  const runs = useApiResource(() => (requests[0] ? campaignsApi.runs({ workflowId: requests[0].id, pageSize: 10 }) : Promise.resolve(null)), `review-runs:${requests[0]?.id ?? ''}`)
+  const link = profile.data?.profile.reviewUrl ?? null
+  const active = requests.find((workflow) => workflow.status === 'active')
+  const manage = can('growth.manage')
 
   return (
-    <GrowthFrame back={{ to: ROUTES.reviews, label: 'Back to reviews · GO16 · Filters & scroll retained' }} crumb="Owner Panel / Growth OS / Review Requests" code="GO-18" title="Review Request Workflow" description="Configure optional, honest feedback requests. Saving, activation, sending and delivery confirmation are separate." badge={<StatusPill tone="warning">Disabled · draft edit</StatusPill>} context={[`Record branch · ${GROWTH_BRANCH.name} · ${GROWTH_BRANCH.code}`, 'Return keeps the request-workflow token and unsaved configuration']} sample="Sample data · Live role, branch permissions and integrations are not verified">
-      <Banner tone="warning" title={`${values.id} · saved baseline v${saved.version} is ${saved.status}`} className="mb-6">Owner {values.owner} · {GROWTH_BRANCH.name}. This is draft configuration, not activation evidence. No recipients are evaluated and no sends occur.</Banner>
-      {message && <Banner tone="brand" title={message} className="mb-6" />}
+    <GrowthFrame back={{ to: ROUTES.reviews, label: 'Back to reviews · GO16' }} crumb="Owner Panel / Growth OS / Review Requests" code="GO-18" title="Review Request Workflow" description="Ask for honest feedback after a completed visit, with the branch’s public review link. Every visit is asked the same way." badge={<StatusPill tone={active ? 'success' : 'warning'}>{active ? 'On' : 'Off'}</StatusPill>} context={[context.line, 'Review requests run as a workflow with the same permission, quiet-hours and weekly-limit rules']} today={context.today} sample="Live records · Sent through the connected messaging channel">
+      <Banner tone="brand" title="No review gating" className="mb-6">Requests go to every completed visit, never only to people expected to be happy. They offer the public review link and do not ask for a rating first. Nothing is offered in return.</Banner>
       <div className="mb-6 grid items-start gap-6 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
-          <Section title="Trigger & schedule" aside={`${values.id} · * Required`}>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <TextInput label="Branch" required value={`${GROWTH_BRANCH.name} · ${GROWTH_BRANCH.code}`} readOnly disabled hint="Per-record branch; the global shell stays All locations (3)" />
-              <TextInput label="Owner" required value={values.owner} readOnly disabled />
-              <div className="sm:col-span-2"><SelectInput label="Proposed trigger · integration dependent" required value={values.trigger} onChange={(event) => set('trigger', event.target.value)} options={TRIGGERS} hint="Only if supported by a verified event source. No clinical content is exposed to the provider." /></div>
-              <TextInput label="Delay after verified event (hours)" required inputMode="numeric" value={values.delay} onChange={(event) => set('delay', event.target.value.replace(/\D/g, ''))} error={delayError} />
-              <TextInput label="Timezone" required value={values.timezone} readOnly disabled />
-            </div>
-            <Banner tone="brand" title="Audience-neutral trigger · no review gating" className="mt-4">Do not select only positive experiences, pre-screen sentiment or exclude complaint escalations. Public review and private contact options are offered equally; no incentives.</Banner>
+          <Section title="Review-request workflows" aside={`${requests.length} set up`}>
+            {!workflows.data ? <LoadingState label="Loading workflows…" error={workflows.error} onRetry={workflows.reload} /> : requests.length === 0 ? <p className="text-xs text-on-surface-variant">No review-request workflow yet. Create one: choose an approved “Review request” template that includes {'{{review_link}}'}, and how long after the visit to send it.</p> : (
+              <ul className="divide-y divide-slate-100 text-xs">{requests.map((workflow) => (
+                <li key={workflow.id} className="py-3">
+                  <p className="flex items-center justify-between"><Link to={pathFor(ROUTES.workflowEdit, { workflowId: workflow.id })} className="text-[13px] font-semibold text-brand hover:underline">{workflow.code} · {workflow.name}</Link><StatusPill tone={WORKFLOW_TONE[workflow.status]}>{WORKFLOW_STATUSES[workflow.status]}</StatusPill></p>
+                  <p className="mt-1 text-on-surface-variant">{workflow.delayLabel} after the visit · {workflow.branch?.name ?? 'All branches'} · {workflow.template ? `${workflow.template.code} by ${CHANNELS[workflow.template.channel]}` : 'No template'} · at most {workflow.weeklyCap} a week per person</p>
+                  {workflow.problems.length > 0 && <p className="mt-1 text-amber-700">{workflow.problems.join(' ')}</p>}
+                  <p className="mt-1 text-outline">Last 7 days: {workflow.lastWeek.queued} sent · {workflow.lastWeek.skipped} skipped</p>
+                </li>))}</ul>
+            )}
+            {manage && <ActionButton className="mt-4" variant="brand" to={`${ROUTES.workflowNew}?trigger=review_request`}>Create review-request workflow → GO28</ActionButton>}
           </Section>
-          <Section title="Channel & approved template" aside="Integration dependent">
-            <div className="grid gap-4 sm:grid-cols-2"><SelectInput label="Primary channel · proposed" required value={values.channel} onChange={(event) => set('channel', event.target.value)} options={CHANNEL_FORMATS} hint="Provider/channel authorization unverified" /><SelectInput label="SMS fallback" value={values.fallback} onChange={(event) => set('fallback', event.target.value)} options={['OFF', 'ON']} hint="Requires separate consent and configuration" /><div className="sm:col-span-2"><SelectInput label="Approved-template selector" required value={values.template} onChange={(event) => set('template', event.target.value)} options={data.messageTemplates.filter((entry) => entry.category === 'Review request').map((entry) => entry.id)} hint="No approved template is verified for this channel — approval required" /></div></div>
+          <Section title="Recent requests" aside={requests[0] ? requests[0].code : 'None'}>
+            {!requests[0] ? <p className="text-xs text-outline">Entries appear once a review-request workflow is on.</p> : !runs.data ? <LoadingState label="Loading…" error={runs.error} /> : (
+              <ul className="space-y-2 text-xs">{runs.data.data.map((run) => <li key={run.id} className="flex justify-between gap-3"><span>{when(stampOf(run.createdAt))} · {run.patient?.fullName ?? 'Patient'}</span><span className={run.outcome === 'queued' ? 'text-brand' : 'text-outline'}>{run.outcome === 'queued' ? 'Request queued' : run.skipLabel}</span></li>)}{!runs.data.data.length && <li className="text-outline">No completed visits have come due yet.</li>}</ul>
+            )}
+            <Link to={ROUTES.workflowExecutions} className="mt-3 inline-block text-xs font-semibold text-brand hover:underline">All workflow events → GO29</Link>
           </Section>
         </div>
         <div className="space-y-6">
-          <Section title="Message preview" aside="No recipient">
-            <div className="rounded-2xl bg-surface-low p-4"><p className="text-sm font-semibold">Aura Health</p><p className="text-[11px] text-outline">{values.channel} proposed · {template?.id ?? 'No template'} v{template?.version ?? 1}</p><p className="mt-3 rounded-xl bg-white p-4 text-sm leading-6">{template?.body ?? 'Select a template to preview.'}<span className="mt-3 block text-amber-700">Review link not verified — connect and verify the branch profile before sending.</span></p></div>
-            <p className="mt-3 text-[11px] text-outline">No recipient, phone number, consent, timestamp or delivery tick is shown. Draft text needs template approval.</p>
+          <Section title="Message preview" aside="Example values">
+            {active?.template ? <p className="rounded-xl bg-surface-low p-4 text-sm leading-6">{renderTemplate(active.template.body, { ...EXAMPLE, review_link: link ?? '{{review_link}}' })}</p> : <p className="text-xs text-outline">Switch a review-request workflow on to preview its message.</p>}
           </Section>
-          <Section title="Activation readiness" aside="Blocked">
-            <div className="space-y-3">{READINESS.map(([key, label]) => <Check key={key} checked={checks[key]} onChange={(event) => setChecks((current) => ({ ...current, [key]: event.target.checked }))} label={label} />)}</div>
-            <ActionButton className="mt-4" disabled title="Activation needs a verified channel connection and approved template">Activate workflow</ActionButton>
-            <p className="mt-2 text-[11px] text-outline">Activation stays blocked until a channel connection is verified. Ticking a readiness item does not enable sending.</p>
+          <Section title="Readiness" aside={profile.data?.branch.name ?? ''}>
+            <ul className="space-y-2 text-xs">
+              <li className={link ? 'text-brand' : 'text-amber-700'}>{link ? '✓' : '—'} Public review link {link ? <span className="break-all text-outline">· {link}</span> : '· add it on the Business Profile screen'}</li>
+              <li className={active ? 'text-brand' : 'text-amber-700'}>{active ? '✓' : '—'} A review-request workflow is on</li>
+              <li className="text-on-surface-variant">Each person needs recorded permission for the channel; without it the visit is skipped and the reason recorded.</li>
+            </ul>
+            <ActionButton className="mt-4" to={ROUTES.businessProfile}>Business profile · GO15</ActionButton>
           </Section>
         </div>
-      </div>
-      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-white px-5 py-4">
-        <p className="min-w-60 flex-1 text-xs text-outline"><strong className="block text-[13px] text-on-surface">Save draft configuration</strong>Saving stores configuration only. The workflow remains Disabled.</p>
-        <ActionButton onClick={() => navigate(ROUTES.businessProfile)}>Business profile · GO15</ActionButton>
-        <ActionButton variant="brand" disabled={!dirty} onClick={saveDraft}>Save draft</ActionButton>
       </div>
       <GrowthFooter code="GO-18" back={{ to: ROUTES.reviews, label: 'Back to reviews · GO16' }} />
     </GrowthFrame>

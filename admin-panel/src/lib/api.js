@@ -27,6 +27,9 @@ const SESSION_ENDED = new Set(['SESSION_INVALID', 'SESSION_EXPIRED', 'ACCOUNT_DI
 let session = { getOrgId: () => null, onSessionEnded: () => {} }
 
 // Wired up by AuthProvider so requests carry the active organisation and a lost session is noticed.
+// The active organisation, for addresses that cannot carry the header (image tags, event streams).
+export const currentOrgId = () => session.getOrgId()
+
 export function configureApi(handlers) {
   session = { ...session, ...handlers }
 }
@@ -40,10 +43,12 @@ async function errorFrom(response) {
 
 // The session lives in an HttpOnly cookie set by the backend; `credentials: 'include'` sends it, and
 // JavaScript never sees it. `org: false` for calls that are not about one organisation. `meta: true` returns
-// { data, meta } for list endpoints that report paging.
-export async function api(path, { method = 'GET', body, org = true, meta = false } = {}) {
-  const headers = { Accept: 'application/json' }
-  if (body !== undefined) headers['Content-Type'] = 'application/json'
+// { data, meta } for list endpoints that report paging. A Blob or File body (an image upload) is sent as it is,
+// with its own type; `headers` adds request headers such as the file name.
+export async function api(path, { method = 'GET', body, org = true, meta = false, headers: extra = {} } = {}) {
+  const raw = typeof Blob !== 'undefined' && body instanceof Blob
+  const headers = { Accept: 'application/json', ...extra }
+  if (body !== undefined) headers['Content-Type'] = raw ? body.type : 'application/json'
   const orgId = org ? session.getOrgId() : null
   if (orgId) headers['X-Org-Id'] = orgId
 
@@ -54,7 +59,7 @@ export async function api(path, { method = 'GET', body, org = true, meta = false
     response = await fetch(`${BASE_URL}${path}`, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
       credentials: 'include',
       signal: controller.signal,
     })

@@ -12,6 +12,7 @@ import { Check } from '../../patients/components/parts'
 import GrowthFrame, { GrowthFooter } from '../components/GrowthFrame'
 import { when } from '../format'
 import { stampOf } from '../leadsView'
+import { contentApi } from '../contentApi'
 import { messagingApi } from '../messagingApi'
 import { CHANNEL_STATUS, CHANNELS } from '../messagingView'
 import { useLeadContext } from '../useLeads'
@@ -48,7 +49,7 @@ export default function ChannelConfigPage() {
   const connected = list.filter((entry) => entry.status === 'connected').length
 
   return (
-    <GrowthFrame back={{ to: ROUTES.messageTemplates, label: 'Message templates · GO23' }} crumb="Owner Panel / Growth OS / Channel Configuration" code="GO-25" title="Channel / Integration Configuration" description="Connect the clinic’s WhatsApp number, SMS sender and mail server. Nothing is sent on a channel until it is connected and checked." badge={<StatusPill tone={connected ? 'success' : 'warning'}>{admin && channels.data ? `${connected} of 3 connected` : 'Administrators only'}</StatusPill>} context={[context.line, 'Credentials are encrypted and never shown again after saving']} today={context.today} sample="Live configuration · Each organisation connects its own accounts">
+    <GrowthFrame back={{ to: ROUTES.messageTemplates, label: 'Message templates · GO23' }} crumb="Owner Panel / Growth OS / Channel Configuration" code="GO-25" title="Channel / Integration Configuration" description="Connect the clinic’s WhatsApp number, SMS sender, mail server, Facebook Page and Google Business Profile. Nothing is sent or published until a connection is checked." badge={<StatusPill tone={connected ? 'success' : 'warning'}>{admin && channels.data ? `${connected} of 3 connected` : 'Administrators only'}</StatusPill>} context={[context.line, 'Credentials are encrypted and never shown again after saving']} today={context.today} sample="Live configuration · Each organisation connects its own accounts">
       {!admin && <Banner tone="warning" title="Only organisation administrators can view or change channels" className="mb-6">Ask someone with “Manage organization settings” to connect WhatsApp, SMS or email.</Banner>}
       {admin && !channels.data && <LoadingState label="Loading channels…" error={channels.error} onRetry={channels.reload} />}
       {admin && channels.data && (
@@ -68,6 +69,7 @@ export default function ChannelConfigPage() {
           {selected && <ChannelForm key={`${selected.channel}:${selected.version}`} channel={selected} onSaved={channels.reload} setMessage={setMessage} />}
         </>
       )}
+      {admin && <Integrations />}
       <GrowthFooter code="GO-25" back={{ to: ROUTES.messageTemplates, label: 'Message templates · GO23' }} />
     </GrowthFrame>
   )
@@ -123,6 +125,90 @@ function ChannelForm({ channel, onSaved, setMessage }) {
           <ul className="space-y-2 text-xs">{CAPABILITIES[name].map(([capability, supported]) => <li key={capability} className={supported ? 'text-brand' : 'text-outline'}>{supported ? '✓' : '—'} {capability}</li>)}</ul>
         </Section>
         <Section title="Setting it up" aside="Step by step"><ol className="list-decimal space-y-2 pl-4 text-xs leading-5 text-on-surface-variant">{STEPS[name].map((step) => <li key={step}>{step}</li>)}</ol></Section>
+      </div>
+    </div>
+  )
+}
+
+// ─── Publishing and reviews: Meta (Facebook Page + Instagram) and Google Business Profile ───
+
+const PROVIDERS = { meta: 'Facebook & Instagram', google: 'Google Business Profile' }
+const PROVIDER_FIELDS = {
+  meta: [['pageId', 'Facebook Page ID', 'Page › About › Page transparency, or Meta Business Suite'], ['instagramAccountId', 'Instagram professional account ID', 'Optional · linked to the Page; needed to post to Instagram'], ['pageAccessToken', 'Page access token', 'A long-lived Page token with pages_manage_posts and instagram_content_publish', true]],
+  google: [['accountId', 'Business Profile account ID', 'The number in accounts/… for the account that manages your locations'], ['clientId', 'OAuth client ID', 'Google Cloud › APIs & Services › Credentials'], ['clientSecret', 'OAuth client secret', '', true], ['refreshToken', 'Refresh token', 'From authorising the client with the business.manage scope', true]],
+}
+const PROVIDER_STEPS = {
+  meta: ['Link the clinic’s Instagram professional account to its Facebook Page.', 'In a Meta app, request pages_manage_posts, pages_read_engagement and instagram_content_publish, then generate a long-lived Page access token.', 'Enter the Page ID, Instagram account ID and token here and save; ClinicOS checks them with Meta.', 'Set PUBLIC_API_URL in backend.env: Instagram fetches post images from it.'],
+  google: ['In Google Cloud, enable the Business Profile APIs (approval from Google can take a few weeks).', 'Create an OAuth client and authorise it once with the business.manage scope to get a refresh token.', 'Enter the account ID, client ID, client secret and refresh token here and save.', 'On the Business Profile screen, link each branch to its Google location.'],
+}
+const CAN_DO = {
+  meta: [['Publish approved posts to the Facebook Page', true], ['Publish approved image posts to Instagram', true], ['Read comments or messages', false]],
+  google: [['Fetch reviews every 30 minutes', true], ['Post approved replies', true], ['Publish the description and special hours', true], ['Change the business name or address', false]],
+}
+
+function Integrations() {
+  const integrations = useApiResource(() => contentApi.integrations(), 'integrations')
+  const [selectedId, setSelectedId] = useState('meta')
+  const [message, setMessage] = useState(null)
+  const list = integrations.data ?? []
+  const selected = list.find((entry) => entry.provider === selectedId)
+  return (
+    <>
+      <h2 className="mt-8 mb-3 text-[17px] font-semibold">Publishing and reviews</h2>
+      {!integrations.data ? <LoadingState label="Loading accounts…" error={integrations.error} onRetry={integrations.reload} /> : (
+        <>
+          <div role="radiogroup" aria-label="Account" className="mb-6 grid gap-4 md:grid-cols-2">{list.map((entry) => {
+            const [label, tone] = CHANNEL_STATUS[entry.status]
+            return (
+              <button key={entry.provider} type="button" role="radio" aria-checked={selectedId === entry.provider} onClick={() => { setSelectedId(entry.provider); setMessage(null) }} className={cn('rounded-md border bg-white p-5 text-left text-xs', selectedId === entry.provider ? 'border-2 border-brand' : 'border-slate-200')}>
+                <p className="flex justify-between"><strong className="text-[17px]">{PROVIDERS[entry.provider]}</strong><span className="text-brand">{selectedId === entry.provider ? 'Selected' : ''}</span></p>
+                <StatusPill tone={tone} className="my-3">{label}</StatusPill>
+                <p className="leading-5">{entry.status === 'connected' ? `${entry.description ?? 'Connected'} · checked ${when(stampOf(entry.verifiedAt))}` : entry.lastError ?? 'Not set up yet.'}</p>
+              </button>
+            )
+          })}</div>
+          {message && <Banner tone={message.tone} title={message.title} className="mb-6">{message.text}</Banner>}
+          {selected && <IntegrationForm key={`${selected.provider}:${selected.version}`} integration={selected} onSaved={integrations.reload} setMessage={setMessage} />}
+        </>
+      )}
+    </>
+  )
+}
+
+function IntegrationForm({ integration, onSaved, setMessage }) {
+  const name = integration.provider
+  const [values, setValues] = useState(() => Object.fromEntries(PROVIDER_FIELDS[name].map(([field]) => [field, integration.config[field] ?? ''])))
+  const [errors, setErrors] = useState({})
+  const [saving, setSaving] = useState(false)
+  const run = async (call, done) => {
+    setSaving(true)
+    setMessage(null)
+    setErrors({})
+    try {
+      setMessage(done(await call()))
+      onSaved()
+    } catch (error) {
+      setErrors(error.fieldErrors?.() ?? {})
+      setMessage({ tone: 'danger', title: 'Not saved', text: error.message })
+    } finally {
+      setSaving(false)
+    }
+  }
+  const save = () => run(() => contentApi.saveIntegration(name, values), (saved) => (saved.status === 'connected' ? { tone: 'brand', title: `${PROVIDERS[name]} connected`, text: saved.description } : { tone: 'danger', title: 'Saved, but the provider refused the credentials', text: saved.lastError }))
+  const disconnect = () => run(() => contentApi.disconnectIntegration(name), () => ({ tone: 'brand', title: `${PROVIDERS[name]} disconnected`, text: 'Saved credentials were removed.' }))
+  return (
+    <div className="mb-6 grid items-start gap-6 lg:grid-cols-[1.1fr_1fr]">
+      <Section title={`${PROVIDERS[name]} · connection`} aside={CHANNEL_STATUS[integration.status][0]}>
+        {name === 'meta' && !integration.publicUrlReady && <Banner tone="warning" title="PUBLIC_API_URL is not set" className="mb-4">Text posts can publish to Facebook, but images (and so Instagram) need Meta to reach this API.</Banner>}
+        <div className="grid gap-4 sm:grid-cols-2">{PROVIDER_FIELDS[name].map(([field, label, hint, isSecret]) => (
+          <TextInput key={field} label={label} type={isSecret ? 'password' : 'text'} autoComplete="off" value={values[field]} onChange={(event) => setValues((current) => ({ ...current, [field]: event.target.value }))} error={errors[field]}
+            placeholder={isSecret && integration.saved[field] ? 'Saved · leave blank to keep' : undefined} hint={isSecret && integration.saved[field] ? 'Saved securely. Enter a new value to replace it.' : hint} />
+        ))}</div>
+        <div className="mt-5 flex flex-wrap gap-3"><ActionButton variant="brand" disabled={saving} onClick={save}>{saving ? 'Checking…' : integration.status === 'not_connected' ? 'Connect & verify' : 'Save & verify again'}</ActionButton>{integration.status !== 'not_connected' && <ActionButton disabled={saving} onClick={disconnect}>Disconnect</ActionButton>}</div>
+      </Section>
+      <div className="space-y-6">
+        <Section title="What this connection does" aside="ClinicOS adapter"><ul className="space-y-2 text-xs">{CAN_DO[name].map(([capability, supported]) => <li key={capability} className={supported ? 'text-brand' : 'text-outline'}>{supported ? '✓' : '—'} {capability}</li>)}</ul></Section>
+        <Section title="Setting it up" aside="Step by step"><ol className="list-decimal space-y-2 pl-4 text-xs leading-5 text-on-surface-variant">{PROVIDER_STEPS[name].map((step) => <li key={step}>{step}</li>)}</ol></Section>
       </div>
     </div>
   )

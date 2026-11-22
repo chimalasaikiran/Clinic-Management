@@ -9,7 +9,8 @@ import { formatINR } from '../../patients/format'
 import { campaignsApi } from '../campaignsApi'
 import { CAMPAIGN_CHANNELS, CAMPAIGN_STATUSES, CAMPAIGN_TONE, percent } from '../campaignsView'
 import GrowthFrame, { GrowthFooter } from '../components/GrowthFrame'
-import { useGrowth } from '../context/growthContext'
+import { contentApi } from '../contentApi'
+import { stars } from '../contentView'
 import { day, TONES, when } from '../format'
 import { leadsApi } from '../leadsApi'
 import { messagingApi } from '../messagingApi'
@@ -22,7 +23,6 @@ const QUICK = [['Add Lead', ROUTES.leadNew, true], ['Create Campaign', ROUTES.ca
 const FOLLOW_UPS = 10
 
 export default function GrowthHomePage() {
-  const { data } = useGrowth()
   const { can } = useAuth()
   const context = useLeadContext()
   const branchId = context.branchId || undefined
@@ -36,7 +36,9 @@ export default function GrowthHomePage() {
   const openTotal = open.data?.meta?.total ?? 0
   const overdue = summary.overdue
   const quick = QUICK.filter(([label]) => label !== 'Add Lead' || can('growth.leads'))
-  const needsAttention = data.reviews.filter((review) => review.rating <= 3 && review.responseState !== 'Response approved')
+  // Low ratings with no reply yet, newest first.
+  const unanswered = useApiResource(() => (can('growth.view') ? contentApi.reviews({ response: 'none', branchId, pageSize: 20 }) : Promise.resolve(null)), `home-reviews:${branchId}`).data
+  const needsAttention = (unanswered?.data ?? []).filter((review) => review.rating <= 3).slice(0, 3)
   const inbox = useApiResource(() => (can('growth.view') ? messagingApi.conversations({ branchId, pageSize: 2 }) : Promise.resolve(null)), `home-inbox:${branchId}`).data
   const conversations = (inbox?.data ?? []).map(toConversationView)
   const campaigns = useApiResource(() => campaignsApi.campaigns({ branchId, pageSize: 3 }), `home-campaigns:${branchId}`).data?.data ?? []
@@ -46,7 +48,7 @@ export default function GrowthHomePage() {
   const byTrigger = (trigger) => workflows?.find((workflow) => workflow.trigger === trigger && workflow.status === 'active') ?? workflows?.find((workflow) => workflow.trigger === trigger)
 
   return (
-    <GrowthFrame back={{ to: ROUTES.dashboard, label: 'Back to Owner Panel' }} crumb="Owner Panel / Growth" code="GO-01" title="Growth OS" description="Prioritize inquiries, follow-ups and patient relationships across Aura Health." sample="Leads, follow-ups, conversations and campaigns are live. Reviews below are still sample records." context={[context.line, `Month to date · ${day(monthStart)} – ${day(today)} · Asia/Kolkata`]} today={context.today}>
+    <GrowthFrame back={{ to: ROUTES.dashboard, label: 'Back to Owner Panel' }} crumb="Owner Panel / Growth" code="GO-01" title="Growth OS" description="Prioritize inquiries, follow-ups and patient relationships across Aura Health." sample="Live records · Leads, follow-ups, conversations, campaigns, workflows and reviews" context={[context.line, `Month to date · ${day(monthStart)} – ${day(today)} · Asia/Kolkata`]} today={context.today}>
       <p className="mb-6 flex flex-wrap items-center gap-2 text-xs"><span className="text-[10px] font-semibold tracking-wide text-outline uppercase">Quick actions</span>{quick.map(([label, to, primary]) => <ActionButton key={label} to={to} variant={primary ? 'brand' : 'secondary'}>{label}</ActionButton>)}</p>
 
       <dl className="mb-2 grid gap-4 sm:grid-cols-4">
@@ -93,8 +95,8 @@ export default function GrowthHomePage() {
           <p className="mt-3 text-[11px] text-outline">Unread total: {inbox?.meta.unread ?? '—'} · Live</p>
         </Section>
         <Section title="Reviews requiring attention" aside={<Link to={ROUTES.reviews} className="font-semibold text-brand hover:underline">Register ↗</Link>}>
-          <ul className="divide-y divide-slate-100 text-xs">{needsAttention.map((review) => <li key={review.id} className="py-3"><p className="flex justify-between"><strong className="text-[13px]">{review.alias} · {review.rating}/5</strong><StatusPill tone="warning">Needs response</StatusPill></p><p className="mt-1">“{review.text}”</p><Link to={pathFor(ROUTES.review, { reviewId: review.id })} className="mt-1 inline-block font-semibold text-brand hover:underline">Review Details ↗</Link></li>)}</ul>
-          {needsAttention.length === 0 && <p className="text-xs text-outline">No reviews need a response.</p>}
+          <ul className="divide-y divide-slate-100 text-xs">{needsAttention.map((review) => <li key={review.id} className="py-3"><p className="flex justify-between"><strong className="text-[13px]">{review.reviewerName} · {stars(review.rating)}</strong><StatusPill tone="warning">Needs a reply</StatusPill></p><p className="mt-1">{review.comment ? `“${review.comment}”` : 'Rating only'}</p><Link to={pathFor(ROUTES.review, { reviewId: review.id })} className="mt-1 inline-block font-semibold text-brand hover:underline">Review Details ↗</Link></li>)}</ul>
+          {unanswered && needsAttention.length === 0 && <p className="text-xs text-outline">No low-rated review is waiting for a reply.</p>}
         </Section>
       </div>
 

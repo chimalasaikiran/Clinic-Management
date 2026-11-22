@@ -16,9 +16,9 @@ export const GENDERS = { female: 'Female', male: 'Male', other: 'Other' }
 export const BROADCAST_STATUSES = { scheduled: 'Scheduled', sending: 'Sending', completed: 'Completed', cancelled: 'Cancelled' }
 export const BROADCAST_TONE = { scheduled: 'info', sending: 'brand', completed: 'success', cancelled: 'warning' }
 
-export const TRIGGERS = { no_show: 'Appointment marked no-show', lead_not_booked: 'Lead not yet converted', revisit_due: 'Visit completed' }
+export const TRIGGERS = { no_show: 'Appointment marked no-show', lead_not_booked: 'Lead not yet converted', revisit_due: 'Visit completed', review_request: 'Visit completed · ask for a review' }
 // Whether each trigger's delay reads best in hours or days.
-export const TRIGGER_UNIT = { no_show: 'hours', lead_not_booked: 'days', revisit_due: 'days' }
+export const TRIGGER_UNIT = { no_show: 'hours', lead_not_booked: 'days', revisit_due: 'days', review_request: 'hours' }
 export const WORKFLOW_STATUSES = { draft: 'Draft', active: 'Active', paused: 'Paused' }
 export const WORKFLOW_TONE = { draft: 'neutral', active: 'success', paused: 'warning' }
 

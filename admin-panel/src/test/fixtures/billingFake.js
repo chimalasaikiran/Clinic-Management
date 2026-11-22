@@ -11,6 +11,7 @@ export const billingFake = {
   leads: null,
   messaging: null,
   campaigns: null,
+  content: null,
   use(fake) {
     this.current = fake
     return fake
@@ -45,6 +46,10 @@ export const billingFake = {
   },
   useCampaigns(fake) {
     this.campaigns = fake
+    return fake
+  },
+  useContent(fake) {
+    this.content = fake
     return fake
   },
 }

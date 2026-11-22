@@ -4,7 +4,7 @@ export const CHANNELS = { whatsapp: 'WhatsApp', sms: 'SMS', email: 'Email' }
 export const LOCALES = { en: 'English · en', hi: 'Hindi · hi', te: 'Telugu · te' }
 export const TEMPLATE_CATEGORIES = ['Reminder', 'Follow-up', 'Review request', 'Prevention']
 export const TEMPLATE_STATUS = { draft: 'Draft', approved: 'Approved', retired: 'Retired' }
-export const TEMPLATE_VARIABLES = ['preferred_name', 'appointment_date', 'appointment_time', 'service_name', 'clinic_name']
+export const TEMPLATE_VARIABLES = ['preferred_name', 'appointment_date', 'appointment_time', 'service_name', 'clinic_name', 'review_link']
 // Filled in by ClinicOS when sending; staff supply the rest.
 export const AUTOMATIC_VARIABLES = ['preferred_name', 'clinic_name']
 export const CONSENT_SOURCES = { verbal: 'Told us (phone or in person)', written_form: 'Signed form', web_form: 'Website form', inbound_reply: 'Replied asking to hear from us', stop_reply: 'Replied STOP', start_reply: 'Replied START' }

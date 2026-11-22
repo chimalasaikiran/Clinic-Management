@@ -132,7 +132,6 @@ import OperatingHoursPage from '../features/configuration/pages/OperatingHoursPa
 import OrganisationPage from '../features/configuration/pages/OrganisationPage'
 import StaffProfilePage from '../features/configuration/pages/StaffProfilePage'
 import DashboardPage from '../features/dashboard/pages/DashboardPage'
-import GrowthProvider from '../features/growth/context/GrowthProvider'
 import GrowthHomePage from '../features/growth/pages/GrowthHomePage'
 import LeadRegisterPage from '../features/growth/pages/LeadRegisterPage'
 import LeadFormPage from '../features/growth/pages/LeadFormPage'
@@ -338,7 +337,7 @@ export const routes = [
           },
 
           {
-            element: <GrowthProvider />,
+            element: <Outlet />,
             children: [
               { path: ROUTES.growth, element: <GrowthHomePage /> },
               { path: ROUTES.leads, element: <LeadRegisterPage /> },
