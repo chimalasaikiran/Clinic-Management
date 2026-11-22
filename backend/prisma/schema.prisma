@@ -8,6 +8,9 @@ generator client {
   moduleFormat        = "cjs"
   // Extensionless imports so the generated files compile with the rest of the CommonJS build.
   importFileExtension = ""
+  // Nested reads (include/select of relations) run as one SQL query with JOINs instead of one query per
+  // relation; with the database far from the API every round trip costs about 250 ms.
+  previewFeatures     = ["relationJoins"]
 }
 
 datasource db {
