@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { AuditService } from '../../common/audit/audit.service'
+import { DepartmentsService } from '../configuration/departments.service'
 import { conflict, notFound, unprocessable } from '../../common/errors/app-error'
 import type { AccessContext, ClientInfo } from '../../common/utils/request'
 import { isUniqueViolation } from '../../database/prisma-errors'
@@ -28,9 +29,11 @@ export class CatalogueService {
     private readonly prisma: PrismaService,
     private readonly support: FinanceSupport,
     private readonly audit: AuditService,
+    private readonly departments: DepartmentsService,
   ) {}
 
   async createService(access: AccessContext, actorUserId: string, input: ServiceInput, client: ClientInfo) {
+    input = { ...input, department: await this.departments.resolve(this.prisma, access.orgId, input.department) }
     await this.checkBranches(access.orgId, input.prices.map((entry) => entry.branchId))
     try {
       return await this.prisma.transaction(async (tx) => {
@@ -51,6 +54,7 @@ export class CatalogueService {
   async updateService(access: AccessContext, id: string, actorUserId: string, version: number, input: ServiceInput, client: ClientInfo) {
     const current = await this.prisma.billingService.findFirst({ where: { id, orgId: access.orgId }, include: { prices: true } })
     if (!current) throw notFound('Service not found.')
+    input = { ...input, department: await this.departments.resolve(this.prisma, access.orgId, input.department) }
     await this.checkBranches(access.orgId, input.prices.map((entry) => entry.branchId))
     const changed = this.changedFields(current, input)
     try {

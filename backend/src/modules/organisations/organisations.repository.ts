@@ -22,7 +22,7 @@ export class OrganisationsRepository {
         ...input,
         status: 'active',
         createdById,
-        branches: { create: { code: 'MAIN', name: input.location, city: input.city, state: input.state } },
+        branches: { create: { code: 'MAIN', name: input.location, addressLine1: input.location, city: input.city, state: input.state, facilityType: input.facilityType, isPrimary: true } },
       },
       select: { id: true, branches: { select: { id: true } } },
     })

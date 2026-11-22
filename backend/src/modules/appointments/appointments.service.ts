@@ -124,6 +124,7 @@ export class AppointmentsService {
     const today = localDate(now, this.zone)
     const walkIn = input.arrivedNow || input.waitingQueue
     if (walkIn && input.date !== today) throw unprocessable('WALK_IN_TODAY_ONLY', 'Walk-ins can only be added for today.')
+    await this.assertBranchOpen(input.branchId, input.date)
 
     let startsAt: Date
     if (input.waitingQueue) {
@@ -211,6 +212,7 @@ export class AppointmentsService {
         if (row.waitingQueue) throw unprocessable('QUEUE_NOT_RESCHEDULABLE', 'A waiting-queue walk-in has no slot to move.')
         const practitioner = await this.activePractitioner(row.orgId, row.practitioner.id)
         const startsAt = this.slotStart(practitioner, row.branch.id, input.date, input.time, now, { allowCurrent: false })
+        await this.assertBranchOpen(row.branch.id, input.date)
         await this.assertNotOnLeave(practitioner, row.branch.id, input.date, input.time)
         if (startsAt.getTime() === row.startsAt.getTime()) throw unprocessable('SAME_SLOT', 'Choose a different time from the current one.')
         await this.assertBookablePatient(tx, row.orgId, row.patient.id, row.practitioner.id, input.date, row.id)
@@ -278,6 +280,12 @@ export class AppointmentsService {
     const earliest = allowCurrent ? now.getTime() - practitioner.slotMinutes * 60_000 : now.getTime()
     if (startsAt.getTime() < earliest) throw unprocessable('SLOT_IN_PAST', 'That time has already passed. Choose a later slot.')
     return startsAt
+  }
+
+  // A day the branch is closed (Configuration › Operating hours) takes no new appointments.
+  private async assertBranchOpen(branchId: string, date: string) {
+    const closure = await this.prisma.branchClosure.findUnique({ where: { branchId_date: { branchId, date: new Date(`${date}T00:00:00Z`) } }, select: { kind: true, reason: true } })
+    if (closure?.kind === 'closed') throw unprocessable('BRANCH_CLOSED', `The branch is closed that day (${closure.reason}). Choose another date.`)
   }
 
   // Leave and blocks recorded in the Staff module take the therapist out of the schedule.

@@ -1,5 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { AuditService } from '../../common/audit/audit.service'
+import { DepartmentsService } from '../configuration/departments.service'
+import { outsideBranchHours } from '../configuration/configuration.logic'
 import { badRequest, conflict, notFound, unprocessable } from '../../common/errors/app-error'
 import type { ClientInfo } from '../../common/utils/request'
 import { ENV, Env } from '../../config/env'
@@ -43,6 +45,7 @@ export class PractitionersService {
     private readonly prisma: PrismaService,
     private readonly practitioners: PractitionersRepository,
     private readonly audit: AuditService,
+    private readonly departments: DepartmentsService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -50,8 +53,14 @@ export class PractitionersService {
     return (await this.practitioners.list(orgId, filter)).map(practitionerView)
   }
 
+  // With warnings for any session outside its branch's opening hours (Configuration › Operating hours).
   async get(orgId: string, id: string) {
-    return practitionerView(await this.find(orgId, id))
+    const view = practitionerView(await this.find(orgId, id))
+    const branchIds = [...new Set(view.availability.map((window) => window.branchId))]
+    const hours = branchIds.length ? await this.prisma.branchHours.findMany({ where: { branchId: { in: branchIds } }, select: { branchId: true, weekday: true, start: true, end: true } }) : []
+    const byBranch = new Map<string, typeof hours>()
+    for (const session of hours) byBranch.set(session.branchId, [...(byBranch.get(session.branchId) ?? []), session])
+    return { ...view, hoursWarnings: outsideBranchHours(view.availability, byBranch) }
   }
 
   async candidates(orgId: string) {
@@ -63,7 +72,8 @@ export class PractitionersService {
     if (!(await this.practitioners.activeMembership(orgId, input.membershipId))) {
       throw unprocessable('MEMBER_UNKNOWN', 'Choose an active member of this organisation.')
     }
-    const { membershipId, ...profile } = input
+    const { membershipId, ...rest } = input
+    const profile = { ...rest, department: (await this.departments.resolve(this.prisma, orgId, rest.department))! }
     try {
       const { id } = await this.practitioners.create(orgId, membershipId, profile)
       await this.audit.record({ action: 'practitioner.created', entityType: 'practitioner', entityId: id, orgId, actorUserId }, client)
@@ -75,6 +85,7 @@ export class PractitionersService {
   }
 
   async update(orgId: string, id: string, actorUserId: string, input: UpdatePractitionerInput, client: ClientInfo) {
+    input = { ...input, department: (await this.departments.resolve(this.prisma, orgId, input.department))! }
     if ((await this.practitioners.update(orgId, id, input)) === 0) throw notFound('Therapist not found.')
     await this.audit.record({ action: 'practitioner.updated', entityType: 'practitioner', entityId: id, orgId, actorUserId }, client)
     return this.get(orgId, id)
@@ -119,6 +130,8 @@ export class PractitionersService {
     const rangeEnd = zonedInstant(addDays(dates.at(-1)!, 1), 0, zone)
     const busy = await this.practitioners.busy(id, rangeStart, rangeEnd, query.excludeAppointmentId)
     const leaves = await this.practitioners.leaves(id, dates[0]!, dates.at(-1)!)
+    const closures = await this.prisma.branchClosure.findMany({ where: { branchId: query.branchId, kind: 'closed', date: { gte: new Date(`${dates[0]}T00:00:00Z`), lte: new Date(`${dates.at(-1)}T00:00:00Z`) } }, select: { date: true, reason: true } })
+    const closedOn = new Map(closures.map((closure) => [closure.date.toISOString().slice(0, 10), closure.reason]))
     const nowMinute = localMinute(now, zone)
 
     return {
@@ -128,6 +141,7 @@ export class PractitionersService {
       timezone: zone,
       days: dates.map((date) => {
         if (practitioner.status !== 'active' || date < today) return { date, slots: [] }
+        if (closedOn.has(date)) return { date, slots: [], closed: closedOn.get(date) }
         const weekday = weekdayOf(date)
         const dayWindows = windows.filter((window) => window.weekday === weekday)
         const dayStart = zonedInstant(date, 0, zone).getTime()

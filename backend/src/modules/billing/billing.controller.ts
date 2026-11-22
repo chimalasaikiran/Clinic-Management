@@ -38,6 +38,13 @@ export class BillingController {
     return { data: await this.ledger.ledger(access, parse(ledgerQuerySchema, query).patientId) }
   }
 
+  // Configuration › Services reads the catalogue without the rest of the ledger.
+  @Get('services')
+  @RequireAnyPermission(...FINANCE_PERMISSIONS, 'settings.organisation')
+  async services(@CurrentAccess() access: AccessContext) {
+    return { data: await this.ledger.services(access) }
+  }
+
   @Post('services')
   @HttpCode(201)
   @RequirePermissions('accounting.invoices')

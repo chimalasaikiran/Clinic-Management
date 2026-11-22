@@ -85,6 +85,8 @@ export function configureHttp(app: NestExpressApplication, env: Env, logger: pin
   // Post images are uploaded as the raw request body (POST /v1/media). Slightly over 5 MB so the service, not the
   // parser, gives the clear "at most 5 MB" message.
   app.useBodyParser('raw', { type: ['image/jpeg', 'image/png', 'image/webp'], limit: '5200kb' })
+  // Insurance agreement PDFs (POST /v1/insurance/documents), at most 10 MB.
+  app.useBodyParser('raw', { type: 'application/pdf', limit: '10300kb' })
   app.use(originCheck(env.CORS_ORIGINS, sessionCookieName(env)))
   app.enableVersioning({ type: VersioningType.URI })
   app.enableShutdownHooks()

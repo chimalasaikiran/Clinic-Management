@@ -143,6 +143,12 @@ model User {
   reviewNotes              ReviewNote[]      @relation("ReviewNoteAuthor")
   escalationsCreated       Escalation[]      @relation("EscalationCreatedBy")
 
+  branchClosures               BranchClosure[]      @relation("BranchClosureCreatedBy")
+  departmentsCreated           Department[]         @relation("DepartmentCreatedBy")
+  insuranceAgreementsCreated   InsuranceAgreement[] @relation("InsuranceAgreementCreatedBy")
+  insuranceAgreementsActivated InsuranceAgreement[] @relation("InsuranceAgreementActivatedBy")
+  insuranceDocuments           InsuranceDocument[]  @relation("InsuranceDocumentCreatedBy")
+
   @@map("users")
 }
 
@@ -200,17 +206,25 @@ enum OrganisationStatus {
 }
 
 model Organisation {
-  id           String             @id @default(uuid(7)) @db.Uuid
-  displayName  String             @map("display_name") @db.VarChar(160)
-  facilityType String             @map("facility_type") @db.VarChar(80)
-  location     String             @db.VarChar(240)
-  city         String             @db.VarChar(80)
-  state        String             @db.VarChar(80)
-  status       OrganisationStatus @default(onboarding)
-  createdById  String             @map("created_by") @db.Uuid
-  version      Int                @default(1)
-  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id               String             @id @default(uuid(7)) @db.Uuid
+  displayName      String             @map("display_name") @db.VarChar(160)
+  facilityType     String             @map("facility_type") @db.VarChar(80)
+  location         String             @db.VarChar(240)
+  city             String             @db.VarChar(80)
+  state            String             @db.VarChar(80)
+  status           OrganisationStatus @default(onboarding)
+  phone            String?            @db.VarChar(15)
+  email            String?            @db.VarChar(254)
+  logoId           String?            @map("logo_id") @db.Uuid
+  classification   String?            @db.VarChar(60)
+  structure        String?            @db.VarChar(60)
+  specialties      String[]           @default([])
+  // Null until onboarding asks; true or false once the clinic has answered.
+  acceptsInsurance Boolean?           @map("accepts_insurance")
+  createdById      String             @map("created_by") @db.Uuid
+  version          Int                @default(1)
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   createdBy     User              @relation(fields: [createdById], references: [id])
   branches      Branch[]
@@ -290,6 +304,12 @@ model Organisation {
   reviews            Review[]
   escalations        Escalation[]
 
+  logo                MediaAsset?          @relation("OrganisationLogo", fields: [logoId], references: [id])
+  departments         Department[]
+  insurancePartners   InsurancePartner[]
+  insuranceAgreements InsuranceAgreement[]
+  insuranceDocuments  InsuranceDocument[]
+
   @@map("organisations")
 }
 
@@ -303,16 +323,25 @@ enum BranchStatus {
 }
 
 model Branch {
-  id        String       @id @default(uuid(7)) @db.Uuid
-  orgId     String       @map("org_id") @db.Uuid
-  code      String       @db.VarChar(20)
-  name      String       @db.VarChar(240)
-  city      String       @db.VarChar(80)
-  state     String       @db.VarChar(80)
-  status    BranchStatus @default(active)
-  version   Int          @default(1)
-  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id           String       @id @default(uuid(7)) @db.Uuid
+  orgId        String       @map("org_id") @db.Uuid
+  code         String       @db.VarChar(20)
+  name         String       @db.VarChar(240)
+  city         String       @db.VarChar(80)
+  state        String       @db.VarChar(80)
+  status       BranchStatus @default(active)
+  addressLine1 String?      @map("address_line1") @db.VarChar(240)
+  addressLine2 String?      @map("address_line2") @db.VarChar(240)
+  pinCode      String?      @map("pin_code") @db.Char(6)
+  country      String       @default("India") @db.VarChar(60)
+  phone        String?      @db.VarChar(15)
+  email        String?      @db.VarChar(254)
+  facilityType String?      @map("facility_type") @db.VarChar(80)
+  // The branch created with the organisation; it cannot be paused or closed.
+  isPrimary    Boolean      @default(false) @map("is_primary")
+  version      Int          @default(1)
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organisation   Organisation               @relation(fields: [orgId], references: [id])
   roleBranches   RoleBranch[]
@@ -342,6 +371,11 @@ model Branch {
   contentPosts ContentPost[]
   profile      BranchProfile?
   reviews      Review[]
+
+  hours               BranchHours[]
+  closures            BranchClosure[]
+  departments         DepartmentBranch[]
+  insuranceAgreements InsuranceAgreementBranch[]
 
   @@unique([orgId, code])
   @@map("branches")
@@ -3551,6 +3585,8 @@ model MediaAsset {
   organisation Organisation  @relation(fields: [orgId], references: [id])
   posts        ContentPost[]
 
+  logoFor Organisation[] @relation("OrganisationLogo")
+
   @@map("media_assets")
 }
 
@@ -3866,4 +3902,188 @@ model Escalation {
   @@unique([orgId, code])
   @@index([orgId, status, dueAt])
   @@map("escalations")
+}
+
+// ─── Configuration: branch hours, departments and insurance ─────────────────
+
+// A regular weekly session when the branch is open. A day can have more than one (morning and evening).
+model BranchHours {
+  id       String @id @default(uuid(7)) @db.Uuid
+  branchId String @map("branch_id") @db.Uuid
+  // 0 = Sunday … 6 = Saturday.
+  weekday  Int
+  start    String @db.VarChar(5)
+  end      String @db.VarChar(5)
+  label    String @default("") @db.VarChar(60)
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([branchId, weekday])
+  @@map("branch_hours")
+}
+
+enum ClosureKind {
+  closed
+  special
+
+  @@map("closure_kind")
+}
+
+// One day that differs from the weekly hours. A closed day blocks new appointments; special hours are shown.
+model BranchClosure {
+  id          String      @id @default(uuid(7)) @db.Uuid
+  branchId    String      @map("branch_id") @db.Uuid
+  date        DateTime    @db.Date
+  kind        ClosureKind
+  opensAt     String?     @map("opens_at") @db.VarChar(5)
+  closesAt    String?     @map("closes_at") @db.VarChar(5)
+  reason      String      @db.VarChar(240)
+  createdById String      @map("created_by") @db.Uuid
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  branch    Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  createdBy User   @relation("BranchClosureCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([branchId, date])
+  @@map("branch_closures")
+}
+
+enum DepartmentStatus {
+  active
+  inactive
+
+  @@map("department_status")
+}
+
+// The organisation's master list of departments. Staff, doctors and services name one of these.
+model Department {
+  id          String           @id @default(uuid(7)) @db.Uuid
+  orgId       String           @map("org_id") @db.Uuid
+  code        String           @db.VarChar(20)
+  name        String           @db.VarChar(120)
+  type        String           @db.VarChar(40)
+  description String           @default("") @db.VarChar(1000)
+  status      DepartmentStatus @default(active)
+  version     Int              @default(1)
+  createdById String?          @map("created_by") @db.Uuid
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation       @relation(fields: [orgId], references: [id])
+  createdBy    User?              @relation("DepartmentCreatedBy", fields: [createdById], references: [id])
+  branches     DepartmentBranch[]
+
+  @@unique([orgId, code])
+  @@unique([orgId, name])
+  @@map("departments")
+}
+
+// Where a department operates.
+model DepartmentBranch {
+  departmentId String @map("department_id") @db.Uuid
+  branchId     String @map("branch_id") @db.Uuid
+
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  branch     Branch     @relation(fields: [branchId], references: [id])
+
+  @@id([departmentId, branchId])
+  @@map("department_branches")
+}
+
+enum InsurancePartnerType {
+  insurer
+  tpa
+
+  @@map("insurance_partner_type")
+}
+
+// An insurer or third-party administrator the clinic works with.
+model InsurancePartner {
+  id        String               @id @default(uuid(7)) @db.Uuid
+  orgId     String               @map("org_id") @db.Uuid
+  name      String               @db.VarChar(160)
+  type      InsurancePartnerType
+  // From the built-in list, or added by the clinic.
+  listed    Boolean              @default(false)
+  active    Boolean              @default(true)
+  createdAt DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation      Organisation         @relation(fields: [orgId], references: [id])
+  insurerAgreements InsuranceAgreement[] @relation("AgreementInsurer")
+  tpaAgreements     InsuranceAgreement[] @relation("AgreementTpa")
+
+  @@unique([orgId, type, name])
+  @@map("insurance_partners")
+}
+
+// A signed agreement PDF, at most 10 MB.
+model InsuranceDocument {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  fileName    String   @map("file_name") @db.VarChar(200)
+  size        Int
+  data        Bytes
+  createdById String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation         @relation(fields: [orgId], references: [id])
+  createdBy    User                 @relation("InsuranceDocumentCreatedBy", fields: [createdById], references: [id])
+  agreements   InsuranceAgreement[]
+
+  @@map("insurance_documents")
+}
+
+enum AgreementStatus {
+  draft
+  active
+  ended
+
+  @@map("agreement_status")
+}
+
+// Terms with an insurer (optionally through a TPA), the branches and services it covers.
+model InsuranceAgreement {
+  id            String          @id @default(uuid(7)) @db.Uuid
+  orgId         String          @map("org_id") @db.Uuid
+  code          String          @db.VarChar(20)
+  insurerId     String          @map("insurer_id") @db.Uuid
+  tpaId         String?         @map("tpa_id") @db.Uuid
+  reference     String          @db.VarChar(80)
+  startDate     DateTime        @map("start_date") @db.Date
+  endDate       DateTime        @map("end_date") @db.Date
+  status        AgreementStatus @default(draft)
+  documentId    String?         @map("document_id") @db.Uuid
+  notes         String          @default("") @db.VarChar(1000)
+  // How claims are billed (cashless, reimbursement) and the kinds of care covered (opd, diagnostics, daycare).
+  methods       String[]        @default([])
+  coverage      String[]        @default([])
+  version       Int             @default(1)
+  createdById   String          @map("created_by") @db.Uuid
+  activatedById String?         @map("activated_by") @db.Uuid
+  activatedAt   DateTime?       @map("activated_at") @db.Timestamptz(6)
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation               @relation(fields: [orgId], references: [id])
+  insurer      InsurancePartner           @relation("AgreementInsurer", fields: [insurerId], references: [id])
+  tpa          InsurancePartner?          @relation("AgreementTpa", fields: [tpaId], references: [id])
+  document     InsuranceDocument?         @relation(fields: [documentId], references: [id])
+  createdBy    User                       @relation("InsuranceAgreementCreatedBy", fields: [createdById], references: [id])
+  activatedBy  User?                      @relation("InsuranceAgreementActivatedBy", fields: [activatedById], references: [id])
+  branches     InsuranceAgreementBranch[]
+
+  @@unique([orgId, code])
+  @@unique([orgId, reference])
+  @@map("insurance_agreements")
+}
+
+model InsuranceAgreementBranch {
+  agreementId String @map("agreement_id") @db.Uuid
+  branchId    String @map("branch_id") @db.Uuid
+
+  agreement InsuranceAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  branch    Branch             @relation(fields: [branchId], references: [id])
+
+  @@id([agreementId, branchId])
+  @@map("insurance_agreement_branches")
 }

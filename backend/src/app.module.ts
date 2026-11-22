@@ -16,6 +16,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module'
 import { LeadsModule } from './modules/leads/leads.module'
 import { MessagingModule } from './modules/messaging/messaging.module'
 import { CampaignsModule } from './modules/campaigns/campaigns.module'
+import { ConfigurationModule } from './modules/configuration/configuration.module'
 import { ContentModule } from './modules/content/content.module'
 import { IntegrationsModule } from './modules/integrations/integrations.module'
 import { ReviewsModule } from './modules/reviews/reviews.module'
@@ -67,6 +68,7 @@ export class AppModule {
         LeadsModule,
         MessagingModule,
         CampaignsModule,
+        ConfigurationModule,
         IntegrationsModule,
         ContentModule,
         ReviewsModule,

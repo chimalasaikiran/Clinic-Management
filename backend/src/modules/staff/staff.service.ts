@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { AuditService } from '../../common/audit/audit.service'
+import { DepartmentsService } from '../configuration/departments.service'
 import { conflict, notFound, unprocessable } from '../../common/errors/app-error'
 import type { AccessContext, ClientInfo } from '../../common/utils/request'
 import { ENV, Env } from '../../config/env'
@@ -20,6 +21,7 @@ export class StaffService {
     private readonly counters: CountersRepository,
     private readonly invitations: InvitationsService,
     private readonly audit: AuditService,
+    private readonly departments: DepartmentsService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -83,6 +85,7 @@ export class StaffService {
   }
 
   async create(orgId: string, actorUserId: string, input: CreateStaffInput, client: ClientInfo) {
+    input = { ...input, department: (await this.departments.resolve(this.prisma, orgId, input.department))! }
     const id = await this.prisma.transaction(async (tx) => {
       const code = `STF-${String(await this.counters.next(tx, orgId, 'staff_code')).padStart(3, '0')}`
       const created = await this.staff.create(tx, orgId, code, input, actorUserId)
@@ -94,6 +97,7 @@ export class StaffService {
 
   async update(orgId: string, id: string, actorUserId: string, input: UpdateStaffInput, client: ClientInfo) {
     await this.find(orgId, id)
+    input = { ...input, department: (await this.departments.resolve(this.prisma, orgId, input.department))! }
     const { version, ...fields } = input
     if ((await this.staff.update(orgId, id, version, fields)) === 0) {
       throw conflict('STAFF_CHANGED', 'Someone else changed this record while you were editing. Reload to see the latest details, then make your change again.')

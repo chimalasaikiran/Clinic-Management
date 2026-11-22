@@ -264,6 +264,23 @@ Amounts are stored in whole paise and rates in basis points. CHECK constraints k
 between 1 and 28, an IFSC and four-digit account ending, months as `YYYY-MM`, positive amounts, 1 to 12 instalments, and
 status, decision, processing and payment timestamps in step with each other.
 
+`prisma/migrations/20261123090000_configuration` adds:
+
+| Table | Holds |
+| --- | --- |
+| `organisations` (new columns) | phone, email, logo, clinic classification, operational structure, specialties, and whether the clinic accepts insurance |
+| `branches` (new columns) | address lines, PIN code, country, phone, email, facility type and the primary-branch flag (one per organisation) |
+| `branch_hours` | weekly opening sessions per branch (weekday, start, end, label), up to four a day |
+| `branch_closures` | one exception per branch and date: closed all day, or special hours, with the reason and who added it |
+| `departments`, `department_branches` | the organisation's master list of departments (code, name, type, status, version) and the branches each operates at |
+| `insurance_partners` | insurers and TPAs the clinic works with, listed or added by hand, active or not |
+| `insurance_documents` | signed agreement PDFs (at most 10 MB), served through the API only |
+| `insurance_agreements`, `insurance_agreement_branches` | an agreement (`AGR-0001`): insurer, optional TPA, reference, dates, billing methods, coverage, PDF, branches, status draft → active → ended, who activated it |
+
+The migration marks each organisation's earliest branch as primary and creates departments from the department text
+already on staff, therapist and service records, at every branch. CHECK constraints keep the PIN format, session and
+special-hours times in order, agreement dates in order, the document size, and an active agreement's activation stamp.
+
 `prisma/migrations/20261122090000_content_reviews` adds:
 
 | Table | Holds |
@@ -877,6 +894,32 @@ is asked the same way, with the branch's `{{review_link}}`; a branch without one
 Not done yet: reading Facebook or Instagram comments and messages, changing the business name or address on Google
 (Google re-verifies those), and Google Posts. Replies posted directly on Google appear here on the next fetch.
 
+### Organisation, branches, departments and insurance (`/v1/organisation`, `/v1/configuration`, `/v1/departments`, `/v1/insurance`)
+
+Departments are one master list. While an organisation has any, a staff member, therapist or billing service must name
+an active one (`422 DEPARTMENT_UNKNOWN`); the name is stored as the master list spells it. A closed day refuses new
+bookings and reschedules at that branch (`422 BRANCH_CLOSED`) and has no slots; weekly hours only warn: a therapist's
+sessions outside them come back as `hoursWarnings`.
+
+| Endpoint | Access | Does |
+| --- | --- | --- |
+| `GET /v1/organisation`, `PATCH` | member / `settings.organisation` | The profile with counts; PATCH takes `version` |
+| `PUT /v1/organisation/contact`, `/operations`, `/specialties`, `POST /complete` | `settings.organisation` | Onboarding steps 2–4; specialties create missing departments; complete needs a phone, a classification and a specialty |
+| `PUT /v1/organisation/logo`, `GET ?orgId=` | `settings.organisation` / member | Logo as the raw body (JPEG, PNG, WebP, at most 5 MB) |
+| `GET /v1/configuration/branches`, `GET /:id` | `branches.view` | Branches (primary first) with today's appointments and staff; one branch with closures and capabilities |
+| `POST /v1/configuration/branches`, `PATCH /:id` | `branches.create` / `settings.organisation` | Create (unique code, `409 BRANCH_CODE_TAKEN`; `roleIds` gives branch-limited roles access) or update with `version`; the primary branch stays active (`422 PRIMARY_BRANCH`) |
+| `PUT /:id/hours`, `POST /:id/closures`, `DELETE /:id/closures/:closureId` | `branches.hours` | Weekly sessions (`422 HOURS_OVERLAP`); a closure for today or later, one per date (`409 CLOSURE_EXISTS`), returning how many appointments are already booked that day; only future closures can be removed |
+| `GET /v1/departments`, `GET /:id` | member / `branches.view` | The list with counts (`?status=`); one department with its staff, therapists and services |
+| `POST /v1/departments`, `PATCH /:id` | `settings.organisation` | Create (`409 DEPARTMENT_EXISTS`) or update with `version`; a rename carries the new name to every staff, therapist and service record |
+| `POST /v1/departments/:id/members` | `settings.organisation` | `staffIds[]`, `practitionerIds[]`: moves them into the department (it must be active, `422 DEPARTMENT_INACTIVE`) |
+| `GET /v1/billing/services` | any `accounting.*` or `settings.organisation` | The service catalogue with branch prices and history, without the rest of the ledger |
+| `GET /v1/insurance`, `PUT /acceptance` | `settings.organisation` or `accounting.invoices` / `settings.organisation` | Whether the clinic accepts insurance, its partners and agreements |
+| `POST /v1/insurance/partners`, `PATCH /:id` | `settings.organisation` | Add (or switch back on) a partner; a partner on an active agreement cannot be switched off (`409 PARTNER_IN_USE`) |
+| `POST /v1/insurance/documents`, `GET /:id?orgId=` | `settings.organisation` | The agreement PDF as the raw body (checked by its bytes, at most 10 MB) |
+| `POST /v1/insurance/agreements`, `PATCH /:id`, `POST /:id/activate`, `POST /:id/end` | `settings.organisation` | Draft an agreement (reference unique, `409 REFERENCE_TAKEN`), change it while a draft (`409 AGREEMENT_LOCKED`), activate it (`confirm: true`, not after its end date) or end it |
+
+Billing keeps its own "Insurance / TPA" payer on charges and invoices; agreements record the terms, they do not
+submit claims.
 
 ### Search (`/v1/search`)
 

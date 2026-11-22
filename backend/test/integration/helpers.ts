@@ -79,7 +79,8 @@ export async function stopApp(ctx: TestContext) {
 
 export async function resetState(ctx: TestContext) {
   await ctx.prisma.$executeRaw`
-    truncate table escalations, review_notes, review_responses, reviews, special_hours, branch_profiles, content_events, content_publications, content_posts, content_templates, media_assets, growth_integrations,
+    truncate table insurance_agreement_branches, insurance_agreements, insurance_documents, insurance_partners, department_branches, departments, branch_closures, branch_hours,
+      escalations, review_notes, review_responses, reviews, special_hours, branch_profiles, content_events, content_publications, content_posts, content_templates, media_assets, growth_integrations,
       workflow_runs, workflows, broadcast_recipients, campaign_broadcasts, campaign_events, campaign_spend, campaigns, audience_versions, audiences,
       conversation_notes, messages, conversations, contact_consents, message_templates, messaging_channels, lead_activities, leads, advance_recoveries, payroll_advances, payroll_adjustments, payroll_entries, payroll_cycles, pay_profiles, payroll_settings, payroll_events,
       dispense_lines, dispenses, pharmacy_cases, stock_adjustments, receipt_discrepancies, goods_receipt_lines, goods_receipts,

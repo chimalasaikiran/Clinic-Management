@@ -115,6 +115,14 @@ export class LedgerService {
     }
   }
 
+  // The service catalogue on its own, with each service's history: what Configuration › Services reads.
+  async services(access: AccessContext) {
+    const orgId = access.orgId
+    const services = await this.prisma.billingService.findMany({ where: { orgId }, include: { prices: { select: { branchId: true, price: true } } }, orderBy: { code: 'asc' } })
+    const events = services.length ? await this.prisma.financeEvent.findMany({ where: { orgId, entityId: { in: services.map((row) => row.id) } }, include: { actor: actorName }, orderBy: { createdAt: 'desc' } }) : []
+    return services.map((row) => this.serviceView(row, events.filter((event) => event.entityId === row.id).map((event) => ({ action: event.action, note: event.note, actor: event.actor?.fullName ?? null, at: this.support.stamp(event.createdAt) }))))
+  }
+
   private serviceView(row: Prisma.BillingServiceGetPayload<{ include: { prices: { select: { branchId: true; price: true } } } }>, events: unknown[]) {
     return {
       id: row.id, code: row.code, name: row.name, category: row.category, department: row.department, description: row.description, unit: row.unit, status: row.status,
