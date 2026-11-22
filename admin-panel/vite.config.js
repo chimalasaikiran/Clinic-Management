@@ -11,8 +11,4 @@ export default defineConfig({
     // Full-page renders with user-event are slow on busy machines.
     testTimeout: 30000,
   },
-  server: {
-    // Lets ngrok tunnels (any *.ngrok-free.dev subdomain) reach the dev server.
-    allowedHosts: ['.ngrok-free.dev'],
-  },
 })
