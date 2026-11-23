@@ -385,6 +385,80 @@ configured option at startup and logs which one is active:
 A failed send is logged (`Failed to send ...` with the provider's reason) but the API response stays the
 same, so it never reveals whether an email address has an account.
 
+### Deploying on Render
+
+Layout: the API at `https://api.<your-domain>` and the admin panel at `https://app.<your-domain>`. Both must be
+subdomains of one domain, because the session cookie (`__Host-clinicos_session`, `SameSite=Lax`) is only sent
+between sites that count as the same site. The API holds the message worker and the live-update connections, so it
+runs as one always-on web service, not a serverless function.
+
+**1. Push the code.** Render deploys from GitHub; the repository already has `backend/` and `admin-panel/`.
+
+**2. Create the API (New → Web Service).**
+
+| Setting | Value |
+| --- | --- |
+| Repository / branch | this repository, `main` |
+| Root directory | `backend` |
+| Runtime | Node (version 22 or later; set the environment variable `NODE_VERSION` to `22` if needed) |
+| Region | Ohio, next to the Neon region (`us-east-2`); every database round trip across regions costs about 250 ms |
+| Build command | `npm ci --include=dev && npm run build` (`prisma` and `typescript` are dev dependencies, which Render skips when `NODE_ENV=production`) |
+| Pre-deploy command | `npm run db:migrate:deploy` (applies pending migrations before each release; needs `DIRECT_URL`) |
+| Start command | `npm start` |
+| Health check path | `/health/ready` (answers 200 only when Neon is reachable) |
+| Instance type | Starter or higher. The free type goes to sleep after 15 minutes without requests, which stops the message worker, scheduled posts and review fetching |
+| Instances | exactly 1 (the worker runs in every instance; see `REALTIME_DATABASE_URL` before scaling out) |
+
+**3. Environment variables** (Environment tab; use the same values as `backend.env` unless noted):
+
+| Variable | Value |
+| --- | --- |
+| `NODE_ENV` | `production` |
+| `DATABASE_URL` | the pooled connection string of the **main** Neon branch |
+| `DIRECT_URL` | the direct connection string of the same branch (migrations only) |
+| `APP_URL`, `CORS_ORIGINS` | `https://app.<your-domain>` (both must be https) |
+| `COOKIE_SECURE` | `true` (production refuses to start otherwise); leave `COOKIE_SAMESITE` as `lax` |
+| `TRUST_PROXY` | `1` (the API sits behind Render's proxy) |
+| `TOKEN_PEPPER` | the existing value. A new one invalidates outstanding tokens |
+| `MESSAGING_SECRET_KEY` | the existing value. A new one makes every saved WhatsApp, SMS, email and Meta/Google credential unreadable |
+| `EMAILJS_*` (all four) or `SMTP_URL` + `MAIL_FROM` | as in `backend.env` |
+| `PUBLIC_API_URL` | `https://api.<your-domain>`, the address Meta and MSG91 call and the base of signed image links |
+| `MESSAGING_WORKER` | `true` |
+| `CLINIC_TIMEZONE` | `Asia/Kolkata` |
+
+Never commit these values; Render stores them as secrets. Keep `TEST_DATABASE_URL` and `TEST_DIRECT_URL` out of
+production.
+
+**4. Add the API's custom domain.** In the service's Settings → Custom Domains, add `api.<your-domain>`. At your DNS
+provider create the `CNAME` record Render shows. Render issues the HTTPS certificate once the record resolves.
+
+**5. Create the admin panel (New → Static Site).**
+
+| Setting | Value |
+| --- | --- |
+| Root directory | `admin-panel` |
+| Build command | `npm ci && npm run build` |
+| Publish directory | `dist` |
+| Environment variable | `VITE_API_URL` = `https://api.<your-domain>` (read at build time; changing it needs a new build) |
+| Redirects/Rewrites | a rewrite from `/*` to `/index.html` (the app uses client-side routes, so a refresh on `/patients` would otherwise return 404) |
+
+Add the custom domain `app.<your-domain>` the same way, with its own `CNAME`.
+
+**6. Check it.**
+- `https://api.<your-domain>/health/live` and `/health/ready` both return `{"status":"ok"}`.
+- Sign in at `https://app.<your-domain>`; the browser should keep the session across a refresh.
+- The Channels screen shows the webhook address under `https://api.<your-domain>`; use it when connecting WhatsApp.
+
+**7. Releasing.** Every push to `main` redeploys. Migrations run in the pre-deploy step; if one fails, the old
+version keeps serving. Never run `migrate dev` or `migrate reset` against the main branch.
+
+**Troubleshooting.**
+- *Deploy fails with "Invalid backend configuration"*: the log lists each missing or invalid variable.
+- *Login works but the next request is signed out*: the API and the panel are not on subdomains of the same domain,
+  or `COOKIE_SECURE`, `APP_URL` or `CORS_ORIGINS` is wrong.
+- *Build fails on `tsc` or `prisma` not found*: the build command is missing `--include=dev`.
+- *Slow first request after idle*: free instance sleeping; use a paid instance.
+
 ---
 
 ## 6. Configuration reference (`backend.env`)
