@@ -22,7 +22,7 @@ const FORM_FIELDS = { fullName: 'name', mobile: 'phone', branchId: 'branch', own
 export default function LeadFormPage() {
   const { leadId } = useParams()
   if (!leadId) return <LeadForm key="new" lead={null} />
-  return <LeadGate leadId={leadId} code="GO-04">{(lead) => <LeadForm key={lead.id} lead={lead} />}</LeadGate>
+  return <LeadGate leadId={leadId}>{(lead) => <LeadForm key={lead.id} lead={lead} />}</LeadGate>
 }
 
 function LeadForm({ lead }) {
@@ -83,7 +83,7 @@ function LeadForm({ lead }) {
   }
 
   return (
-    <GrowthFrame back={{ to: backPath, label: lead ? 'Back to Lead Details' : 'Back to Lead Register' }} crumb={`Owner Panel / Growth OS / Leads / ${lead ? `${lead.name} / Edit` : 'New lead'}`} code="GO-04" title="Create/Edit Lead" description={lead ? `Update ${lead.name}’s lead record without changing its original source or shared patient details.` : 'Record a new inquiry. A lead is not a patient or an appointment.'} badge={lead ? <span className="text-xs text-outline">{lead.number} · Existing record</span> : null} context={[context.line, lead ? `Lead branch: ${lead.branch}.` : 'New lead · The lead number is assigned on save']} today={context.today} sample={LIVE_NOTE}>
+    <GrowthFrame back={{ to: backPath, label: lead ? 'Back to Lead Details' : 'Back to Lead Register' }} crumb={`Owner Panel / Growth OS / Leads / ${lead ? `${lead.name} / Edit` : 'New lead'}`} title="Create/Edit Lead" description={lead ? `Update ${lead.name}’s lead record without changing its original source or shared patient details.` : 'Record a new inquiry. A lead is not a patient or an appointment.'} badge={lead ? <span className="text-xs text-outline">{lead.number} · Existing record</span> : null} context={[context.line, lead ? `Lead branch: ${lead.branch}.` : 'New lead · The lead number is assigned on save']} today={context.today} sample={LIVE_NOTE}>
       {formError && <Banner tone="danger" title="Not saved" className="mb-6">{formError}</Banner>}
       <div className="mb-6 grid items-start gap-6 lg:grid-cols-[1fr_380px]">
         <Section title="Lead information" aside="* Required">
@@ -121,7 +121,7 @@ function LeadForm({ lead }) {
         <ActionButton onClick={() => navigate(backPath)}>Cancel</ActionButton>
         <ActionButton variant="brand" disabled={blocked || saving} onClick={save}>{saving ? 'Saving…' : lead ? 'Save changes' : 'Create lead'}</ActionButton>
       </div>
-      <GrowthFooter code="GO-04" back={{ to: backPath, label: lead ? 'Back to Lead Details' : 'Back to Lead Register' }} />
+      <GrowthFooter back={{ to: backPath, label: lead ? 'Back to Lead Details' : 'Back to Lead Register' }} />
     </GrowthFrame>
   )
 }

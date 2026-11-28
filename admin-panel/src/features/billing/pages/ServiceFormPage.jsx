@@ -51,7 +51,7 @@ export default function ServiceFormPage() {
   }
 
   return (
-    <BillingFrame back={{ to: back, label: editing ? 'Back to Services & Pricing' : 'Back to Services & Pricing' }} crumb="Owner Panel / Billing & Finance / Services & Pricing" code={editing ? `BF-02 / Edit · ${editing.code}` : 'BF-02 / New service · unsaved'} title={editing ? 'Edit Service' : 'Add Service'} description={editing ? `${editing.name} · ${editing.code}. Review changes before saving; the original record is unchanged until you save.` : 'Create a service definition for your organisation. Required fields are marked *; department and branch price overrides are optional.'}>
+    <BillingFrame back={{ to: back, label: editing ? 'Back to Services & Pricing' : 'Back to Services & Pricing' }} crumb="Owner Panel / Billing & Finance / Services & Pricing" code={editing ? `Edit · ${editing.code}` : 'New service · unsaved'} title={editing ? 'Edit Service' : 'Add Service'} description={editing ? `${editing.name} · ${editing.code}. Review changes before saving; the original record is unchanged until you save.` : 'Create a service definition for your organisation. Required fields are marked *; department and branch price overrides are optional.'}>
       <div className="flex flex-col gap-5">
         <Card title="Service information" aside="A service is not a Charge, Invoice, Payment or Receipt.">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -59,6 +59,13 @@ export default function ServiceFormPage() {
             <TextInput label="Unique service code" required value={values.code} onChange={(event) => set('code', event.target.value)} error={errors.code} hint="Must be unique across your organisation; checked again on save." placeholder="e.g. SRV-CARD-NEW" />
             <OptionSelect label="Category" required placeholder="Select category" value={values.category} onChange={(event) => set('category', event.target.value)} error={errors.category} options={SERVICE_CATEGORIES.map((entry) => ({ value: entry, label: entry }))} />
             <OptionSelect label="Department / specialty (optional)" placeholder="Unassigned" value={values.department} onChange={(event) => set('department', event.target.value)} hint="From Configuration › Departments. Leave unassigned if your organization does not use departments." options={departments.map((entry) => ({ value: entry, label: entry }))} />
+          </div>
+          <div className="mt-4">
+            <label className="flex items-start gap-2 text-xs">
+              <input type="checkbox" checked={values.patientBookable} onChange={(event) => set('patientBookable', event.target.checked)} className="mt-0.5 accent-[#006a61]" />
+              <span><strong>Patients can book this in the patient app</strong><br /><span className="text-outline">Needs a department. Therapists in it who accept app bookings take these visits, at locations listed in the app. The branch price is shown to patients.</span></span>
+            </label>
+            {values.patientBookable && !values.department && <p role="alert" className="mt-1 text-xs text-rose-600">Choose a department for a service patients can book.</p>}
           </div>
           <div className="mt-4"><TextArea label="Description (optional)" rows={3} value={values.description} onChange={(event) => set('description', event.target.value)} /></div>
           <fieldset className="mt-4 flex flex-wrap items-center gap-5 text-xs"><legend className="sr-only">Service status</legend><span className="font-semibold">Service status</span>{['Active', 'Inactive'].map((status) => <label key={status} className="flex items-center gap-1.5"><input type="radio" name="status" value={status} checked={values.status === status} onChange={() => set('status', status)} className="accent-[#006a61]" />{status}</label>)}<span className="text-outline">{values.status === 'Inactive' ? 'Inactive drafts are not selectable for new records.' : 'Active services need a tax decision and a location.'}</span></fieldset>

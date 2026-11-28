@@ -23,7 +23,7 @@ const PATHS = [['existing', 'Link existing patient'], ['new', 'Create new patien
 
 export default function LeadConversionPage() {
   const { leadId } = useParams()
-  return <LeadGate leadId={leadId} code="GO-06">{(lead) => <Conversion key={lead.id} lead={lead} />}</LeadGate>
+  return <LeadGate leadId={leadId}>{(lead) => <Conversion key={lead.id} lead={lead} />}</LeadGate>
 }
 
 function Conversion({ lead }) {
@@ -87,7 +87,7 @@ function Conversion({ lead }) {
   }))
 
   return (
-    <GrowthFrame back={{ to: detailPath, label: 'Back to Lead Details' }} crumb={`Owner Panel / Growth OS / Leads / ${lead.name} / Lead Conversion & Re-engagement`} code="GO-06" title="Lead Conversion & Re-engagement" description="Resolve identity first. Link one shared patient record or create a new one only after a no-match review." context={[context.line, `Lead branch: ${lead.branch}.`]} today={context.today} sample={LIVE_NOTE}>
+    <GrowthFrame back={{ to: detailPath, label: 'Back to Lead Details' }} crumb={`Owner Panel / Growth OS / Leads / ${lead.name} / Lead Conversion & Re-engagement`} title="Lead Conversion & Re-engagement" description="Resolve identity first. Link one shared patient record or create a new one only after a no-match review." context={[context.line, `Lead branch: ${lead.branch}.`]} today={context.today} sample={LIVE_NOTE}>
       {failure && <Banner tone="danger" title="Not saved" className="mb-4">{failure}</Banner>}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200 bg-white p-4 text-xs"><p className="flex flex-wrap items-center gap-2"><strong className="text-base">{lead.name}</strong><StatusPill tone="success">{lead.stage}</StatusPill>{lead.dueState !== 'None' && <StatusPill tone={TONES[lead.dueState]}>{lead.dueState} · Open</StatusPill>}<span className="text-outline">{lead.number} · {lead.phone} · {lead.summary}</span></p><span className="text-outline">{lead.branch} · Owner {lead.owner}</span></div>
       <ol className="mb-5 grid gap-3 sm:grid-cols-5">{steps.map(([title, note], index) => <li key={title} className={cn('rounded-md border p-3 text-xs', index === 1 ? 'border-brand bg-teal-50' : 'border-slate-200 bg-white')}><p className="font-semibold">{title}</p><p className="mt-1 text-outline">{note}</p></li>)}</ol>
@@ -135,7 +135,7 @@ function Conversion({ lead }) {
         <ActionButton onClick={() => navigate(detailPath)}>{converted ? 'Back' : 'Cancel'}</ActionButton>
         <ActionButton variant="brand" disabled={!ready || saving} onClick={convert}>{form.path === 'new' ? 'Continue to registration' : 'Confirm conversion'}</ActionButton>
       </div>
-      <GrowthFooter code="GO-06" back={{ to: detailPath, label: 'Back to Lead Details' }} />
+      <GrowthFooter back={{ to: detailPath, label: 'Back to Lead Details' }} />
     </GrowthFrame>
   )
 }

@@ -1,3 +1,4 @@
+import { useAuth } from '../../auth/context/useAuth'
 import { useState } from 'react'
 import { FileText, Lock, ShieldCheck } from 'lucide-react'
 import ActionButton from '../../../components/workspace/ActionButton'
@@ -26,6 +27,7 @@ function Progress({ done, total }) {
 }
 
 export default function PrescriptionQueuePage() {
+  const { organisation } = useAuth()
   const { state } = useStock()
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState('all')
@@ -43,7 +45,7 @@ export default function PrescriptionQueuePage() {
     >
       <section className="mb-5 flex gap-3 rounded-lg border border-teal-200 bg-teal-50/60 p-4 text-xs">
         <ShieldCheck className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden="true" />
-        <div><p className="text-sm font-semibold">Aura Health · All locations (3) · Authorized pharmacy branches</p><p className="mt-1 text-on-surface-variant">Pharmacist authorization is required to dispense. Owner access does not grant dispensing permission.</p></div>
+        <div><p className="text-sm font-semibold">{organisation?.organisation.name} · Authorized pharmacy branches</p><p className="mt-1 text-on-surface-variant">Pharmacist authorization is required to dispense. Owner access does not grant dispensing permission.</p></div>
       </section>
 
       <p className="mb-2 flex justify-between text-[11px] font-semibold tracking-wide text-outline uppercase"><span>Pharmacy workspace totals</span><span className="font-normal normal-case">Counts of the records held for this workspace</span></p>

@@ -17,7 +17,7 @@ export default function CampaignAttributionPage() {
   const context = useLeadContext()
   const resource = useApiResource(() => campaignsApi.campaign(campaignId), `campaign:${campaignId}`)
   const campaign = resource.data
-  const frame = { back: { to: ROUTES.growthPerformance, label: 'Growth performance · GO30' }, crumb: 'Owner Panel / Growth OS / Campaign Attribution', code: 'GO-31', context: [context.line, 'Leads recorded against the campaign, followed through conversion, booking, visit and billing'], today: context.today, sample: 'Live records · Only leads recorded against this campaign are credited to it' }
+  const frame = { back: { to: ROUTES.growthPerformance, label: 'Growth performance' }, crumb: 'Owner Panel / Growth OS / Campaign Attribution', context: [context.line, 'Leads recorded against the campaign, followed through conversion, booking, visit and billing'], today: context.today, sample: 'Live records · Only leads recorded against this campaign are credited to it' }
 
   if (resource.error?.status === 404) {
     return (
@@ -48,7 +48,7 @@ export default function CampaignAttributionPage() {
       <Section title={campaign.name} aside={campaign.code} className="mb-6">
         <p className="mb-4 flex flex-wrap gap-2"><StatusPill tone={CAMPAIGN_TONE[campaign.status]}>{CAMPAIGN_STATUSES[campaign.status]}</StatusPill><StatusPill>{CAMPAIGN_CHANNELS[campaign.channel]}</StatusPill></p>
         <dl className="grid gap-4 text-xs sm:grid-cols-3"><KeyValue label="Branch / owner">{campaign.branch.name} · {campaign.owner.name}</KeyValue><KeyValue label="Budget · spent">{formatINR(campaign.budget)} · {formatINR(campaign.spent)}</KeyValue><KeyValue label="Cost per converted patient">{attribution.converted && campaign.spent ? formatINR(Math.round(campaign.spent / attribution.converted)) : '—'}</KeyValue></dl>
-        <Link to={pathFor(ROUTES.campaign, { campaignId })} className="mt-4 inline-block text-xs font-semibold text-brand hover:underline">Campaign details → GO08</Link>
+        <Link to={pathFor(ROUTES.campaign, { campaignId })} className="mt-4 inline-block text-xs font-semibold text-brand hover:underline">Campaign details →</Link>
       </Section>
 
       <Section title="Campaign → lead → patient → appointment → revenue" aside="Counted from records" className="mb-6">
@@ -64,7 +64,7 @@ export default function CampaignAttributionPage() {
           </tbody></table></div>
         {attribution.leads > attribution.recent.length && <p className="mt-3 text-[11px] text-outline">Showing the latest {attribution.recent.length} of {attribution.leads}.</p>}
       </Section>
-      <GrowthFooter code="GO-31" back={{ to: ROUTES.growthPerformance, label: 'Growth performance · GO30' }} />
+      <GrowthFooter back={{ to: ROUTES.growthPerformance, label: 'Growth performance' }} />
     </GrowthFrame>
   )
 }

@@ -31,14 +31,14 @@ export default function ConversationThreadPage() {
 
   if (resource.error?.status === 404) {
     return (
-      <GrowthFrame back={{ to: backPath, label: 'Back to inbox' }} crumb="Owner Panel / Growth OS / Conversation Thread" code="GO-22" title="Conversation not found">
+      <GrowthFrame back={{ to: backPath, label: 'Back to inbox' }} crumb="Owner Panel / Growth OS / Conversation Thread" title="Conversation not found">
         <Banner tone="warning" title="No conversation matches this link">Open the inbox to find the thread. Conversations outside your branches are not shown.</Banner>
       </GrowthFrame>
     )
   }
   if (!resource.data) {
     return (
-      <GrowthFrame back={{ to: backPath, label: 'Back to inbox' }} crumb="Owner Panel / Growth OS / Conversation Thread" code="GO-22" title="Conversation">
+      <GrowthFrame back={{ to: backPath, label: 'Back to inbox' }} crumb="Owner Panel / Growth OS / Conversation Thread" title="Conversation">
         <LoadingState label="Loading conversation…" error={resource.error} onRetry={resource.reload} />
       </GrowthFrame>
     )
@@ -78,7 +78,7 @@ function Thread({ data, reload, backPath }) {
   const addNote = () => act(() => messagingApi.addNote(data.id, note.trim()).then(() => setNote('')), 'Internal note added. It is never sent to the contact.')
 
   return (
-    <GrowthFrame back={{ to: backPath, label: 'Back to inbox · GO21 · Filters kept' }} crumb="Owner Panel / Growth OS / Conversation Thread & Patient Context" code="GO-22" title="Conversation Thread & Patient Context" description="Read and answer the conversation, coordinate internal follow-up and keep identity linking explicit." badge={<StatusPill tone={data.channelConnected ? 'success' : 'warning'}>{thread.channel} · {data.channelConnected ? 'connected' : 'not connected'}</StatusPill>} context={[context.line, `${thread.number} · ${thread.channel} · ${thread.address} · ${thread.branch}`]} today={context.today} sample="Live conversation · New messages and receipts appear as they arrive">
+    <GrowthFrame back={{ to: backPath, label: 'Back to inbox · Filters kept' }} crumb="Owner Panel / Growth OS / Conversation Thread & Patient Context" title="Conversation Thread & Patient Context" description="Read and answer the conversation, coordinate internal follow-up and keep identity linking explicit." badge={<StatusPill tone={data.channelConnected ? 'success' : 'warning'}>{thread.channel} · {data.channelConnected ? 'connected' : 'not connected'}</StatusPill>} context={[context.line, `${thread.number} · ${thread.channel} · ${thread.address} · ${thread.branch}`]} today={context.today} sample="Live conversation · New messages and receipts appear as they arrive">
       {!data.channelConnected && <Banner tone="warning" title={`${thread.channel} is not connected`} className="mb-6">Messages cannot be sent until an administrator connects this channel. <Link to={ROUTES.channels} className="font-semibold text-brand hover:underline">Channel configuration →</Link></Banner>}
       {notice && <Banner tone={notice.tone} title={notice.title} className="mb-6">{notice.text}</Banner>}
       <div className="mb-6 grid items-start gap-6 lg:grid-cols-[1.5fr_1fr]">
@@ -103,10 +103,10 @@ function Thread({ data, reload, backPath }) {
         </div>
         <div className="space-y-6">
           <Identity data={data} thread={thread} triage={triage} act={act} />
-          <Section title="Related"><p className="space-y-2 text-xs"><Link to={pathFor(ROUTES.communicationHistory, { threadId: data.id })} state={state} className="block font-semibold text-brand hover:underline">Communication history & permission → GO24</Link>{triage && <button type="button" onClick={() => act(() => messagingApi.updateConversation(data.id, { status: thread.status === 'Open' ? 'resolved' : 'open', version: data.version }))} className="font-semibold text-brand hover:underline">{thread.status === 'Open' ? 'Mark conversation resolved' : 'Reopen conversation'}</button>}</p></Section>
+          <Section title="Related"><p className="space-y-2 text-xs"><Link to={pathFor(ROUTES.communicationHistory, { threadId: data.id })} state={state} className="block font-semibold text-brand hover:underline">Communication history & permission →</Link>{triage && <button type="button" onClick={() => act(() => messagingApi.updateConversation(data.id, { status: thread.status === 'Open' ? 'resolved' : 'open', version: data.version }))} className="font-semibold text-brand hover:underline">{thread.status === 'Open' ? 'Mark conversation resolved' : 'Reopen conversation'}</button>}</p></Section>
         </div>
       </div>
-      <GrowthFooter code="GO-22" back={{ to: backPath, label: 'Back to inbox · GO21' }} />
+      <GrowthFooter back={{ to: backPath, label: 'Back to inbox' }} />
     </GrowthFrame>
   )
 }

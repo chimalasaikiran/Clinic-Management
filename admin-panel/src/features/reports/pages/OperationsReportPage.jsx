@@ -15,7 +15,7 @@ const windowLabel = (window) => `${short(window.from)}–${short(window.to)}${wi
 // Appointments, attendance and capacity for a period, from the appointment records.
 export default function OperationsReportPage() {
   const { allowed, periods, period, setPeriodId, branchId, setBranchId, report, error, loading, reload } = useOperationsReport()
-  const frame = { code: 'RPT-02', title: 'Operations', back: { to: ROUTES.reports, label: '← Back to Overview · RPT-01' } }
+  const frame = { title: 'Operations', back: { to: ROUTES.reports, label: '← Back to Overview' } }
   if (!allowed) {
     return <ReportsFrame {...frame} description="Appointments, attendance and capacity." notes={{ title: 'Reports not available to your role', text: 'Your role has no reports permission, so no appointment figures are shown.' }} />
   }

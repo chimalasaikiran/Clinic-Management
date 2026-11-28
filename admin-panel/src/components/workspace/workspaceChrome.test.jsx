@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { ROUTES } from '../../config/routes'
 import { authState } from '../../test/auth'
 import { billingFake } from '../../test/fixtures/billingFake'
-import { createWorkspaceApi } from '../../test/fixtures/workspaceApi'
+import { alertsFixture, createWorkspaceApi } from '../../test/fixtures/workspaceApi'
 import { renderRoute } from '../../test/renderRoute'
 
 const setup = () => userEvent.setup({ delay: null })
@@ -49,10 +49,48 @@ describe('workspace header', () => {
     expect(location).toBeDisabled()
   })
 
+  it('clears the count once the list has been read, until something new arrives', async () => {
+    const user = userEvent.setup({ delay: null })
+    let waiting = 2
+    billingFake.useWorkspace(createWorkspaceApi({ alerts: () => ({ ...alertsFixture(), items: [{ id: 'waiting', count: waiting }] }) }))
+    renderRoute(ROUTES.dashboard)
+
+    await user.click(await screen.findByRole('button', { name: 'Alerts (1 unread)' }))
+    expect(within(screen.getByRole('region', { name: 'Alerts' })).getByText('New')).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    const read = screen.getByRole('button', { name: 'Alerts' })
+
+    // Still open work, so it stays listed, but no longer as new.
+    await user.click(read)
+    expect(screen.getByRole('link', { name: /2 patients waiting/ })).toBeInTheDocument()
+    expect(screen.queryByText('New')).not.toBeInTheDocument()
+    await user.keyboard('{Escape}')
+
+    waiting = 3
+    await user.click(screen.getByRole('button', { name: 'Alerts' }))
+    expect(await screen.findByRole('button', { name: 'Alerts (1 unread)' })).toBeInTheDocument()
+  })
+
+  it('says when the alerts cannot be loaded, and loads them on retry', async () => {
+    const user = userEvent.setup({ delay: null })
+    let fail = true
+    billingFake.useWorkspace(createWorkspaceApi({ alerts: () => {
+      if (fail) throw new Error('The server is not responding.')
+      return alertsFixture()
+    } }))
+    renderRoute(ROUTES.dashboard)
+
+    await user.click(await screen.findByRole('button', { name: 'Alerts' }))
+    expect(await screen.findByText(/Alerts could not be loaded/)).toBeInTheDocument()
+    fail = false
+    await user.click(within(screen.getByRole('region', { name: 'Alerts' })).getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByRole('button', { name: 'Alerts (3 unread)' })).toBeInTheDocument()
+  })
+
   it('lists open items behind the alerts, each linking to where it is handled', async () => {
     const user = setup()
     await openDashboard()
-    const bell = await screen.findByRole('button', { name: 'Alerts (3 need attention)' })
+    const bell = await screen.findByRole('button', { name: 'Alerts (3 unread)' })
     await user.click(bell)
     const panel = screen.getByRole('region', { name: 'Alerts' })
     expect(within(panel).getByRole('link', { name: /2 patients waiting/ })).toHaveAttribute('href', ROUTES.appointments)

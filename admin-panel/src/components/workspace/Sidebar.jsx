@@ -6,6 +6,7 @@ import { ROUTES } from '../../config/routes'
 import { NAV_ITEMS } from '../../config/workspace'
 import { useAuth } from '../../features/auth/context/useAuth'
 import { useWorkspace } from '../../features/workspace/useWorkspace'
+import { DASHBOARD_NAMES, dashboardKind } from '../../features/dashboard/day/dayView'
 import { healthStatus, scopeLabel } from '../../features/workspace/workspaceView'
 import { cn } from '../../lib/cn'
 
@@ -130,6 +131,11 @@ export default function Sidebar({ className }) {
   // Sections the user's role cannot open are hidden; the route guard and the API enforce the same rule.
   const { can } = useAuth()
   const health = healthStatus(useWorkspace().health)
+  const kind = dashboardKind(can)
+  const items = NAV_ITEMS.filter((item) => canOpen(item.to, can)).map((item) => (item.id === 'overview' ? { ...item, label: DASHBOARD_NAMES[kind] } : item))
+  let primary = null
+  if (kind === 'reception' && can('patients.create')) primary = { label: 'Register Patient', to: ROUTES.patientNew }
+  else if (can('bookings.view') && can('bookings.create')) primary = { label: 'New Encounter', to: `${ROUTES.appointments}?walkIn=1` }
 
   return (
     <aside className={cn('h-full w-64 border-r border-outline-variant/60 bg-white font-inter', className)}>
@@ -151,18 +157,18 @@ export default function Sidebar({ className }) {
           </div>
         </div>
 
-        {can('bookings.view') && can('bookings.create') && (
+        {primary && (
           <Link
-            to={`${ROUTES.appointments}?walkIn=1`}
+            to={primary.to}
             className="mt-4 flex w-full items-center justify-center gap-2 rounded bg-black px-3 py-2 text-sm leading-5 font-medium text-white shadow-sm transition-opacity hover:opacity-90"
           >
             <img src={icons.plusNew} alt="" />
-            New Encounter
+            {primary.label}
           </Link>
         )}
 
         <nav aria-label="Primary" className="mt-4 flex flex-col gap-1 overflow-y-auto">
-          {NAV_ITEMS.filter((item) => canOpen(item.to, can)).map((item) => (
+          {items.map((item) => (
             <NavItem key={item.id} item={item} />
           ))}
         </nav>

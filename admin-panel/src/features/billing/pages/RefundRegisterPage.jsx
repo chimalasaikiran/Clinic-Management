@@ -36,7 +36,7 @@ export default function RefundRegisterPage() {
   const exportRegister = () => exportCsv('refund-register.csv', [['Refund ID', 'Date', 'Patient', 'Payer', 'Original payment', 'Amount (INR)', 'Reason', 'Status'], ...rows.map((refund) => { const party = refundParty(refund, getPatient); return [refund.id, refund.date, party.name, party.payer, refund.paymentId, refund.amount, refund.reason, refund.status] })])
 
   return (
-    <BillingFrame back={{ to: ROUTES.billing, label: 'Billing & Finance' }} crumb="Billing & Finance / Refunds" code="BF-15 / Billing & Finance" title="Refund Register" description="Track refund requests, approvals and gateway outcomes. Each refund stays linked to its original payment." actions={<ActionButton variant="brand" icon={Plus} to={ROUTES.billingRefundNew} state={state}>Create Refund</ActionButton>} scope={false}>
+    <BillingFrame back={{ to: ROUTES.billing, label: 'Billing & Finance' }} crumb="Billing & Finance / Refunds" code="Billing & Finance" title="Refund Register" description="Track refund requests, approvals and gateway outcomes. Each refund stays linked to its original payment." actions={<ActionButton variant="brand" icon={Plus} to={ROUTES.billingRefundNew} state={state}>Create Refund</ActionButton>} scope={false}>
       <div className="mb-6 grid items-end gap-4 sm:grid-cols-3 lg:grid-cols-[1fr_1fr_1fr_1fr]">
         <FilterField label="Date range · Refund created" value={range.id} onChange={(value) => filters.change('range', value, DATE_RANGES[0].id)} options={DATE_RANGES.map((entry) => [entry.id, entry.label])} />
         <FilterField label="Organization / branch" value="" disabled options={[['', scopeText]]} />
@@ -84,7 +84,7 @@ export default function RefundRegisterPage() {
       </section>
 
       {failed && <Banner tone="warning" title="Failed does not mean refunded" className="mb-6">{failed.id}: {failed.note ?? 'The refund failed.'} Open details to verify gateway status before an authorized retry.</Banner>}
-      <GovernanceFooter code="BF-15">Refund ≠ payment ≠ receipt ≠ allocation. Processed refunds are read-only; corrections require a separate authorized, audited record.</GovernanceFooter>
+      <GovernanceFooter>Refund ≠ payment ≠ receipt ≠ allocation. Processed refunds are read-only; corrections require a separate authorized, audited record.</GovernanceFooter>
     </BillingFrame>
   )
 }

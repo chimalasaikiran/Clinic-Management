@@ -10,7 +10,7 @@ const branchRows = (branches, of = () => null) =>
   }))
 
 export const blankService = (branches) => ({
-  name: '', code: '', category: '', department: '', description: '', unit: '', status: 'Inactive', price: '', tax: 'Not configured', taxConfig: '', branches: branchRows(branches),
+  name: '', code: '', category: '', department: '', patientBookable: false, description: '', unit: '', status: 'Inactive', price: '', tax: 'Not configured', taxConfig: '', branches: branchRows(branches),
 })
 
 // Form state for an existing service: offered branches with their price mode.
@@ -52,7 +52,7 @@ export function validateService(values, services, editingId, branches) {
 // The service as the screens hold it, built from the form; adapters.toServiceRequest turns it into the API body.
 export function buildService(values, branches) {
   return {
-    code: values.code.trim().toUpperCase(), name: values.name.trim(), category: values.category, department: values.department, description: values.description.trim(), unit: values.unit?.trim() ?? '',
+    code: values.code.trim().toUpperCase(), name: values.name.trim(), category: values.category, department: values.department, patientBookable: Boolean(values.patientBookable), description: values.description.trim(), unit: values.unit?.trim() ?? '',
     status: values.status, price: Number(values.price), tax: values.tax, taxConfig: TAX_CONFIGS[values.tax] ? values.taxConfig : '',
     branches: Object.fromEntries(offeredBranches(values, branches).map((branch) => {
       const entry = values.branches[branch.id]
@@ -62,7 +62,7 @@ export function buildService(values, branches) {
 }
 
 export const changedFields = (before, after) =>
-  ['name', 'code', 'category', 'department', 'description', 'status', 'price', 'tax', 'taxConfig', 'branches'].filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
+  ['name', 'code', 'category', 'department', 'patientBookable', 'description', 'status', 'price', 'tax', 'taxConfig', 'branches'].filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
 
 // Reactivation re-runs the configuration checks that activation needs.
 export function activationBlockers(service) {

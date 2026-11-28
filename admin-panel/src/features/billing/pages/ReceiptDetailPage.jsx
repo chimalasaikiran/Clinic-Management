@@ -20,7 +20,7 @@ export default function ReceiptDetailPage() {
 
   if (!payment) {
     return (
-      <BillingFrame back={{ to: registerPath, label: 'Receipt Register' }} crumb="Billing & Finance / Receipts" code="BF-13 / Payments & receipts" title="Receipt not found" scope={false}>
+      <BillingFrame back={{ to: registerPath, label: 'Receipt Register' }} crumb="Billing & Finance / Receipts" code="Payments & receipts" title="Receipt not found" scope={false}>
         <Banner tone="warning" title="No receipt matches this link">Open the Receipt Register to find the record.</Banner>
       </BillingFrame>
     )
@@ -32,7 +32,7 @@ export default function ReceiptDetailPage() {
   const download = () => exportCsv(`${receiptId}.csv`, [['Receipt', 'Payment', 'Patient', 'MRN', 'Date', 'Time (IST)', 'Method', 'Transaction reference', 'Amount (INR)'], [receiptId, payment.id, patient?.name ?? '', patient?.mrn ?? '', payment.date, payment.time, method, payment.reference, payment.amount]])
 
   return (
-    <BillingFrame back={{ to: registerPath, label: 'Receipt Register · filtered view' }} crumb={`Billing & Finance / Receipts / ${receiptId}`} code="BF-13 / Payments & receipts" title="Receipt Details" description={`${receiptId} · Review the linked receipt without inferring an amount from the payment or allocation.`} actions={<><ActionButton icon={Printer} onClick={() => window.print()}>Print</ActionButton><ActionButton icon={Download} onClick={download}>Download</ActionButton></>} scope={false}>
+    <BillingFrame back={{ to: registerPath, label: 'Receipt Register · filtered view' }} crumb={`Billing & Finance / Receipts / ${receiptId}`} code="Payments & receipts" title="Receipt Details" description={`${receiptId} · Review the linked receipt without inferring an amount from the payment or allocation.`} actions={<><ActionButton icon={Printer} onClick={() => window.print()}>Print</ActionButton><ActionButton icon={Download} onClick={download}>Download</ActionButton></>} scope={false}>
       <Scope left={`${orgName} · ${payment.desk} / ${patient?.name} · ${patient?.mrn}`} />
 
       <div className="mb-6 grid items-start gap-6 lg:grid-cols-[1fr_452px]">
@@ -79,7 +79,7 @@ export default function ReceiptDetailPage() {
           </Section>
         </div>
       </div>
-      <GovernanceFooter code="BF-13">Reviewing this receipt does not alter settled payment history or create an allocation.</GovernanceFooter>
+      <GovernanceFooter>Reviewing this receipt does not alter settled payment history or create an allocation.</GovernanceFooter>
     </BillingFrame>
   )
 }

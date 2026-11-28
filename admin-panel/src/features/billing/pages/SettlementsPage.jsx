@@ -17,7 +17,7 @@ export default function SettlementsPage() {
   const range = DATE_RANGES.find((entry) => entry.id === filters.get('range')) ?? DATE_RANGES[0]
 
   return (
-    <BillingFrame back={{ to: ROUTES.billing, label: 'Back to Finance Workspace' }} crumb="Billing & Finance / Settlements" code="BF-21 / Billing & Finance" title="Settlements" description="Review doctor, staff or branch settlements only where configuration and authorized source records exist." actions={<ActionButton disabled>Export settlements</ActionButton>} scope={false}>
+    <BillingFrame back={{ to: ROUTES.billing, label: 'Back to Finance Workspace' }} crumb="Billing & Finance / Settlements" code="Billing & Finance" title="Settlements" description="Review doctor, staff or branch settlements only where configuration and authorized source records exist." actions={<ActionButton disabled>Export settlements</ActionButton>} scope={false}>
       <p className="mb-5 border-b border-slate-200 pb-4 text-[11px] text-outline">Return to Finance Workspace with {range.label} · {scopeText} · Billing model: All models · Queue context retained.</p>
       <div className="mb-6 grid items-end gap-4 sm:grid-cols-3 lg:grid-cols-[1fr_1fr_1fr_1fr]">
         <FilterField label="Requested period filter" value={range.id} onChange={(value) => filters.change('range', value, DATE_RANGES[0].id)} options={DATE_RANGES.map((entry) => [entry.id, entry.label])} />
@@ -59,7 +59,7 @@ export default function SettlementsPage() {
           <p className="mt-3 text-xs text-outline">Finalized settlements remain read-only. Any correction requires a separate authorized, audited record.</p>
         </Section>
       </div>
-      <GovernanceFooter code="BF-21">No settlement rules or records supplied. No payment, approval, deduction or configuration change is initiated from this view.</GovernanceFooter>
+      <GovernanceFooter>No settlement rules or records supplied. No payment, approval, deduction or configuration change is initiated from this view.</GovernanceFooter>
     </BillingFrame>
   )
 }

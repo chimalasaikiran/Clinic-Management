@@ -21,7 +21,7 @@ export default function LeadDetailPage() {
   const { leadId } = useParams()
   const { state } = useLocation()
   const back = { to: `${ROUTES.leads}${state?.search ?? ''}`, label: 'Back to Lead Register' }
-  return <LeadGate leadId={leadId} code="GO-03" back={back}>{(lead, reload) => <LeadDetail lead={lead} reload={reload} />}</LeadGate>
+  return <LeadGate leadId={leadId} back={back}>{(lead, reload) => <LeadDetail lead={lead} reload={reload} />}</LeadGate>
 }
 
 function LeadDetail({ lead, reload }) {
@@ -73,7 +73,7 @@ function LeadDetail({ lead, reload }) {
   ]
 
   return (
-    <GrowthFrame back={{ to: registerPath, label: 'Back to Lead Register' }} crumb={`Owner Panel / Growth OS / Leads / ${lead.name}`} code="GO-03" title={<>{lead.name}<StatusPill tone="success">{lead.stage}</StatusPill>{due !== 'None' && <StatusPill tone={TONES[due]}>{due}</StatusPill>}</>} description={`${lead.number} · ${lead.summary}`} actions={writer && <><ActionButton to={pathFor(ROUTES.leadEdit, { leadId })} state={here}>Edit Lead</ActionButton><ActionButton variant="brand" to={pathFor(ROUTES.leadFollowUp, { leadId })} state={here}>Record Follow up</ActionButton><ActionButton to={converted ? undefined : pathFor(ROUTES.leadConvert, { leadId })} state={here} disabled={converted}>Convert Lead</ActionButton></>} actionNote={writer ? 'Changes are recorded in the activity history' : 'View only · your role cannot change leads'} context={[context.line, `Lead branch: ${lead.branch}.`]} today={context.today} sample={LIVE_NOTE}>
+    <GrowthFrame back={{ to: registerPath, label: 'Back to Lead Register' }} crumb={`Owner Panel / Growth OS / Leads / ${lead.name}`} title={<>{lead.name}<StatusPill tone="success">{lead.stage}</StatusPill>{due !== 'None' && <StatusPill tone={TONES[due]}>{due}</StatusPill>}</>} description={`${lead.number} · ${lead.summary}`} actions={writer && <><ActionButton to={pathFor(ROUTES.leadEdit, { leadId })} state={here}>Edit Lead</ActionButton><ActionButton variant="brand" to={pathFor(ROUTES.leadFollowUp, { leadId })} state={here}>Record Follow up</ActionButton><ActionButton to={converted ? undefined : pathFor(ROUTES.leadConvert, { leadId })} state={here} disabled={converted}>Convert Lead</ActionButton></>} actionNote={writer ? 'Changes are recorded in the activity history' : 'View only · your role cannot change leads'} context={[context.line, `Lead branch: ${lead.branch}.`]} today={context.today} sample={LIVE_NOTE}>
       {failure && <Banner tone="danger" title="Not saved" className="mb-6">{failure}</Banner>}
       <div className="mb-6 grid gap-6 lg:grid-cols-[1.35fr_1fr]">
         <Section title="Overview" aside="Lead record">
@@ -118,7 +118,7 @@ function LeadDetail({ lead, reload }) {
           {!converted && writer && <><p className="mt-5 text-[13px] font-semibold">Before converting this lead</p><ul className="mt-2 space-y-2 text-xs text-on-surface-variant"><li>Review shared records.</li><li>Resolve identity before creation.</li><li>Confirm conversion separately.</li></ul><ActionButton variant="brand" className="mt-4" to={pathFor(ROUTES.leadConvert, { leadId })} state={here}>Convert Lead</ActionButton></>}
         </Section>
       </div>
-      <GrowthFooter code="GO-03" back={{ to: registerPath, label: 'Back to Lead Register · Filters kept' }} />
+      <GrowthFooter back={{ to: registerPath, label: 'Back to Lead Register · Filters kept' }} />
     </GrowthFrame>
   )
 }

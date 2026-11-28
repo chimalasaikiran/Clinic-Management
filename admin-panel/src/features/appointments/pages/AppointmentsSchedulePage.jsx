@@ -13,6 +13,7 @@ import { useAuth } from '../../auth/context/useAuth'
 import { STATUS_VALUES, toAppointmentView, TYPE_VALUES } from '../../patients/adapters'
 import { appointmentsApi, branchesApi, practitionersApi } from '../../patients/api'
 import { usePatientRecords } from '../../patients/context/usePatientRecords'
+import { useLiveRefresh } from '../../workspace/useLiveRefresh'
 import { useWorkspace } from '../../workspace/useWorkspace'
 import { formatLongDate, formatTime, localClock, localToday } from '../../patients/format'
 import { appointmentTone } from '../../patients/selectors'
@@ -61,6 +62,7 @@ export default function AppointmentsSchedulePage() {
   const branchId = branch?.id
 
   const day = useApiResource(() => (branchId ? appointmentsApi.list({ date, branchId, pageSize: DAY_PAGE }) : Promise.resolve(null)), `${date}:${branchId}`)
+  useLiveRefresh(['appointments'], day.reload)
   const appointments = (day.data?.data ?? []).map(toAppointmentView)
   const now = date === today ? localClock() : null
   const { slots, columns } = dayGrid(practitioners.data ?? [], appointments, date, branchId, sessionId)

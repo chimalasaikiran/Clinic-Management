@@ -30,7 +30,7 @@ export default function FeedbackEscalationPage() {
   const set = (name, value) => setFilters((current) => ({ ...current, [name]: value }))
 
   return (
-    <GrowthFrame back={{ to: ROUTES.reviews, label: 'Reviews & Reputation · GO16' }} crumb="Owner Panel / Growth OS / Feedback Escalation" code="GO-19" title="Feedback Escalation" description="Follow up on what reviews raise, with an owner and a due time, separately from the public reply." badge={<StatusPill tone="warning">Internal operations only</StatusPill>} actions={<ActionButton variant="brand" to={ROUTES.reputation}>Reputation report → GO20</ActionButton>} context={[context.line, 'Open first, then by due time']} today={context.today} sample="Live records · Escalations are opened from a review">
+    <GrowthFrame back={{ to: ROUTES.reviews, label: 'Reviews & Reputation' }} crumb="Owner Panel / Growth OS / Feedback Escalation" title="Feedback Escalation" description="Follow up on what reviews raise, with an owner and a due time, separately from the public reply." badge={<StatusPill tone="warning">Internal operations only</StatusPill>} actions={<ActionButton variant="brand" to={ROUTES.reputation}>Reputation report →</ActionButton>} context={[context.line, 'Open first, then by due time']} today={context.today} sample="Live records · Escalations are opened from a review">
       <Banner title="Internal follow-up" className="mb-6">Reviewer names are public display names, not patients. Resolving an escalation never posts or changes anything on Google.</Banner>
       <Section title="Find escalations" aside="Filters" className="mb-6">
         <div className="grid gap-4 sm:grid-cols-3"><FilterField label="Severity" value={filters.severity} onChange={(value) => set('severity', value)} options={[['', 'All severities'], ...Object.entries(SEVERITIES)]} /><FilterField label="Status" value={filters.status} onChange={(value) => set('status', value)} options={[['', 'All statuses'], ...Object.entries(ESCALATION_STATUSES)]} /><FilterField label="Owner" value={filters.ownerId} onChange={(value) => set('ownerId', value)} options={[['', 'All owners'], ...owners.map((owner) => [owner.membershipId, owner.name])]} /></div>
@@ -43,14 +43,14 @@ export default function FeedbackEscalationPage() {
             <ul className="-mx-6 divide-y divide-slate-100">{rows.map((entry) => (
               <li key={entry.id} className={cn('px-6 py-4 text-xs', selected?.id === entry.id && 'bg-teal-50/50')}>
                 <button type="button" onClick={() => setSelectedId(entry.id)} className="block w-full text-left"><p className="flex justify-between"><strong className="text-[13px]">{entry.code} · {entry.review.reviewerName}</strong><StatusPill tone={entry.status === 'resolved' ? 'success' : 'info'}>{ESCALATION_STATUSES[entry.status]}</StatusPill></p><p className="mt-2 text-[13px]">{entry.topic}</p><p className="mt-2 text-outline">{SEVERITIES[entry.severity]} · {entry.owner.name} · Due {when(stampOf(entry.dueAt))}{entry.overdue && <span className="ml-2 font-semibold text-danger">Overdue</span>}</p></button>
-                <Link to={pathFor(ROUTES.review, { reviewId: entry.review.id })} className="mt-2 inline-block font-semibold text-brand hover:underline">Source review → GO17</Link>
+                <Link to={pathFor(ROUTES.review, { reviewId: entry.review.id })} className="mt-2 inline-block font-semibold text-brand hover:underline">Source review →</Link>
               </li>))}</ul>
           )}
           {escalations.data && rows.length === 0 && <p className="py-8 text-center text-sm text-on-surface-variant">No escalations match these filters. Open one from a review.</p>}
         </Section>
         {selected && <EscalationEditor key={`${selected.id}:${selected.version}`} escalation={selected} owners={owners} onSaved={escalations.reload} />}
       </div>
-      <GrowthFooter code="GO-19" back={{ to: ROUTES.reviews, label: 'Reviews & Reputation · GO16' }} />
+      <GrowthFooter back={{ to: ROUTES.reviews, label: 'Reviews & Reputation' }} />
     </GrowthFrame>
   )
 }

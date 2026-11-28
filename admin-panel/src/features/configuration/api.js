@@ -18,6 +18,7 @@ export const configApi = {
   branch: (id) => api(`/v1/configuration/branches/${id}`),
   createBranch: (body) => send('/v1/configuration/branches', 'POST', body),
   updateBranch: (id, body) => send(`/v1/configuration/branches/${id}`, 'PATCH', body),
+  setPatientApp: (id, body) => send(`/v1/configuration/branches/${id}/patient-app`, 'PUT', body),
   setHours: (id, sessions) => send(`/v1/configuration/branches/${id}/hours`, 'PUT', { sessions }),
   addClosure: (id, body) => send(`/v1/configuration/branches/${id}/closures`, 'POST', body),
   removeClosure: (id, closureId) => send(`/v1/configuration/branches/${id}/closures/${closureId}`, 'DELETE'),

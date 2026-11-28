@@ -36,7 +36,7 @@ export default function InvoiceDetailPage() {
   const download = () => exportCsv(`${invoice.id}.csv`, [['Code', 'Service', 'Qty', 'Unit price', 'Discount %', 'GST %', 'Amount'], ...invoice.lines.map((line) => [line.code, line.name, line.qty, line.price, line.discountPct, line.gstPct, lineAmounts(line).total]), ['', 'Total', '', '', '', '', totals.total]])
 
   return (
-    <BillingFrame back={{ to: back, label: 'Invoice Register' }} crumb={`Billing & Finance / Invoices / ${invoice.id}`} code="BF-08 / Billing & Finance" title={invoice.id} description={`${invoice.title} · ${formatDate(invoice.date)}, ${formatTime(invoice.time)} IST`} scope={false}
+    <BillingFrame back={{ to: back, label: 'Invoice Register' }} crumb={`Billing & Finance / Invoices / ${invoice.id}`} code="Billing & Finance" title={invoice.id} description={`${invoice.title} · ${formatDate(invoice.date)}, ${formatTime(invoice.time)} IST`} scope={false}
       actions={<><ActionButton icon={Download} onClick={download}>Download</ActionButton><ActionButton icon={Printer} onClick={() => window.print()}>Print</ActionButton>{balance > 0 && <ActionButton variant="primary" to={billingTab} state={{ recordPayment: true }}>Record Payment</ActionButton>}</>}>
       <p className="mb-5 flex flex-wrap items-center gap-2 text-xs"><StatusPill tone={TONE[status]}>{status}</StatusPill><StatusPill>Protected financial record</StatusPill><span className="text-outline">Record Payment requires payment-create permission · payment and allocation remain separate records.</span></p>
 

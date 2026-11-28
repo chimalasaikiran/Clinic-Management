@@ -7,17 +7,17 @@ import { cn } from '../../../lib/cn'
 
 const TABS = [['Overview', ROUTES.reports, true], ['Operations', ROUTES.reportsOperations], ['Financial', ROUTES.reportsFinancial], ['Pharmacy & Inventory', ROUTES.reportsPharmacy]]
 
-// Shared frame for the owner reports: trail, workflow code, title, report tabs, scope filters and the source note.
+// Shared frame for the owner reports: trail, title, report tabs, scope filters and the source note.
 // `period` labels the dates a report covers; `branch` ({ value, onChange, options }) makes the branch filter live,
 // otherwise it shows `scopeLabel`.
-export default function ReportsFrame({ code, title, description, back, query, onQuery, notes, children, extraFilters, period, scopeLabel, branch }) {
+export default function ReportsFrame({ title, description, back, query, onQuery, notes, children, extraFilters, period, scopeLabel, branch }) {
   return (
     <WorkspacePage>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs">
         <Link to={back?.to ?? ROUTES.dashboard} className="font-medium text-brand hover:underline">{back?.label ?? 'Owner Panel → Reports'}</Link>
-        <span className="text-outline">Owner Panel / Reports / {code}</span>
+        <span className="text-outline">Owner Panel / Reports</span>
       </div>
-      <p className="mb-1 text-[11px] font-semibold tracking-wide text-brand uppercase">{code} / Owner reports</p>
+      <p className="mb-1 text-[11px] font-semibold tracking-wide text-brand uppercase">Owner reports</p>
       <h1 className="text-[28px] leading-9 font-bold tracking-tight">{title}</h1>
       <p className="mt-1 mb-5 text-sm text-on-surface-variant">{description}</p>
       <nav aria-label="Report" className="mb-5 flex flex-wrap gap-1 border-b border-slate-200">{TABS.map(([label, to, end]) => <NavLink key={label} to={to} end={Boolean(end)} className={({ isActive }) => cn('-mb-px border-b-2 px-4 py-2.5 text-[13px]', isActive ? 'border-brand font-semibold text-brand' : 'border-transparent text-on-surface-variant hover:text-on-surface')}>{label}</NavLink>)}</nav>
@@ -33,7 +33,7 @@ export default function ReportsFrame({ code, title, description, back, query, on
       </div>
       {notes && <Banner tone="brand" title={notes.title} className="mb-6">{notes.text}</Banner>}
       {children}
-      <footer className="mt-8 flex items-center justify-between border-t border-slate-300 pt-4 text-xs"><Link to={ROUTES.reports} className="font-medium text-brand hover:underline">← Back to Overview · RPT-01</Link><span className="text-[11px] text-outline">ClinicOS · {code}</span></footer>
+      <footer className="mt-8 flex items-center justify-between border-t border-slate-300 pt-4 text-xs"><Link to={ROUTES.reports} className="font-medium text-brand hover:underline">← Back to Overview</Link><span className="text-[11px] text-outline">ClinicOS</span></footer>
     </WorkspacePage>
   )
 }

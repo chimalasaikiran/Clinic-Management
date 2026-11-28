@@ -31,7 +31,7 @@ export default function ReputationReportPage() {
   const largest = Math.max(1, ...(data?.byDay ?? []).map((entry) => entry.count))
 
   return (
-    <GrowthFrame back={{ to: ROUTES.escalations, label: 'Feedback Escalation · GO19' }} crumb="Owner Panel / Growth OS / Reputation Reporting" code="GO-20" title="Reputation Reporting" description="Review volume, ratings and replies for the period, each with its denominator." actions={<ActionButton variant="brand" to={ROUTES.escalations}>Escalations → GO19</ActionButton>} context={[context.line, `${day(from)} – ${day(to)} inclusive · Asia/Kolkata · Reviews by the date they were posted`]} today={context.today} sample="Live records · Google reviews fetched for linked branches">
+    <GrowthFrame back={{ to: ROUTES.escalations, label: 'Feedback Escalation' }} crumb="Owner Panel / Growth OS / Reputation Reporting" title="Reputation Reporting" description="Review volume, ratings and replies for the period, each with its denominator." actions={<ActionButton variant="brand" to={ROUTES.escalations}>Escalations →</ActionButton>} context={[context.line, `${day(from)} – ${day(to)} inclusive · Asia/Kolkata · Reviews by the date they were posted`]} today={context.today} sample="Live records · Google reviews fetched for linked branches">
       <Section title="Report scope" aside="Review-posted cohort · IST" className="mb-6">
         <div className="grid gap-4 sm:grid-cols-3">
           <TextInput label="From · IST" type="date" max={to} value={from} onChange={(event) => filters.change('from', event.target.value)} />
@@ -53,7 +53,7 @@ export default function ReputationReportPage() {
 
           <div className="mb-6 grid gap-6 lg:grid-cols-2">
             <Section title="Rating distribution" aside={`Out of ${data.total}`}>
-              <ul className="space-y-4">{data.distribution.map(({ star, count }) => <li key={star} className="grid grid-cols-[48px_1fr_40px_56px] items-center gap-3 text-xs"><span>{star} star</span><span className="h-3 rounded-sm bg-slate-100"><span className="block h-full rounded-sm bg-brand" style={{ width: `${data.total ? (count / data.total) * 100 : 0}%` }} /></span><span>{count} / {data.total}</span><Link to={`${ROUTES.reviews}?rating=${star}`} className="font-semibold text-brand hover:underline">GO16 ↗</Link></li>)}</ul>
+              <ul className="space-y-4">{data.distribution.map(({ star, count }) => <li key={star} className="grid grid-cols-[48px_1fr_40px_56px] items-center gap-3 text-xs"><span>{star} star</span><span className="h-3 rounded-sm bg-slate-100"><span className="block h-full rounded-sm bg-brand" style={{ width: `${data.total ? (count / data.total) * 100 : 0}%` }} /></span><span>{count} / {data.total}</span><Link to={`${ROUTES.reviews}?rating=${star}`} className="font-semibold text-brand hover:underline">View reviews ↗</Link></li>)}</ul>
               <p className="mt-4 text-[11px] text-outline">Select a rating to open those reviews in the register.</p>
             </Section>
             <Section title="Reviews by day" aside={`${data.byDay.length} day${data.byDay.length === 1 ? '' : 's'} with reviews`}>
@@ -64,7 +64,7 @@ export default function ReputationReportPage() {
           </div>
         </>
       )}
-      <GrowthFooter code="GO-20" back={{ to: ROUTES.escalations, label: 'Feedback Escalation · GO19' }} />
+      <GrowthFooter back={{ to: ROUTES.escalations, label: 'Feedback Escalation' }} />
     </GrowthFrame>
   )
 }

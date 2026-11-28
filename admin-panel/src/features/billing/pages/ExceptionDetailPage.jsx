@@ -36,7 +36,7 @@ export default function ExceptionDetailPage() {
 
   if (!exception) {
     return (
-      <BillingFrame back={{ to: backPath, label: 'Payment Reconciliation' }} crumb="Billing & Finance / Reconciliation" code="BF-18 / Billing & Finance" title="Exception not found" scope={false}>
+      <BillingFrame back={{ to: backPath, label: 'Payment Reconciliation' }} crumb="Billing & Finance / Reconciliation" code="Billing & Finance" title="Exception not found" scope={false}>
         <Banner tone="warning" title="No exception matches this link">Open Payment Reconciliation to find the record.</Banner>
       </BillingFrame>
     )
@@ -79,7 +79,7 @@ function ExceptionView({ exception, backPath, state }) {
   ]
 
   return (
-    <BillingFrame back={{ to: backPath, label: 'Payment Reconciliation' }} crumb={`Billing & Finance / Reconciliation / ${exception.id}`} code="BF-18 / Billing & Finance" title="Reconciliation Exception Details" description="Review a source-to-record difference. Resolution documents the reconciliation outcome; it never edits the financial source." actions={<ActionButton onClick={() => navigate(backPath)}>Back to reconciliation</ActionButton>} scope={false}>
+    <BillingFrame back={{ to: backPath, label: 'Payment Reconciliation' }} crumb={`Billing & Finance / Reconciliation / ${exception.id}`} code="Billing & Finance" title="Reconciliation Exception Details" description="Review a source-to-record difference. Resolution documents the reconciliation outcome; it never edits the financial source." actions={<ActionButton onClick={() => navigate(backPath)}>Back to reconciliation</ActionButton>} scope={false}>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4 rounded-md border border-slate-200 bg-white p-5">
         <div><p className="flex flex-wrap items-center gap-2"><span className="text-xl font-semibold">{exception.id}</span><StatusPill tone={resolved ? 'success' : 'warning'}>{exception.status}</StatusPill><StatusPill tone={resolved ? 'brand' : 'danger'}>{resolved ? 'Resolved' : 'Unmatched'}</StatusPill></p><p className="mt-2 text-xs text-outline">{exception.kind} · Detected {exception.detected} · Owner: {exception.owner}</p></div>
         <div className="text-right"><p className="text-[10px] tracking-wide text-outline uppercase">Source − ClinicOS</p><p className={`text-[28px] font-semibold ${difference ? 'text-danger' : ''}`}>{signed(difference)}</p></div>
@@ -137,7 +137,7 @@ function ExceptionView({ exception, backPath, state }) {
         <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-xs"><thead className="bg-surface-low text-[10px] font-semibold tracking-wide text-on-surface-variant uppercase"><tr>{['Date / time', 'Actor', 'Event', 'Detail'].map((heading) => <th key={heading} scope="col" className="px-5 py-3">{heading}</th>)}</tr></thead>
           <tbody>{exception.audit.map(([when, actor, event, detail]) => <tr key={`${when}-${event}`} className="border-t border-slate-100"><td className="px-5 py-3.5">{when}</td><td className="px-5 py-3.5">{actor}</td><td className="px-5 py-3.5">{event}</td><td className="px-5 py-3.5 text-outline">{detail}</td></tr>)}</tbody></table></div>
       </section>
-      <GovernanceFooter code="BF-18">Every resolution records actor, timestamp, reason, evidence and confirmation; financial source records remain unchanged. Return preserves date, source and status filters{state?.search ? ' (applied)' : ''}.</GovernanceFooter>
+      <GovernanceFooter>Every resolution records actor, timestamp, reason, evidence and confirmation; financial source records remain unchanged. Return preserves date, source and status filters{state?.search ? ' (applied)' : ''}.</GovernanceFooter>
     </BillingFrame>
   )
 }

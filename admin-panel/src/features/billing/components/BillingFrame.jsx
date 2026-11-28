@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import WorkspacePage from '../../../components/workspace/WorkspacePage'
 import { useBilling } from '../context/useBilling'
 
-// Page frame for the billing screens: back link and trail, workflow code, title, and the organisation scope line.
+// Page frame for the billing screens: back link and trail, section label, title, and the organisation scope line.
 export default function BillingFrame({ back, crumb, code, title, badge, description, actions, scope = true, children }) {
   const { orgName, locationText } = useBilling()
   return (

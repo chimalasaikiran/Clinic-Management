@@ -69,7 +69,7 @@ export default function RecordPaymentPage() {
   }
 
   return (
-    <BillingFrame back={{ to: registerPath, label: 'Payment Register · filtered view' }} crumb="Billing & Finance / Payments / New payment" code="BF-10 / Payments & receipts" title="Record / Collect Payment" badge={<StatusPill>Unsaved payment</StatusPill>} description="Prepare a new collection. Review and validate before confirming; no payment has been recorded." scope={false}>
+    <BillingFrame back={{ to: registerPath, label: 'Payment Register · filtered view' }} crumb="Billing & Finance / Payments / New payment" code="Payments & receipts" title="Record / Collect Payment" badge={<StatusPill>Unsaved payment</StatusPill>} description="Prepare a new collection. Review and validate before confirming; no payment has been recorded." scope={false}>
       <Scope left={scopeText} />
       <Steps steps={['Enter payment', 'Review & validate', 'Confirm → Payment Details']} current={step} />
 
@@ -149,7 +149,7 @@ export default function RecordPaymentPage() {
         {step === 1 ? <ActionButton variant="primary" disabled={saving} onClick={confirm}>Confirm payment</ActionButton> : <ActionButton variant="soft" disabled={!valid} onClick={review}>Review payment</ActionButton>}
         {serverError && <p role="alert" className="w-full text-xs text-rose-600">{serverError}</p>}
       </div>
-      <GovernanceFooter code="BF-10">Payment ≠ Allocation ≠ Receipt. Recording a payment does not automatically finalize a receipt or apply unverified funds.</GovernanceFooter>
+      <GovernanceFooter>Payment ≠ Allocation ≠ Receipt. Recording a payment does not automatically finalize a receipt or apply unverified funds.</GovernanceFooter>
     </BillingFrame>
   )
 }

@@ -160,6 +160,7 @@ export default function PatientDirectoryPage() {
         description="Find, register, and manage patients across your clinic network. Select a patient to access the authoritative Patient Details hub."
         actions={
           <>
+            <ActionButton to={ROUTES.helpRequests}>Help Requests</ActionButton>
             <ActionButton icon={FileUp} disabled title="Bulk import is not connected yet">Import Patients <span className="rounded bg-surface-low px-1 font-mono text-[10px]">CSV / FHIR</span></ActionButton>
             {can('patients.create') && <ActionButton variant="primary" icon={UserPlus} to={ROUTES.patientNew}>Register Patient</ActionButton>}
           </>

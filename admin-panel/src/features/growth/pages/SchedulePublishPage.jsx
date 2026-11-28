@@ -22,7 +22,7 @@ export default function SchedulePublishPage() {
   const resource = useApiResource(() => contentApi.post(contentId), `content:${contentId}`)
   // Kept here: each change reloads the post, which rebuilds the screen below.
   const [message, setMessage] = useState(null)
-  const frame = { back: { to: ROUTES.content, label: 'Back to Content Calendar' }, crumb: 'Owner Panel / Growth OS / Content Calendar', code: 'GO-14', sample: 'Live records' }
+  const frame = { back: { to: ROUTES.content, label: 'Back to Content Calendar' }, crumb: 'Owner Panel / Growth OS / Content Calendar', sample: 'Live records' }
   if (resource.error?.status === 404) return <GrowthFrame {...frame} title="Content not found"><Banner tone="warning" title="No content matches this link">Open the Content Calendar to find the draft.</Banner></GrowthFrame>
   if (!resource.data) return <GrowthFrame {...frame} title="Schedule/Publish"><LoadingState label="Loading the post…" error={resource.error} onRetry={resource.reload} /></GrowthFrame>
   return <Schedule key={`${contentId}:${resource.data.version}`} item={resource.data} reload={resource.reload} message={message} setMessage={setMessage} />
@@ -58,7 +58,7 @@ function Schedule({ item, reload, message, setMessage }) {
   const unknown = item.publications.filter((entry) => entry.status === 'unknown')
 
   return (
-    <GrowthFrame back={{ to: item.status === 'draft' ? editPath : backPath, label: item.status === 'draft' ? 'Back to edit draft · GO12' : 'Back to Content Calendar · GO11' }} crumb={`Owner Panel / Growth OS / Content Calendar / ${item.code} / Publishing`} code="GO-14" title="Schedule/Publish" description={`Submit ${item.code}, have a second person approve it, and follow what each network reports.`} badge={<StatusPill tone={CONTENT_TONE[item.status]}>{CONTENT_STATUSES[item.status]}</StatusPill>} context={[context.line, 'Calendar filters are kept on return']} today={context.today} sample="Live records · Publishing uses the connected Facebook Page and Instagram account">
+    <GrowthFrame back={{ to: item.status === 'draft' ? editPath : backPath, label: item.status === 'draft' ? 'Back to edit draft' : 'Back to Content Calendar' }} crumb={`Owner Panel / Growth OS / Content Calendar / ${item.code} / Publishing`} title="Schedule/Publish" description={`Submit ${item.code}, have a second person approve it, and follow what each network reports.`} badge={<StatusPill tone={CONTENT_TONE[item.status]}>{CONTENT_STATUSES[item.status]}</StatusPill>} context={[context.line, 'Calendar filters are kept on return']} today={context.today} sample="Live records · Publishing uses the connected Facebook Page and Instagram account">
       {message && <Banner tone={message.tone} title={message.title} className="mb-6">{message.text}</Banner>}
       {!item.readiness.metaConnected && <Banner tone="warning" title="No Facebook Page is connected" className="mb-6">Posts can be drafted and submitted, but not approved until an administrator connects Meta on the Channels screen.</Banner>}
       {item.media && !item.readiness.publicUrlReady && <Banner tone="warning" title="Images cannot reach Meta yet" className="mb-6">Set PUBLIC_API_URL in backend.env so Meta can fetch the image when publishing.</Banner>}
@@ -120,7 +120,7 @@ function Schedule({ item, reload, message, setMessage }) {
         <p className="min-w-60 flex-1 text-xs text-outline"><strong className="block text-[13px] text-on-surface">{CONTENT_STATUSES[item.status]}</strong>Planned for {day(at.date)} · {at.time} IST.</p>
         <ActionButton to={backPath} state={state}>Back to calendar</ActionButton>
       </div>
-      <GrowthFooter code="GO-14" back={{ to: backPath, label: 'Back to Content Calendar · GO11' }} />
+      <GrowthFooter back={{ to: backPath, label: 'Back to Content Calendar' }} />
     </GrowthFrame>
   )
 }

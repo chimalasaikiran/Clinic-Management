@@ -65,6 +65,9 @@ vi.mock('../features/payroll/api', () => ({
   payrollApi: new Proxy({}, { get: (_, method) => (...args) => billingFake.payroll.api[method](...args) }),
 }))
 
+// Address lookup would call a public geocoder; tests never reach the network.
+vi.mock('../features/configuration/geocode', () => ({ geocodeAddress: vi.fn(async () => null) }))
+
 beforeEach(() => {
   billingFake.use(createBillingApi())
   billingFake.useInventory(createInventoryApi())

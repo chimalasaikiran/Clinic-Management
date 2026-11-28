@@ -31,7 +31,7 @@ export default function DeliveryFailuresPage() {
   const unknown = rows.filter((entry) => entry.status === 'unknown').length
 
   return (
-    <GrowthFrame back={{ to: ROUTES.conversations, label: 'Conversations inbox · GO21' }} crumb="Owner Panel / Growth OS / Delivery Failures & Retry" code="GO-26" title="Delivery Failures & Retry" description="Messages the provider refused, and messages whose outcome is unknown. Each needs a decision before anything is sent again." badge={<StatusPill tone={rows.length ? 'warning' : 'success'}>{result.data ? `${result.data.meta.total} to review` : 'Loading'}</StatusPill>} context={[context.line, 'Temporary errors are retried automatically (up to 5 attempts); these are the ones that were not']} today={context.today} sample="Live delivery log · From the provider’s responses and receipts">
+    <GrowthFrame back={{ to: ROUTES.conversations, label: 'Conversations inbox' }} crumb="Owner Panel / Growth OS / Delivery Failures & Retry" title="Delivery Failures & Retry" description="Messages the provider refused, and messages whose outcome is unknown. Each needs a decision before anything is sent again." badge={<StatusPill tone={rows.length ? 'warning' : 'success'}>{result.data ? `${result.data.meta.total} to review` : 'Loading'}</StatusPill>} context={[context.line, 'Temporary errors are retried automatically (up to 5 attempts); these are the ones that were not']} today={context.today} sample="Live delivery log · From the provider’s responses and receipts">
       {unknown > 0 && <Banner tone="warning" title={`${unknown} message${unknown === 1 ? '' : 's'} with an unknown outcome`} className="mb-6">The provider did not confirm or refuse these, so they may already have been delivered. Check the provider’s console and record what it shows; ClinicOS never resends them on its own.</Banner>}
       <Section title="Queue" aside="Failed and unknown outcomes" className="mb-6">
         <div className="mb-4 grid gap-4 sm:grid-cols-3"><FilterField label="Outcome" value={filters.status} onChange={(value) => setFilters((current) => ({ ...current, status: value }))} options={[['', 'Failed and unknown'], ['failed', 'Failed'], ['unknown', 'Outcome unknown']]} /><FilterField label="Channel" value={filters.channel} onChange={(value) => setFilters((current) => ({ ...current, channel: value }))} options={[['', 'All channels'], ...Object.entries(CHANNELS)]} /></div>
@@ -40,7 +40,7 @@ export default function DeliveryFailuresPage() {
           {rows.length === 0 && <p className="px-6 py-8 text-center text-sm text-on-surface-variant">Nothing to review. Every message was accepted by its provider.</p>}</div>}
       </Section>
       {selected && <Decision key={selected.id} message={selected} canSend={can('growth.manage')} onDone={result.reload} />}
-      <GrowthFooter code="GO-26" back={{ to: ROUTES.conversations, label: 'Conversations inbox · GO21' }} />
+      <GrowthFooter back={{ to: ROUTES.conversations, label: 'Conversations inbox' }} />
     </GrowthFrame>
   )
 }

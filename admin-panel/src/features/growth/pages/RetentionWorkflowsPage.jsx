@@ -31,11 +31,11 @@ export default function RetentionWorkflowsPage() {
   const active = all.filter((workflow) => workflow.status === 'active').length
 
   return (
-    <GrowthFrame back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} crumb="Owner Panel / Growth OS / Retention & Reminder Workflows" code="GO-27" title="Retention & Reminder Workflows" description="Send one approved template automatically after a missed appointment, a lead that has not converted, or a completed visit." badge={<StatusPill tone={active ? 'success' : 'neutral'}>{workflows.data ? `${active} on · ${all.length - active} off` : 'Loading'}</StatusPill>} context={[context.line, 'Filters and search are kept in the address']} today={context.today} sample="Live records · Workflows queue messages through the connected channels and record every event they act on">
+    <GrowthFrame back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} crumb="Owner Panel / Growth OS / Retention & Reminder Workflows" title="Retention & Reminder Workflows" description="Send one approved template automatically after a missed appointment, a lead that has not converted, or a completed visit." badge={<StatusPill tone={active ? 'success' : 'neutral'}>{workflows.data ? `${active} on · ${all.length - active} off` : 'Loading'}</StatusPill>} context={[context.line, 'Filters and search are kept in the address']} today={context.today} sample="Live records · Workflows queue messages through the connected channels and record every event they act on">
       <Banner tone="brand" title="What a workflow does when it is on" className="mb-6">Every few minutes it looks for events that have come due since it was switched on, checks permission, opt-outs and the weekly limit for each person, and queues the message. Nothing is sent between 9 pm and 9 am. Events from before it was switched on are never acted on.</Banner>
       <Section title="Find workflows" aside="Filters" className="mb-6">
         <div className="grid gap-4 sm:grid-cols-3"><SearchBox value={filters.get('q')} onChange={(value) => filters.change('q', value)} label="Search workflows" placeholder="Search name or code" className="self-end" /><FilterField label="Trigger" value={filters.get('trigger')} onChange={(value) => filters.change('trigger', value)} options={[['', 'All triggers'], ...Object.entries(TRIGGERS)]} /><FilterField label="Status" value={filters.get('status')} onChange={(value) => filters.change('status', value)} options={[['', 'All statuses'], ...Object.entries(WORKFLOW_STATUSES)]} /></div>
-        <div className="mt-4 flex flex-wrap items-center gap-3">{can('growth.manage') && <ActionButton variant="brand" icon={Plus} to={ROUTES.workflowNew} state={state}>Create workflow → GO28</ActionButton>}<ActionButton onClick={filters.reset}>Clear filters</ActionButton><Link to={ROUTES.workflowExecutions} className="text-xs font-semibold text-brand hover:underline">Execution & exceptions → GO29</Link></div>
+        <div className="mt-4 flex flex-wrap items-center gap-3">{can('growth.manage') && <ActionButton variant="brand" icon={Plus} to={ROUTES.workflowNew} state={state}>Create workflow →</ActionButton>}<ActionButton onClick={filters.reset}>Clear filters</ActionButton><Link to={ROUTES.workflowExecutions} className="text-xs font-semibold text-brand hover:underline">Execution & exceptions →</Link></div>
       </Section>
 
       <Section title="Workflow register" aside={`${rows.length} workflow${rows.length === 1 ? '' : 's'}`} className="mb-6">
@@ -52,9 +52,9 @@ export default function RetentionWorkflowsPage() {
               </tr>))}</tbody>
           </table>{rows.length === 0 && <p className="px-6 py-10 text-center text-sm text-on-surface-variant">{all.length ? 'No workflows match these filters.' : 'No workflows yet.'}</p>}</div>
         )}
-        <p className="mt-3 flex flex-wrap justify-between gap-3 text-[11px] text-outline"><span>Restores filters and search on return.</span><span><Link to={ROUTES.messageTemplates} className="font-semibold text-brand hover:underline">Message templates → GO23</Link> · <Link to={ROUTES.channels} className="font-semibold text-brand hover:underline">Channels → GO25</Link></span></p>
+        <p className="mt-3 flex flex-wrap justify-between gap-3 text-[11px] text-outline"><span>Restores filters and search on return.</span><span><Link to={ROUTES.messageTemplates} className="font-semibold text-brand hover:underline">Message templates →</Link> · <Link to={ROUTES.channels} className="font-semibold text-brand hover:underline">Channels →</Link></span></p>
       </Section>
-      <GrowthFooter code="GO-27" back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} />
+      <GrowthFooter back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} />
     </GrowthFrame>
   )
 }

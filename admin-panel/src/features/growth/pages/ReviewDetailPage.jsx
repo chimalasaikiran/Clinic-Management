@@ -21,7 +21,7 @@ export default function ReviewDetailPage() {
   const resource = useApiResource(() => contentApi.review(reviewId), `review:${reviewId}`)
   // Kept here: each change reloads the review, which rebuilds the detail below.
   const [message, setMessage] = useState(null)
-  const frame = { back: { to: ROUTES.reviews, label: 'Back to reviews' }, crumb: 'Owner Panel / Growth OS / Reviews & Reputation', code: 'GO-17', sample: 'Live records' }
+  const frame = { back: { to: ROUTES.reviews, label: 'Back to reviews' }, crumb: 'Owner Panel / Growth OS / Reviews & Reputation', sample: 'Live records' }
   if (resource.error?.status === 404) return <GrowthFrame {...frame} title="Review not found"><Banner tone="warning" title="No review matches this link">Open the register to find the review.</Banner></GrowthFrame>
   if (!resource.data) return <GrowthFrame {...frame} title="Review Details & Response"><LoadingState label="Loading the review…" error={resource.error} onRetry={resource.reload} /></GrowthFrame>
   return <ReviewDetail key={`${reviewId}:${resource.data.response?.version ?? 0}:${resource.data.notes.length}:${resource.data.escalations.length}`} review={resource.data} reload={resource.reload} message={message} setMessage={setMessage} />
@@ -60,7 +60,7 @@ function ReviewDetail({ review, reload, message, setMessage }) {
   }
 
   return (
-    <GrowthFrame back={{ to: backPath, label: 'Back to reviews · GO16 · Filters retained' }} crumb="Owner Panel / Growth OS / Reviews & Reputation" code="GO-17" title="Review Details & Response" description="Prepare a privacy-safe public reply, approved by a second person. Internal notes and escalations are never public." badge={<StatusPill tone={RESPONSE_TONE[review.responseState]}>{RESPONSE_STATES[review.responseState]}</StatusPill>} context={[context.line, `${review.branch.name} · Google review`]} today={context.today} sample="Live records · Replies are posted to Google after a second person approves">
+    <GrowthFrame back={{ to: backPath, label: 'Back to reviews · Filters retained' }} crumb="Owner Panel / Growth OS / Reviews & Reputation" title="Review Details & Response" description="Prepare a privacy-safe public reply, approved by a second person. Internal notes and escalations are never public." badge={<StatusPill tone={RESPONSE_TONE[review.responseState]}>{RESPONSE_STATES[review.responseState]}</StatusPill>} context={[context.line, `${review.branch.name} · Google review`]} today={context.today} sample="Live records · Replies are posted to Google after a second person approves">
       {message && <Banner tone={message.tone} title={message.title} className="mb-6">{message.text}</Banner>}
       <div className="mb-6 grid items-start gap-6 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
@@ -106,13 +106,13 @@ function ReviewDetail({ review, reload, message, setMessage }) {
                 <ActionButton disabled={busy || !proposal.topic.trim() || !owner} onClick={() => run(() => contentApi.createEscalation({ reviewId: review.id, ...proposal, topic: proposal.topic.trim(), ownerMembershipId: owner }), 'Escalation opened.')}>Open escalation</ActionButton>
               </div>
             )}
-            <p className="mt-3 text-xs"><Link to={ROUTES.escalations} className="font-semibold text-brand hover:underline">Open in GO19 →</Link></p>
+            <p className="mt-3 text-xs"><Link to={ROUTES.escalations} className="font-semibold text-brand hover:underline">Open escalation →</Link></p>
             <p className="mt-3 text-[11px] text-outline">Escalations are internal and independent of the public reply.</p>
           </Section>
-          <Section title="Other reviews"><Link to={ROUTES.reputation} className="text-xs font-semibold text-brand hover:underline">Reputation report → GO20</Link></Section>
+          <Section title="Other reviews"><Link to={ROUTES.reputation} className="text-xs font-semibold text-brand hover:underline">Reputation report →</Link></Section>
         </div>
       </div>
-      <GrowthFooter code="GO-17" back={{ to: backPath, label: 'Back to reviews · GO16' }} />
+      <GrowthFooter back={{ to: backPath, label: 'Back to reviews' }} />
     </GrowthFrame>
   )
 }

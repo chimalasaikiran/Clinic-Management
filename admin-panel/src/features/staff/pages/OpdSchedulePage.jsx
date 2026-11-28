@@ -25,7 +25,7 @@ import StaffNotFound from '../components/StaffNotFound'
 const WEEK = [['Monday', 1], ['Tuesday', 2], ['Wednesday', 3], ['Thursday', 4], ['Friday', 5], ['Saturday', 6], ['Sunday', 0]]
 const MAX_SESSIONS = 3
 const SLOT_LENGTHS = [10, 15, 20, 30, 45, 60]
-const BLANK_PROFILE = { membershipId: '', displayName: '', credentials: '', specialty: '', department: '', room: '', slotMinutes: '30', status: 'active' }
+const BLANK_PROFILE = { membershipId: '', displayName: '', credentials: '', specialty: '', department: '', room: '', slotMinutes: '30', status: 'active', onlineBooking: false }
 
 const minutesOf = (time) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5))
 
@@ -79,7 +79,7 @@ function ScheduleEditor({ existing, staff, onCreated }) {
 
   const [profile, setProfile] = useState(() =>
     existing
-      ? { membershipId: existing.membershipId, displayName: existing.displayName, credentials: existing.credentials ?? '', specialty: existing.specialty, department: existing.department, room: existing.room ?? '', slotMinutes: String(existing.slotMinutes), status: existing.status }
+      ? { membershipId: existing.membershipId, displayName: existing.displayName, credentials: existing.credentials ?? '', specialty: existing.specialty, department: existing.department, room: existing.room ?? '', slotMinutes: String(existing.slotMinutes), status: existing.status, onlineBooking: Boolean(existing.onlineBooking) }
       : { ...BLANK_PROFILE, membershipId: staff.account.membershipId, displayName: staff.fullName, credentials: staff.qualifications.join(', '), specialty: staff.designation, department: staff.department },
   )
   const [days, setDays] = useState(() =>
@@ -129,7 +129,7 @@ function ScheduleEditor({ existing, staff, onCreated }) {
     if (Object.keys(problems).length) return
 
     setSaving(true)
-    const body = { displayName: profile.displayName.trim(), credentials: profile.credentials, specialty: profile.specialty.trim(), department: profile.department.trim(), room: profile.room, slotMinutes }
+    const body = { displayName: profile.displayName.trim(), credentials: profile.credentials, specialty: profile.specialty.trim(), department: profile.department.trim(), room: profile.room, slotMinutes, onlineBooking: profile.onlineBooking }
     try {
       const saved = existing ? await practitionersApi.update(existing.id, { ...body, status: profile.status }) : await practitionersApi.create({ ...body, membershipId: profile.membershipId })
       const withHours = await practitionersApi.setAvailability(saved.id, windows.map(({ branchId, weekday, start, end }) => ({ branchId, weekday, start, end })))
@@ -196,6 +196,20 @@ function ScheduleEditor({ existing, staff, onCreated }) {
               <TextInput label="Dedicated OPD chamber / suite" value={profile.room} onChange={setField('room')} error={errors.room} placeholder="Chamber 104" hint="Optional" />
               <SelectInput label="Appointment slot length" required value={profile.slotMinutes} onChange={setField('slotMinutes')} error={errors.slotMinutes} options={SLOT_LENGTHS.map((minutes) => ({ value: String(minutes), label: `${minutes} minutes` }))} />
               {existing && <SelectInput label="Booking status" value={profile.status} onChange={setField('status')} options={[{ value: 'active', label: 'Taking appointments' }, { value: 'inactive', label: 'Not taking appointments' }]} />}
+              <label className="flex items-start gap-2 text-xs sm:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={profile.onlineBooking}
+                  disabled={!canManage}
+                  onChange={(event) => {
+                    const { checked } = event.target
+                    setProfile((current) => ({ ...current, onlineBooking: checked }))
+                    setDirty(true)
+                  }}
+                  className="mt-0.5 accent-[#006a61]"
+                />
+                <span><strong>Accepts bookings from the patient app</strong><br /><span className="text-outline">Patients choose a service and a time. They are given a free therapist in that service’s department.</span></span>
+              </label>
             </Panel>
 
             <Panel title="02. Weekly OPD schedule matrix" action={<span className="text-[11px] text-on-surface-variant"><span className="text-brand">●</span> {slotMinutes ? `${slotMinutes} mins / slot` : 'Choose a slot length'}</span>} bodyClassName="p-0">

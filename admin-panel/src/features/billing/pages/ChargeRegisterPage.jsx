@@ -34,7 +34,7 @@ export default function ChargeRegisterPage() {
   const state = { search: filters.search }
 
   return (
-    <BillingFrame back={{ to: ROUTES.billing, label: 'Back to Billing & Finance' }} crumb="Billing & Finance / Charges" code="BF-04 / Billing & Finance" title="Charge Register" description="View amounts owed, review charge context and track invoice eligibility. Recording a charge does not collect payment." actions={<ActionButton variant="primary" icon={Plus} to={ROUTES.billingChargeNew}>Create Charge</ActionButton>} scope={false}>
+    <BillingFrame back={{ to: ROUTES.billing, label: 'Back to Billing & Finance' }} crumb="Billing & Finance / Charges" code="Billing & Finance" title="Charge Register" description="View amounts owed, review charge context and track invoice eligibility. Recording a charge does not collect payment." actions={<ActionButton variant="primary" icon={Plus} to={ROUTES.billingChargeNew}>Create Charge</ActionButton>} scope={false}>
       {draft && (
         <Banner tone="brand" title={`Draft saved · ${draft.id}`} className="mb-6" action={<ActionButton to={chargePath(draft)} state={state}>Open saved draft →</ActionButton>}>
           {nameOf(draft.patientId)} · {draft.reference} · {draft.branch}. No charge confirmed and no invoice issued.
@@ -110,7 +110,7 @@ export default function ChargeRegisterPage() {
         </Section>
       </div>
 
-      <GovernanceFooter code="BF-04">Charge ≠ Invoice ≠ Payment ≠ Receipt ≠ Allocation ≠ Refund. Branch access and authorization are checked on save. Finalized records are read-only; corrections require a permitted, auditable workflow.</GovernanceFooter>
+      <GovernanceFooter>Charge ≠ Invoice ≠ Payment ≠ Receipt ≠ Allocation ≠ Refund. Branch access and authorization are checked on save. Finalized records are read-only; corrections require a permitted, auditable workflow.</GovernanceFooter>
     </BillingFrame>
   )
 }

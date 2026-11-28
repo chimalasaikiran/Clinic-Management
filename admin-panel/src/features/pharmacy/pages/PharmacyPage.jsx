@@ -65,6 +65,7 @@ export default function PharmacyPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <ActionButton to={ROUTES.pharmacyReturns} icon={ClipboardList}>Returns &amp; Discrepancies{awaitingCases ? <span className="ml-1 rounded bg-surface-low px-1.5 text-[10px]">{awaitingCases}</span> : null}</ActionButton>
+          <ActionButton to={ROUTES.pharmacyRefills}>Refill Requests</ActionButton>
           <ActionButton to={ROUTES.pharmacyRequests}>Stock Requests</ActionButton>
           <ActionButton icon={PackageCheck} onClick={() => setReceiving(true)}>Receive Stock (GRN){inbound.length ? <span className="ml-1 rounded bg-surface-low px-1.5 text-[10px]">{inbound.length}</span> : null}</ActionButton>
           <ActionButton variant="primary" to={ROUTES.pharmacyQueue}>Open Prescription Queue <span className="ml-1 rounded bg-teal-700 px-1.5 text-[10px]">{counts.queued}</span></ActionButton>

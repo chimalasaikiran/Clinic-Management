@@ -24,14 +24,14 @@ export default function SegmentFormPage() {
   const audience = useApiResource(() => (segmentId ? campaignsApi.audience(segmentId) : Promise.resolve(null)), `audience-form:${segmentId ?? 'new'}`)
   if (segmentId && audience.error?.status === 404) {
     return (
-      <GrowthFrame back={{ to: ROUTES.audiences, label: 'Back to Audience Management' }} crumb="Owner Panel / Growth OS / Audiences" code="GO-10A" title="Segment not found" sample="Live records">
+      <GrowthFrame back={{ to: ROUTES.audiences, label: 'Back to Audience Management' }} crumb="Owner Panel / Growth OS / Audiences" title="Segment not found" sample="Live records">
         <Banner tone="warning" title="No segment matches this link">Open Audience Management to find the definition.</Banner>
       </GrowthFrame>
     )
   }
   if (segmentId && !audience.data) {
     return (
-      <GrowthFrame back={{ to: ROUTES.audiences, label: 'Back to Audience Management' }} crumb="Owner Panel / Growth OS / Audiences" code="GO-10A" title="Create/Edit Audience Segment" sample="Live records">
+      <GrowthFrame back={{ to: ROUTES.audiences, label: 'Back to Audience Management' }} crumb="Owner Panel / Growth OS / Audiences" title="Create/Edit Audience Segment" sample="Live records">
         <LoadingState label="Loading the segment…" error={audience.error} onRetry={audience.reload} />
       </GrowthFrame>
     )
@@ -87,7 +87,7 @@ function SegmentForm({ segment }) {
   const number = (name, label, hint) => <TextInput label={label} inputMode="numeric" value={rules[name]} onChange={(event) => setRule(name, event.target.value.replace(/\D/g, ''))} error={errors[`rules.${name}`]} hint={hint} />
 
   return (
-    <GrowthFrame back={{ to: backPath, label: 'Back to Audience Management · GO10' }} crumb={`Owner Panel / Growth OS / Audiences / ${segment ? `${segment.code} / Edit definition` : 'New segment'}`} code="GO-10A" title="Create/Edit Audience Segment" description={segment ? `Edit ${segment.code} · Changing who is included needs a reason and is kept in the history.` : 'Create a segment from rules over leads and patients. Saving sends nothing.'} context={[context.line, 'Search and filters are kept when you return']} today={context.today} sample="Live records · The size updates from current records as you edit">
+    <GrowthFrame back={{ to: backPath, label: 'Back to Audience Management' }} crumb={`Owner Panel / Growth OS / Audiences / ${segment ? `${segment.code} / Edit definition` : 'New segment'}`} title="Create/Edit Audience Segment" description={segment ? `Edit ${segment.code} · Changing who is included needs a reason and is kept in the history.` : 'Create a segment from rules over leads and patients. Saving sends nothing.'} context={[context.line, 'Search and filters are kept when you return']} today={context.today} sample="Live records · The size updates from current records as you edit">
       {message && <Banner tone="danger" title="Not saved" className="mb-6">{message}</Banner>}
       <div className="mb-6 grid items-start gap-6 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
@@ -146,7 +146,7 @@ function SegmentForm({ segment }) {
         <ActionButton onClick={() => (dirty ? setLeaving(true) : navigate(backPath))}>Cancel</ActionButton>
         <ActionButton variant="brand" disabled={blocked || saving} onClick={save}>{saving ? 'Saving…' : 'Save definition'}</ActionButton>
       </div>
-      <GrowthFooter code="GO-10A" back={{ to: backPath, label: 'Back to Audience Management · All list context retained' }} />
+      <GrowthFooter back={{ to: backPath, label: 'Back to Audience Management · All list context retained' }} />
     </GrowthFrame>
   )
 }

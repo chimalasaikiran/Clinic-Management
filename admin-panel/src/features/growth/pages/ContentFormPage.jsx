@@ -35,7 +35,7 @@ function validate(values) {
 export default function ContentFormPage() {
   const { contentId } = useParams()
   const post = useApiResource(() => (contentId ? contentApi.post(contentId) : Promise.resolve(null)), `content-form:${contentId ?? 'new'}`)
-  const frame = { back: { to: ROUTES.content, label: 'Back to Content Calendar' }, crumb: 'Owner Panel / Growth OS / Content Calendar', code: 'GO-12', sample: 'Live records' }
+  const frame = { back: { to: ROUTES.content, label: 'Back to Content Calendar' }, crumb: 'Owner Panel / Growth OS / Content Calendar', sample: 'Live records' }
   if (contentId && post.error?.status === 404) return <GrowthFrame {...frame} title="Content not found"><Banner tone="warning" title="No content matches this link">Open the Content Calendar to find the draft.</Banner></GrowthFrame>
   if (contentId && !post.data) return <GrowthFrame {...frame} title="Create/Edit Content"><LoadingState label="Loading the post…" error={post.error} onRetry={post.reload} /></GrowthFrame>
   return <ContentForm key={contentId ?? 'new'} item={post.data} />
@@ -111,7 +111,7 @@ function ContentForm({ item }) {
   const toSchedule = async () => { const id = await persist(); if (id) navigate(pathFor(ROUTES.contentSchedule, { contentId: id }), { state }) }
 
   return (
-    <GrowthFrame back={{ to: backPath, label: 'Back to Content Calendar · GO11' }} crumb={`Owner Panel / Growth OS / Content Calendar / ${item ? `${item.code} / Edit draft` : 'New content'}`} code="GO-12" title="Create/Edit Content" description={item ? `Edit ${item.code}. Publishing needs submitting and a second person’s approval.` : 'Prepare a new post. Saving keeps a draft; nothing is published.'} context={[context.line, 'Calendar filters are kept on return']} today={context.today} sample="Live records · Drafts are saved; publishing needs a second person’s approval">
+    <GrowthFrame back={{ to: backPath, label: 'Back to Content Calendar' }} crumb={`Owner Panel / Growth OS / Content Calendar / ${item ? `${item.code} / Edit draft` : 'New content'}`} title="Create/Edit Content" description={item ? `Edit ${item.code}. Publishing needs submitting and a second person’s approval.` : 'Prepare a new post. Saving keeps a draft; nothing is published.'} context={[context.line, 'Calendar filters are kept on return']} today={context.today} sample="Live records · Drafts are saved; publishing needs a second person’s approval">
       {locked && <Banner tone="warning" title={`${CONTENT_STATUSES[item.status]} content is locked`} className="mb-6">Only a draft can be edited. Send it back to draft on the publishing screen to change it.</Banner>}
       {item?.reviewNote && item.status === 'draft' && <Banner tone="warning" title="Sent back by the reviewer" className="mb-6">{item.reviewNote}</Banner>}
       {template && <Banner tone="brand" title={`New from template · ${template.code} v${template.version}`} className="mb-6">The template’s copy is a starting point. Check the branch, networks, wording and image before saving.</Banner>}
@@ -160,7 +160,7 @@ function ContentForm({ item }) {
         <ActionButton disabled={locked || busy} onClick={saveDraft}>Save Draft</ActionButton>
         <ActionButton variant="brand" disabled={locked || busy} onClick={toSchedule}>Continue to Schedule/Publish →</ActionButton>
       </div>
-      <GrowthFooter code="GO-12" back={{ to: backPath, label: 'Back to Content Calendar · GO11' }} />
+      <GrowthFooter back={{ to: backPath, label: 'Back to Content Calendar' }} />
     </GrowthFrame>
   )
 }

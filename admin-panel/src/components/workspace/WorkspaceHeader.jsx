@@ -1,11 +1,13 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { Bell } from 'lucide-react'
 import { dashboardIcons as icons } from '../../assets/icons/dashboard'
 import { ROUTES } from '../../config/routes'
 import { useAuth } from '../../features/auth/context/useAuth'
 import { workspaceApi } from '../../features/workspace/api'
+import { useReadAlerts } from '../../features/workspace/useReadAlerts'
 import { useWorkspace } from '../../features/workspace/useWorkspace'
-import { alertItems, locationOptions, searchGroups } from '../../features/workspace/workspaceView'
+import { alertItems, locationOptions, noticeItems, searchGroups } from '../../features/workspace/workspaceView'
 import { useApiResource } from '../../hooks/useApiResource'
 import Avatar from './Avatar'
 
@@ -282,42 +284,98 @@ function SearchBox() {
 
 // Open items the person can act on (from /v1/alerts), each linking to where it is handled.
 function AlertsMenu() {
-  const { alerts } = useWorkspace()
+  const { user, orgId } = useAuth()
+  const { alerts, alertsError, reloadAlerts, branchId, notifications, reloadNotifications } = useWorkspace()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
-  useDismiss(ref, open, () => setOpen(false))
   const items = alertItems(alerts)
-  const label = items.length ? `Alerts (${items.length} need${items.length === 1 ? 's' : ''} attention)` : 'Alerts'
+  // While another branch is loading, the previous branch's items are still held; they say nothing about this one.
+  const current = alerts && (alerts.branchId ?? '') === branchId ? alerts.items : null
+  const { unread, markAllRead } = useReadAlerts(`clinicos.alerts.read:${user?.id}:${orgId}:${branchId}`, current)
+  const notices = noticeItems(notifications)
+  const unreadNotices = notifications?.meta?.unread ?? 0
+  const count = items.filter((item) => unread.has(item.id)).length + unreadNotices
+  const label = count ? `Alerts (${count} unread)` : 'Alerts'
+  // Closing the list is what marks it read, so new items stay highlighted while it is open.
+  const close = () => {
+    setOpen(false)
+    markAllRead()
+    // A failure leaves them unread, so they are offered again.
+    if (unreadNotices) workspaceApi.markNotificationsRead({ all: true }).then(reloadNotifications, () => {})
+  }
+  useDismiss(ref, open, close)
 
   return (
     <div ref={ref} className="relative">
-      <IconButton label={label} aria-haspopup="true" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
-        <img src={icons.bell} alt="" />
-        {items.length > 0 && (
-          <span className="absolute top-1.5 right-1.5 flex size-4 items-center justify-center rounded-xl bg-danger text-[10px] leading-[15px] font-bold text-white ring-2 ring-white">
-            {items.length > 9 ? '9+' : items.length}
+      <IconButton
+        label={label}
+        aria-haspopup="true"
+        aria-expanded={open}
+        onClick={() => {
+          if (open) return close()
+          // Opening the list asks for the latest items rather than waiting for the next refresh.
+          reloadAlerts()
+          reloadNotifications()
+          return setOpen(true)
+        }}
+      >
+        <Bell className="size-5 text-on-surface" aria-hidden="true" />
+        {count > 0 && (
+          <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] leading-4 font-bold text-white ring-2 ring-white">
+            {count > 9 ? '9+' : count}
           </span>
         )}
       </IconButton>
 
       {open && (
-        <div role="region" aria-label="Alerts" className="absolute right-0 z-30 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-outline-variant/60 bg-white p-2 text-xs shadow-lg">
+        <div role="region" aria-label="Alerts" className="absolute right-0 z-30 mt-2 max-h-[70vh] overflow-y-auto w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-outline-variant/60 bg-white p-2 text-xs shadow-lg">
           <p className="border-b border-outline-variant/50 px-2 pt-1 pb-2 font-semibold text-on-surface">Needs your attention</p>
+          {alertsError && (
+            <p role="alert" className="px-2 pt-2 text-danger">
+              {alerts ? 'This list may be out of date. ' : 'Alerts could not be loaded. '}
+              <button type="button" onClick={reloadAlerts} className="font-semibold text-brand hover:underline">
+                Try again
+              </button>
+            </p>
+          )}
           {!alerts ? (
+            alertsError ? null : (
             <p className="px-2 py-3 text-on-surface-variant">Checking for open items…</p>
+            )
           ) : items.length === 0 ? (
             <p className="px-2 py-3 text-on-surface-variant">Nothing needs your attention right now.</p>
           ) : (
             <ul className="mt-1 flex flex-col">
               {items.map((item) => (
                 <li key={item.id}>
-                  <Link to={item.to} onClick={() => setOpen(false)} className="block rounded px-2 py-2 hover:bg-surface-low">
-                    <span className="block font-semibold text-on-surface">{item.title}</span>
+                  <Link to={item.to} onClick={close} className="block rounded px-2 py-2 hover:bg-surface-low">
+                    <span className={`flex items-center justify-between gap-2 ${unread.has(item.id) ? 'font-semibold text-on-surface' : 'text-on-surface-variant'}`}>
+                      {item.title}
+                      {unread.has(item.id) && <span className="shrink-0 rounded-full bg-teal-50 px-1.5 text-[10px] font-semibold text-brand">New</span>}
+                    </span>
                     <span className="block text-outline">{item.detail}</span>
                   </Link>
                 </li>
               ))}
             </ul>
+          )}
+          {notices.length > 0 && (
+            <>
+              <p className="mt-1 border-t border-b border-outline-variant/50 px-2 py-2 font-semibold text-on-surface">Recent activity</p>
+              <ul aria-label="Recent activity" className="mt-1 flex flex-col">
+                {notices.map((item) => (
+                  <li key={item.id}>
+                    <Link to={item.to} onClick={close} className="block rounded px-2 py-2 hover:bg-surface-low">
+                      <span className={`flex items-center justify-between gap-2 ${item.unread ? 'font-semibold text-on-surface' : 'text-on-surface-variant'}`}>
+                        {item.title}
+                        {item.unread && <span className="shrink-0 rounded-full bg-teal-50 px-1.5 text-[10px] font-semibold text-brand">New</span>}
+                      </span>
+                      <span className="block text-outline">{item.detail}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </div>
       )}

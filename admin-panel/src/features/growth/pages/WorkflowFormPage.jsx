@@ -28,14 +28,14 @@ export default function WorkflowFormPage() {
   const workflow = useApiResource(() => (workflowId ? campaignsApi.workflow(workflowId) : Promise.resolve(null)), `workflow-form:${workflowId ?? 'new'}`)
   if (workflowId && workflow.error?.status === 404) {
     return (
-      <GrowthFrame back={{ to: ROUTES.workflows, label: 'Retention workflows' }} crumb="Owner Panel / Growth OS / Workflows" code="GO-28" title="Workflow not found" sample="Live records">
+      <GrowthFrame back={{ to: ROUTES.workflows, label: 'Retention workflows' }} crumb="Owner Panel / Growth OS / Workflows" title="Workflow not found" sample="Live records">
         <Banner tone="warning" title="No workflow matches this link">Open the workflow register to find it.</Banner>
       </GrowthFrame>
     )
   }
   if (workflowId && !workflow.data) {
     return (
-      <GrowthFrame back={{ to: ROUTES.workflows, label: 'Retention workflows' }} crumb="Owner Panel / Growth OS / Workflows" code="GO-28" title="Edit Retention Workflow" sample="Live records">
+      <GrowthFrame back={{ to: ROUTES.workflows, label: 'Retention workflows' }} crumb="Owner Panel / Growth OS / Workflows" title="Edit Retention Workflow" sample="Live records">
         <LoadingState label="Loading the workflow…" error={workflow.error} onRetry={workflow.reload} />
       </GrowthFrame>
     )
@@ -106,7 +106,7 @@ function WorkflowForm({ workflow, reload }) {
   }
 
   return (
-    <GrowthFrame back={{ to: backPath, label: 'Retention workflows · GO27 · Restore filters' }} crumb={`Owner Panel / Growth OS / Workflows / ${workflow ? `${workflow.code} / Edit` : 'New'}`} code="GO-28" title={workflow ? 'Edit Retention Workflow' : 'Create Retention Workflow'} description={workflow ? `${workflow.code} · Changes need the workflow to be off; switching it on is a separate, confirmed step.` : 'Define a workflow. It is saved switched off; nothing is sent until you switch it on.'} badge={<StatusPill tone={WORKFLOW_TONE[workflow?.status ?? 'draft']}>{WORKFLOW_STATUSES[workflow?.status ?? 'draft']}</StatusPill>} context={[context.line, 'Return keeps the register filters']} today={context.today} sample="Live records · Messages go through the connected channels with the same checks as the inbox">
+    <GrowthFrame back={{ to: backPath, label: 'Retention workflows · Restore filters' }} crumb={`Owner Panel / Growth OS / Workflows / ${workflow ? `${workflow.code} / Edit` : 'New'}`} title={workflow ? 'Edit Retention Workflow' : 'Create Retention Workflow'} description={workflow ? `${workflow.code} · Changes need the workflow to be off; switching it on is a separate, confirmed step.` : 'Define a workflow. It is saved switched off; nothing is sent until you switch it on.'} badge={<StatusPill tone={WORKFLOW_TONE[workflow?.status ?? 'draft']}>{WORKFLOW_STATUSES[workflow?.status ?? 'draft']}</StatusPill>} context={[context.line, 'Return keeps the register filters']} today={context.today} sample="Live records · Messages go through the connected channels with the same checks as the inbox">
       {message && <Banner tone={message.tone} title={message.title} className="mb-6">{message.text}</Banner>}
       {active && <Banner tone="brand" title="This workflow is on" className="mb-6">Pause it to change anything. Events that come due while it is paused are not sent later.</Banner>}
       {workflow?.changeNote?.startsWith('Paused automatically') && <Banner tone="warning" title="Paused by ClinicOS" className="mb-6">{workflow.changeNote}</Banner>}
@@ -138,11 +138,11 @@ function WorkflowForm({ workflow, reload }) {
         <div className="space-y-6">
           <Section title="Message preview" aside="Example values">
             {template ? <><StatusPill>{template.code} v{template.version} · {CHANNELS[template.channel]}</StatusPill><p className="mt-3 rounded-md bg-teal-50 p-4 text-xs leading-5 text-on-surface-variant"><strong className="block text-[13px] text-brand">Example</strong>{renderTemplate(template.body, { ...EXAMPLE, ...values.variables })}</p><p className="mt-3 text-[11px] text-outline">Real messages use each person’s name and the event’s own date and time.</p></> : <p className="text-xs text-outline">Select a template to preview its message.</p>}
-            <Link to={ROUTES.messageTemplates} className="mt-3 inline-block text-xs font-semibold text-brand hover:underline">Message templates → GO23</Link>
+            <Link to={ROUTES.messageTemplates} className="mt-3 inline-block text-xs font-semibold text-brand hover:underline">Message templates →</Link>
           </Section>
           {workflow && <Section title="Readiness" aside={workflow.problems.length ? 'Not ready' : 'Ready'}>
             {workflow.problems.length ? <ul className="space-y-1 text-xs text-amber-700">{workflow.problems.map((problem) => <li key={problem}>• {problem}</li>)}</ul> : <p className="text-xs text-on-surface-variant">The template is approved, its channel is connected and every value is filled.</p>}
-            <Link to={ROUTES.channels} className="mt-2 inline-block text-xs font-semibold text-brand hover:underline">Channel setup → GO25</Link>
+            <Link to={ROUTES.channels} className="mt-2 inline-block text-xs font-semibold text-brand hover:underline">Channel setup →</Link>
           </Section>}
           {workflow && can('growth.manage') && !active && confirming && <Section title="Switch on" aside="Confirm">
             <p className="text-xs leading-5">{TRIGGERS[workflow.trigger]} → {workflow.delayLabel} later, send {workflow.template?.code} by {workflow.template ? CHANNELS[workflow.template.channel] : '—'} at {workflow.branch?.name ?? 'all branches'}, at most {workflow.weeklyCap} a week per person.</p>
@@ -158,7 +158,7 @@ function WorkflowForm({ workflow, reload }) {
         {workflow && can('growth.manage') && !active && <ActionButton disabled={busy || workflow.problems.length > 0} title={workflow.problems.join(' ') || undefined} onClick={() => setConfirming(true)}>Activate</ActionButton>}
         {active && can('growth.manage') && <ActionButton disabled={busy} onClick={() => change(() => campaignsApi.pauseWorkflow(workflow.id, workflow.version), 'Not paused')}>Pause</ActionButton>}
       </div>
-      <GrowthFooter code="GO-28" back={{ to: backPath, label: 'Retention workflows · GO27' }} />
+      <GrowthFooter back={{ to: backPath, label: 'Retention workflows' }} />
     </GrowthFrame>
   )
 }

@@ -26,13 +26,13 @@ export default function BusinessProfilePage() {
   const resource = useApiResource(() => (chosen ? contentApi.profile(chosen) : Promise.resolve(null)), `profile:${chosen}`)
 
   return (
-    <GrowthFrame back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} crumb="Owner Panel / Growth OS / Business Profile" code="GO-15" title="Business Profile & Locations" description="Keep each branch’s public details, review link and special hours, and publish them to its Google Business Profile." context={[context.line, 'Saving stores ClinicOS values; syncing publishes them to Google']} today={context.today} sample="Live records · Synced to Google only when you choose to">
+    <GrowthFrame back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} crumb="Owner Panel / Growth OS / Business Profile" title="Business Profile & Locations" description="Keep each branch’s public details, review link and special hours, and publish them to its Google Business Profile." context={[context.line, 'Saving stores ClinicOS values; syncing publishes them to Google']} today={context.today} sample="Live records · Synced to Google only when you choose to">
       <div className="mb-6 flex flex-wrap items-end gap-3">
         <div className="min-w-72 flex-1"><SelectInput label="Branch" value={chosen} onChange={(event) => setBranchId(event.target.value)} options={context.branches.map((branch) => ({ value: branch.id, label: branch.name }))} hint="Branches your role covers" /></div>
-        <ActionButton to={ROUTES.reviews}>Reviews → GO16</ActionButton><ActionButton to={ROUTES.reviewRequests}>Review requests → GO18</ActionButton>
+        <ActionButton to={ROUTES.reviews}>Reviews →</ActionButton><ActionButton to={ROUTES.reviewRequests}>Review requests →</ActionButton>
       </div>
       {!resource.data ? <LoadingState label="Loading the profile…" error={resource.error} onRetry={resource.reload} /> : <ProfileForm key={`${chosen}:${resource.data.profile.version}`} data={resource.data} reload={resource.reload} />}
-      <GrowthFooter code="GO-15" back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} />
+      <GrowthFooter back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} />
     </GrowthFrame>
   )
 }
@@ -101,7 +101,7 @@ function ProfileForm({ data, reload }) {
               <SelectInput label="Primary category" required value={values.primaryCategory} onChange={(event) => set('primaryCategory', event.target.value)} options={[{ value: '', label: 'Choose a category' }, ...PROFILE_CATEGORIES.map((entry) => ({ value: entry, label: entry }))]} error={errors.primaryCategory} />
               <SelectInput label="Secondary category" value={values.secondaryCategory} onChange={(event) => set('secondaryCategory', event.target.value)} options={[{ value: '', label: 'None' }, ...PROFILE_CATEGORIES.map((entry) => ({ value: entry, label: entry }))]} />
               <div className="sm:col-span-2"><TextInput label="Website" value={values.websiteUrl} onChange={(event) => set('websiteUrl', event.target.value)} error={errors.websiteUrl} hint="Optional · https://" /></div>
-              <div className="sm:col-span-2"><TextInput label="Public review link" value={values.reviewUrl} onChange={(event) => set('reviewUrl', event.target.value)} error={errors.reviewUrl} hint="Google’s “Ask for reviews” link · used by review requests (GO18)" /></div>
+              <div className="sm:col-span-2"><TextInput label="Public review link" value={values.reviewUrl} onChange={(event) => set('reviewUrl', event.target.value)} error={errors.reviewUrl} hint="Google’s “Ask for reviews” link · used by review requests" /></div>
             </fieldset>
           </Section>
           <Section title="Special hours" aside="Days that differ from the usual hours">

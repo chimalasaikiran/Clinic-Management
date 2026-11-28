@@ -40,7 +40,7 @@ export default function LeadRegisterPage() {
   const state = { search: filters.search }
 
   return (
-    <GrowthFrame back={{ to: ROUTES.growth, label: 'Back to Growth OS' }} crumb="Owner Panel / Growth / Leads" code="GO-02" title="Lead Register" description="Review inquiries, prioritize follow-ups and maintain a shared lead history." actions={writer && <ActionButton variant="brand" icon={Plus} to={ROUTES.leadNew} state={state}>Add Lead</ActionButton>} context={[context.line, 'Search / stage / source / owner / follow-up filters are kept in the address · The header location applies here']} today={context.today} sample={LIVE_NOTE}>
+    <GrowthFrame back={{ to: ROUTES.growth, label: 'Back to Growth OS' }} crumb="Owner Panel / Growth / Leads" title="Lead Register" description="Review inquiries, prioritize follow-ups and maintain a shared lead history." actions={writer && <ActionButton variant="brand" icon={Plus} to={ROUTES.leadNew} state={state}>Add Lead</ActionButton>} context={[context.line, 'Search / stage / source / owner / follow-up filters are kept in the address · The header location applies here']} today={context.today} sample={LIVE_NOTE}>
       <dl className="mb-2 grid gap-4 sm:grid-cols-5">
         {[['New', summary.new], ['Follow up Due', summary.followUpsDue], ['Overdue', summary.overdue], ['Qualified', summary.qualified], ['Converted', summary.converted]].map(([label, value]) => <div key={label} className="rounded-md border border-slate-200 bg-white p-4"><dt className="text-[13px] font-medium">{label}</dt><dd className="mt-1 text-2xl font-semibold">{meta ? value : '—'}</dd><p className="text-[11px] text-outline">All leads in this location</p></div>)}
       </dl>
@@ -94,7 +94,7 @@ export default function LeadRegisterPage() {
       <div className="mb-6 grid gap-4 lg:grid-cols-3">
         {[['Shared records, not new copies', 'Review shared patient and lead records before creating or linking a lead. Matching values alone do not verify identity.'], ['Source & history stay intact', 'The original source and the activity history are kept through edits and conversion.'], ['Conversion is not a booking', 'Converted is a lead stage. Continue to the patient and appointment workflows; confirm details before booking.']].map(([title, text]) => <div key={title} className="rounded-md border border-slate-200 bg-white p-4 text-xs"><p className="text-[13px] font-semibold">{title}</p><p className="mt-2 leading-5 text-on-surface-variant">{text}</p></div>)}
       </div>
-      <GrowthFooter code="GO-02" back={{ to: ROUTES.growth, label: 'Back to Growth OS' }} />
+      <GrowthFooter back={{ to: ROUTES.growth, label: 'Back to Growth OS' }} />
     </GrowthFrame>
   )
 }

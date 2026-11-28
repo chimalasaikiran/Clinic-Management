@@ -43,7 +43,7 @@ export default function ContentCalendarPage() {
   const manage = can('growth.manage')
 
   return (
-    <GrowthFrame back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} crumb="Owner Panel / Growth OS / Content Calendar" code="GO-11" title="Content Calendar" description="Plan Facebook and Instagram posts in one place. Every post is approved by a second person before it is published at its time." actions={<><ActionButton to={ROUTES.contentTemplates} state={state}>Templates · GO13</ActionButton>{manage && <ActionButton variant="brand" to={ROUTES.contentNew} state={state}>+ Create Content · GO12</ActionButton>}</>} context={[context.line, `${MONTH_NAMES[cursor.month]} ${cursor.year} · ${view[0].toUpperCase()}${view.slice(1)} view · Asia/Kolkata`]} today={context.today} sample="Live records · Posts publish to the connected Facebook Page and Instagram account after approval">
+    <GrowthFrame back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} crumb="Owner Panel / Growth OS / Content Calendar" title="Content Calendar" description="Plan Facebook and Instagram posts in one place. Every post is approved by a second person before it is published at its time." actions={<><ActionButton to={ROUTES.contentTemplates} state={state}>Templates</ActionButton>{manage && <ActionButton variant="brand" to={ROUTES.contentNew} state={state}>+ Create Content</ActionButton>}</>} context={[context.line, `${MONTH_NAMES[cursor.month]} ${cursor.year} · ${view[0].toUpperCase()}${view.slice(1)} view · Asia/Kolkata`]} today={context.today} sample="Live records · Posts publish to the connected Facebook Page and Instagram account after approval">
       <Section title={`${MONTH_NAMES[cursor.month]} ${cursor.year}`} aside="Asia/Kolkata · UTC+05:30" className="mb-6">
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <ActionButton onClick={() => setCursor(shiftMonth(cursor, -1))}>‹ Previous</ActionButton>
@@ -90,7 +90,7 @@ export default function ContentCalendarPage() {
             <Link to={pathFor(ROUTES.contentSchedule, { contentId: selected.id })} state={state} className="text-[13px] font-semibold text-brand hover:underline">{selected.title} ↗</Link>
             <p className="mt-3 text-xs">{selected.owner.name} · {selected.branch.name} · {selected.category} · {targetsLabel(selected.targets)}</p><p className="mt-2 text-xs">{day(selected.at.date)} · {selected.at.time} Asia/Kolkata</p>
             {selected.reviewNote && selected.status === 'draft' && <Banner tone="warning" title="Sent back by the reviewer" className="mt-4">{selected.reviewNote}</Banner>}
-            <div className="mt-4 flex flex-wrap gap-3">{manage && selected.status === 'draft' && <ActionButton to={pathFor(ROUTES.contentEdit, { contentId: selected.id })} state={state}>Edit draft · GO12</ActionButton>}<ActionButton to={pathFor(ROUTES.contentSchedule, { contentId: selected.id })} state={state}>Review & publishing · GO14</ActionButton></div>
+            <div className="mt-4 flex flex-wrap gap-3">{manage && selected.status === 'draft' && <ActionButton to={pathFor(ROUTES.contentEdit, { contentId: selected.id })} state={state}>Edit draft</ActionButton>}<ActionButton to={pathFor(ROUTES.contentSchedule, { contentId: selected.id })} state={state}>Review & publishing</ActionButton></div>
           </Section>
         ) : <Section title="Select a post" aside="Calendar"><p className="text-xs text-on-surface-variant">Choose a post on the calendar to see its status and open it.</p></Section>}
         <Section title="How a post goes out" aside="Two people">
@@ -98,7 +98,7 @@ export default function ContentCalendarPage() {
           <div className="mt-3 flex gap-3"><ActionButton onClick={filters.reset}>Reset filters</ActionButton>{manage && <ActionButton to={ROUTES.contentNew} state={state}>Create Content</ActionButton>}</div>
         </Section>
       </div>
-      <GrowthFooter code="GO-11" back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} />
+      <GrowthFooter back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} />
     </GrowthFrame>
   )
 }

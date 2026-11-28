@@ -19,7 +19,7 @@ export default function PaymentAllocationPage() {
   const payment = records.payments.find((entry) => entry.id === paymentId)
   if (!payment) {
     return (
-      <BillingFrame back={{ to: ROUTES.billingPayments, label: 'Payment Register' }} crumb="Billing & Finance / Payments" code="BF-12 / Payments & receipts" title="Payment not found" scope={false}>
+      <BillingFrame back={{ to: ROUTES.billingPayments, label: 'Payment Register' }} crumb="Billing & Finance / Payments" code="Payments & receipts" title="Payment not found" scope={false}>
         <Banner tone="warning" title="No payment matches this link">Open the Payment Register to find the record.</Banner>
       </BillingFrame>
     )
@@ -59,7 +59,7 @@ function AllocationForm({ payment }) {
   }
 
   return (
-    <BillingFrame back={{ to: detailPath, label: `Payment Details · ${payment.id}` }} crumb={`Billing & Finance / Payments / ${payment.id} / Allocation`} code="BF-12 / Payments & receipts" title="Payment Allocation" badge={<StatusPill tone="warning">Unsaved allocation preview</StatusPill>} description={`${payment.id} · Preview a partial allocation without changing the settled payment or existing allocation.`} scope={false}>
+    <BillingFrame back={{ to: detailPath, label: `Payment Details · ${payment.id}` }} crumb={`Billing & Finance / Payments / ${payment.id} / Allocation`} code="Payments & receipts" title="Payment Allocation" badge={<StatusPill tone="warning">Unsaved allocation preview</StatusPill>} description={`${payment.id} · Preview a partial allocation without changing the settled payment or existing allocation.`} scope={false}>
       <Scope left={`${orgName} · ${payment.desk} / ${patient?.name} · ${patient?.mrn}`} />
 
       <dl className="mb-6 grid gap-4 sm:grid-cols-3">
@@ -126,7 +126,7 @@ function AllocationForm({ payment }) {
         <ActionButton onClick={() => navigate(detailPath, { state })}>Cancel preview</ActionButton>
         <ActionButton variant="soft" disabled={Boolean(error) || saving} onClick={confirm}>Confirm allocation</ActionButton>
       </div>
-      <GovernanceFooter code="BF-12">Allocation is a distinct record. No funds are applied until eligibility is verified and a new allocation is explicitly confirmed.</GovernanceFooter>
+      <GovernanceFooter>Allocation is a distinct record. No funds are applied until eligibility is verified and a new allocation is explicitly confirmed.</GovernanceFooter>
     </BillingFrame>
   )
 }

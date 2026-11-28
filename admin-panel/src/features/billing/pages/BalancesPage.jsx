@@ -37,7 +37,7 @@ export default function BalancesPage() {
   const link = (item) => (item.kind === 'allocation' ? pathFor(ROUTES.billingPayment, { paymentId: item.paymentId }) : pathFor(EFFECT_PATH[item.kind], item.kind === 'payment' ? { paymentId: item.id } : { refundId: item.id }))
 
   return (
-    <BillingFrame back={{ to: ROUTES.billing, label: 'Back to Finance Workspace' }} crumb="Billing & Finance / Advances, Credit & Wallet" code="BF-20 / Billing & Finance" title="Advances, Credit & Wallet Balances" description="Separate prepaid funds held for a patient from wallet balances, credit facilities and invoice amounts owed." scope={false}>
+    <BillingFrame back={{ to: ROUTES.billing, label: 'Back to Finance Workspace' }} crumb="Billing & Finance / Advances, Credit & Wallet" code="Billing & Finance" title="Advances, Credit & Wallet Balances" description="Separate prepaid funds held for a patient from wallet balances, credit facilities and invoice amounts owed." scope={false}>
       <p className="mb-5 border-b border-slate-200 pb-4 text-[11px] text-outline">Return to Finance Workspace with {range.label} · All locations (3) · Billing model: All models · Queue context retained.</p>
       <div className="mb-5 grid items-end gap-4 sm:grid-cols-3 lg:grid-cols-[1fr_1fr_1fr_1fr]">
         <FilterField label="Date range · Source records" value={range.id} onChange={(value) => filters.change('range', value, DATE_RANGES[0].id)} options={DATE_RANGES.map((entry) => [entry.id, entry.label])} />
@@ -94,7 +94,7 @@ export default function BalancesPage() {
       )}
 
       <Banner tone="warning" title="One set of funds, counted once" className="mb-6">Advances, wallets, payments, allocations and refunds are distinct records. Do not add the refund reserve to held funds, add a wallet without checking overlap, or treat a receipt or allocation as a new collection.</Banner>
-      <GovernanceFooter code="BF-20">Completed refunds and settled payments are read-only. Revalidate source balances before any authorized allocation or refund; corrections require separate audited records.</GovernanceFooter>
+      <GovernanceFooter>Completed refunds and settled payments are read-only. Revalidate source balances before any authorized allocation or refund; corrections require separate audited records.</GovernanceFooter>
     </BillingFrame>
   )
 }

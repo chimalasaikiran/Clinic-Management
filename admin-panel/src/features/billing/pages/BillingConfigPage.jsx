@@ -52,7 +52,7 @@ function ConfigForm({ notice, onSaved }) {
   const option = (list) => list.map((entry) => ({ value: entry, label: entry }))
 
   return (
-    <BillingFrame back={{ to: ROUTES.billing, label: 'Back to Billing & Finance' }} crumb="Billing & Finance / Billing Configuration" code="BF-03 / Organization defaults" title="Billing Configuration" badge={dirty && <span className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-normal text-amber-800">Unsaved changes</span>} description="Manage prospective billing defaults. Financial records remain in their own workflows.">
+    <BillingFrame back={{ to: ROUTES.billing, label: 'Back to Billing & Finance' }} crumb="Billing & Finance / Billing Configuration" code="Organization defaults" title="Billing Configuration" badge={dirty && <span className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-normal text-amber-800">Unsaved changes</span>} description="Manage prospective billing defaults. Financial records remain in their own workflows.">
       {notice && <p role="status" className="mb-4 rounded-md border border-teal-200 bg-teal-50/60 px-4 py-2.5 text-xs">{notice}</p>}
       <div className="flex flex-col gap-5">
         <Card title="Billing model" aside="Organization default">

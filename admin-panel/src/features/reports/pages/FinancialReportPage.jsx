@@ -32,10 +32,10 @@ export default function FinancialReportPage() {
 
   return (
     <ReportsFrame
-      code="RPT-03"
+     
       title="Financial"
       description="Billed value, collections and refunds for the selected period, in INR (₹)."
-      back={{ to: ROUTES.reports, label: '← Back to Overview · RPT-01' }}
+      back={{ to: ROUTES.reports, label: '← Back to Overview' }}
       period={range}
       scopeLabel={scopeText}
       extraFilters={<FilterField label="Period" value={rangeId} onChange={setRangeId} options={DATE_RANGES.map((entry) => [entry.id, entry.label])} />}

@@ -17,11 +17,22 @@ export const searchFixture = (q) => ({
   invoices: [{ reference: 'INV-000007', date: '2026-11-17', title: 'Physiotherapy session', total: 1200, patient: 'Ananya Sharma', mrn: 'PT-000001' }],
 })
 
-export function createWorkspaceApi({ branches = API_BRANCHES, alerts = alertsFixture, search = searchFixture, healthy = true } = {}) {
+export function createWorkspaceApi({ branches = API_BRANCHES, alerts = alertsFixture, search = searchFixture, healthy = true, notices = [], stream = () => null } = {}) {
   const calls = []
+  let inbox = notices
   return {
     calls,
     api: {
+      stream,
+      async notifications() {
+        calls.push({ name: 'notifications' })
+        return { data: inbox, meta: { unread: inbox.filter((item) => !item.readAt).length, nextCursor: null } }
+      },
+      async markNotificationsRead(body) {
+        calls.push({ name: 'markNotificationsRead', body })
+        inbox = inbox.map((item) => ({ ...item, readAt: item.readAt ?? '2026-11-18T09:31:00.000Z' }))
+        return { marked: inbox.length }
+      },
       async branches() {
         calls.push({ name: 'branches' })
         return branches

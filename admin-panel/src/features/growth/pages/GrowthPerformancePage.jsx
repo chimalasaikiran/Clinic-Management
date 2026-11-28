@@ -56,7 +56,7 @@ export default function GrowthPerformancePage() {
   }
 
   return (
-    <GrowthFrame back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} crumb="Owner Panel / Growth OS / Growth Performance" code="GO-30" title="Growth Performance & Attribution" description="Understand the evidence behind growth — from source inquiries to outcomes that can be supported." context={[context.line, `${day(from)} – ${day(to)} inclusive · Asia/Kolkata · Leads by the date they were recorded`]} today={context.today} sample="Live lead records · Leads are credited to a campaign only when recorded against it">
+    <GrowthFrame back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} crumb="Owner Panel / Growth OS / Growth Performance" title="Growth Performance & Attribution" description="Understand the evidence behind growth — from source inquiries to outcomes that can be supported." context={[context.line, `${day(from)} – ${day(to)} inclusive · Asia/Kolkata · Leads by the date they were recorded`]} today={context.today} sample="Live lead records · Leads are credited to a campaign only when recorded against it">
       <Section title="Report scope" aside="Lead cohort · by recorded date" className="mb-6">
         <div className="grid gap-4 sm:grid-cols-4">
           <FilterField label="Branch" value="" disabled options={[['', branchName ?? 'All locations']]} />
@@ -101,9 +101,9 @@ export default function GrowthPerformancePage() {
         <div className="-mx-6 overflow-x-auto"><table className="w-full min-w-[640px] text-left text-xs"><thead className="bg-surface-low text-[10px] font-semibold tracking-wide text-on-surface-variant uppercase"><tr>{['Campaign', 'Leads', 'Converted', 'Booked after converting', 'Completed a visit'].map((heading) => <th key={heading} scope="col" className="px-6 py-2.5">{heading}</th>)}</tr></thead>
           <tbody>{(data?.byCampaign ?? []).map((campaign) => <tr key={campaign.id} className="border-t border-slate-100"><td className="px-6 py-3"><Link to={pathFor(ROUTES.campaignAttribution, { campaignId: campaign.id })} className="font-semibold text-brand hover:underline">{campaign.code} · {campaign.name}</Link></td><td className="px-6 py-3">{campaign.total}</td><td className="px-6 py-3">{campaign.converted} · {percent(campaign.converted, campaign.total)}</td><td className="px-6 py-3">{campaign.booked}</td><td className="px-6 py-3">{campaign.consulted}</td></tr>)}</tbody></table>
           {data && !data.byCampaign.length && <p className="px-6 py-6 text-center text-xs text-outline">No lead in this cohort was recorded against a campaign.</p>}</div>
-        <p className="mt-3 text-[11px] text-outline">{data ? `${data.untagged} lead${data.untagged === 1 ? '' : 's'} in this cohort have no campaign.` : ''} Appointments count only when the converted patient booked on or after conversion. <Link to={ROUTES.workflowExecutions} className="font-semibold text-brand hover:underline">Workflow execution evidence → GO29</Link></p>
+        <p className="mt-3 text-[11px] text-outline">{data ? `${data.untagged} lead${data.untagged === 1 ? '' : 's'} in this cohort have no campaign.` : ''} Appointments count only when the converted patient booked on or after conversion. <Link to={ROUTES.workflowExecutions} className="font-semibold text-brand hover:underline">Workflow execution evidence →</Link></p>
       </Section>
-      <GrowthFooter code="GO-30" back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} />
+      <GrowthFooter back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} />
     </GrowthFrame>
   )
 }

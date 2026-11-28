@@ -49,7 +49,7 @@ export default function MessageTemplatesPage() {
   }
 
   return (
-    <GrowthFrame back={{ to: ROUTES.conversations, label: 'Conversations inbox · GO21' }} crumb="Owner Panel / Growth OS / Message Templates" code="GO-23" title="Message Templates" description="Write the wording ClinicOS sends, check its variables, and record the provider’s approval before it is used." badge={<StatusPill tone="brand">{all.filter((entry) => entry.status === 'approved').length} approved</StatusPill>} context={[context.line, 'Every save is a new version; sent messages keep the version they went out with']} today={context.today} sample="Live templates · WhatsApp and SMS templates also need the provider’s approval">
+    <GrowthFrame back={{ to: ROUTES.conversations, label: 'Conversations inbox' }} crumb="Owner Panel / Growth OS / Message Templates" title="Message Templates" description="Write the wording ClinicOS sends, check its variables, and record the provider’s approval before it is used." badge={<StatusPill tone="brand">{all.filter((entry) => entry.status === 'approved').length} approved</StatusPill>} context={[context.line, 'Every save is a new version; sent messages keep the version they went out with']} today={context.today} sample="Live templates · WhatsApp and SMS templates also need the provider’s approval">
       <Banner tone="neutral" title="Approval happens in two places" className="mb-6">WhatsApp templates are approved by Meta and SMS templates registered on DLT. Mark a template Approved here only after that, with the provider’s template name or ID; email templates need no provider approval.</Banner>
       {failure && <Banner tone="danger" title="Not saved" className="mb-6">{failure}</Banner>}
       <Section title="Find message templates" aside="Name / category / channel / status" className="mb-6">
@@ -61,8 +61,8 @@ export default function MessageTemplatesPage() {
       </Section>
 
       {selected && <Editor key={`${selected.id}:${selected.version}`} template={selected} editor={editor} saved={saved} onSaved={(next) => { setSaved(`Saved ${next.code} as v${next.version}.`); templates.reload() }} />}
-      <p className="mb-6 text-xs"><Link to={ROUTES.channels} className="font-semibold text-brand hover:underline">Channel configuration → GO25</Link> · <Link to={ROUTES.conversations} className="font-semibold text-brand hover:underline">Conversations inbox → GO21</Link></p>
-      <GrowthFooter code="GO-23" back={{ to: ROUTES.conversations, label: 'Conversations inbox · GO21' }} />
+      <p className="mb-6 text-xs"><Link to={ROUTES.channels} className="font-semibold text-brand hover:underline">Channel configuration →</Link> · <Link to={ROUTES.conversations} className="font-semibold text-brand hover:underline">Conversations inbox →</Link></p>
+      <GrowthFooter back={{ to: ROUTES.conversations, label: 'Conversations inbox' }} />
     </GrowthFrame>
   )
 }

@@ -45,7 +45,7 @@ export default function WorkflowExecutionsPage() {
   const change = (name, value) => setFilters((current) => ({ ...current, [name]: value }))
 
   return (
-    <GrowthFrame back={{ to: ROUTES.growthPerformance, label: 'Growth performance · GO30 · Preserve report context' }} crumb="Owner Panel / Growth OS / Workflow Execution & Exceptions" code="GO-29" title="Workflow Execution & Exceptions" description="Every event a workflow acted on: the message it queued and its delivery, or the reason it was skipped." context={[context.line, 'Newest first · times in IST']} today={context.today} sample="Live records · One entry per event; a workflow never acts on the same event twice">
+    <GrowthFrame back={{ to: ROUTES.growthPerformance, label: 'Growth performance · Preserve report context' }} crumb="Owner Panel / Growth OS / Workflow Execution & Exceptions" title="Workflow Execution & Exceptions" description="Every event a workflow acted on: the message it queued and its delivery, or the reason it was skipped." context={[context.line, 'Newest first · times in IST']} today={context.today} sample="Live records · One entry per event; a workflow never acts on the same event twice">
       <Section title="Execution register" aside={runs.data ? `${rows.length} of ${runs.data.meta.total} events` : 'Loading'} className="mb-6">
         <div className="mb-4 grid gap-4 sm:grid-cols-3"><FilterField label="Workflow" value={filters.workflowId} onChange={(value) => change('workflowId', value)} options={[['', 'All workflows'], ...workflows.map((workflow) => [workflow.id, `${workflow.code} · ${workflow.name}`])]} /><FilterField label="Outcome" value={filters.outcome} onChange={(value) => change('outcome', value)} options={[['', 'All outcomes'], ['queued', 'Message queued'], ['skipped', 'Skipped']]} /><FilterField label="Show" value={filters.problem} onChange={(value) => change('problem', value)} options={[['', 'Everything'], ['true', 'Exceptions only']]} /></div>
         {!runs.data ? <LoadingState label="Loading executions…" error={runs.error} onRetry={runs.reload} /> : (
@@ -64,11 +64,11 @@ export default function WorkflowExecutionsPage() {
       {selected && (
         <div className="mb-6 grid items-start gap-6 lg:grid-cols-2">
           <Section title={`${selected.workflow.code} · ${who(selected)}`} aside={<StatusPill tone={selected.outcome === 'queued' ? 'brand' : 'neutral'}>{selected.outcome === 'queued' ? 'Message queued' : 'Skipped'}</StatusPill>}><p className="text-xs leading-5">{selected.skipLabel ?? `${MESSAGE_STATUSES[selected.message?.status] ?? 'Queued'}${selected.message?.errorMessage ? ` · ${selected.message.errorMessage}` : ''}`}</p><p className="mt-4 text-[13px] font-semibold">Safe next step</p><p className="mt-1 text-xs leading-5 text-on-surface-variant">{nextStep(selected)}</p></Section>
-          <Section title="Recovery"><div className="flex flex-wrap gap-3">{selected.message && <ActionButton to={pathFor(ROUTES.conversation, { threadId: selected.message.conversationId })}>Open conversation</ActionButton>}<ActionButton to={ROUTES.deliveryFailures}>Delivery failures → GO26</ActionButton><ActionButton to={ROUTES.channels}>Channel setup → GO25</ActionButton></div><p className="mt-3 text-[11px] text-outline">Failed messages are retried from Delivery failures, after their checks. <Link to={ROUTES.workflows} className="font-semibold text-brand hover:underline">Back to workflows → GO27</Link></p></Section>
+          <Section title="Recovery"><div className="flex flex-wrap gap-3">{selected.message && <ActionButton to={pathFor(ROUTES.conversation, { threadId: selected.message.conversationId })}>Open conversation</ActionButton>}<ActionButton to={ROUTES.deliveryFailures}>Delivery failures →</ActionButton><ActionButton to={ROUTES.channels}>Channel setup →</ActionButton></div><p className="mt-3 text-[11px] text-outline">Failed messages are retried from Delivery failures, after their checks. <Link to={ROUTES.workflows} className="font-semibold text-brand hover:underline">Back to workflows →</Link></p></Section>
         </div>
       )}
       {runs.data && !rows.length && <Banner title="Nothing to show yet" className="mb-6">Entries appear here once an active workflow finds an event that has come due.</Banner>}
-      <GrowthFooter code="GO-29" back={{ to: ROUTES.growthPerformance, label: 'Growth performance · GO30' }} />
+      <GrowthFooter back={{ to: ROUTES.growthPerformance, label: 'Growth performance' }} />
     </GrowthFrame>
   )
 }

@@ -30,7 +30,7 @@ export default function ChargeFormPage() {
 
   if (chargeId && !existing) {
     return (
-      <BillingFrame back={{ to: ROUTES.billingCharges, label: 'Charge Register' }} crumb="Billing & Finance / Charges" code="BF-05 / Billing & Finance" title="Charge not found" scope={false}>
+      <BillingFrame back={{ to: ROUTES.billingCharges, label: 'Charge Register' }} crumb="Billing & Finance / Charges" code="Billing & Finance" title="Charge not found" scope={false}>
         <Banner tone="warning" title="No charge matches this link">Open the Charge Register to find the record.</Banner>
       </BillingFrame>
     )
@@ -101,7 +101,7 @@ function ChargeForm({ existing }) {
   ]
 
   return (
-    <BillingFrame back={{ to: registerPath, label: 'Back to Charge Register' }} crumb={`Billing & Finance / Charges / ${existing ? (readOnly ? 'Review' : 'Draft') : 'New'}`} code="BF-05 / Billing & Finance" title="Create / Review Charge" badge={dirty && <StatusPill tone="warning">Unsaved changes</StatusPill>} description="Record an amount owed against a patient and service. Review the financial breakdown before confirming." scope={false}>
+    <BillingFrame back={{ to: registerPath, label: 'Back to Charge Register' }} crumb={`Billing & Finance / Charges / ${existing ? (readOnly ? 'Review' : 'Draft') : 'New'}`} code="Billing & Finance" title="Create / Review Charge" badge={dirty && <StatusPill tone="warning">Unsaved changes</StatusPill>} description="Record an amount owed against a patient and service. Review the financial breakdown before confirming." scope={false}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs">
         <p className="flex flex-wrap items-center gap-3"><strong className="text-sm">{existing?.id ?? 'New charge'}</strong><StatusPill>{readOnly ? 'Finalized' : 'Draft'}{existing?.invoiceId ? ' · Invoiced' : ' · Uninvoiced'}</StatusPill>{dirty && <span className="text-outline">Changes since last draft save</span>}</p>
         <span className="text-outline">{orgName} · INR (₹)</span>
@@ -202,7 +202,7 @@ function ChargeForm({ existing }) {
         </Banner>
       )}
 
-      <GovernanceFooter code="BF-05">Charge ≠ Invoice ≠ Payment ≠ Receipt ≠ Allocation ≠ Refund. Branch access and authorization are checked on save. Finalized records are read-only; corrections require a permitted, auditable workflow.</GovernanceFooter>
+      <GovernanceFooter>Charge ≠ Invoice ≠ Payment ≠ Receipt ≠ Allocation ≠ Refund. Branch access and authorization are checked on save. Finalized records are read-only; corrections require a permitted, auditable workflow.</GovernanceFooter>
     </BillingFrame>
   )
 }

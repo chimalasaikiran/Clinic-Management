@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* The app is light only: `dark:` utilities (used inside mapcn) apply under a .dark class, never from the OS setting. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "Courier New", monospace;
@@ -30,5 +33,23 @@
   select,
   summary {
     cursor: pointer;
+  }
+  .maplibregl-popup-content {
+    @apply bg-transparent! shadow-none! p-0! rounded-none!;
+  }
+  .maplibregl-popup-tip {
+    @apply hidden!;
+  }
+  .maplibregl-ctrl-attrib {
+    @apply bg-white! text-on-surface-variant! border-slate-200! rounded-md! border! shadow-sm!;
+  }
+  .maplibregl-ctrl-attrib a {
+    @apply text-on-surface-variant!;
+  }
+  .maplibregl-ctrl-attrib a:hover {
+    @apply text-on-surface!;
+  }
+  .maplibregl-ctrl-attrib-button {
+    @apply bg-transparent!;
   }
 }

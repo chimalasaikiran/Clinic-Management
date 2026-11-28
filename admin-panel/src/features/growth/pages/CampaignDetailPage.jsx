@@ -30,7 +30,7 @@ export default function CampaignDetailPage() {
   const resource = useApiResource(() => campaignsApi.campaign(campaignId), `campaign:${campaignId}`)
   const campaign = resource.data
   const registerPath = `${ROUTES.campaigns}${state?.search ?? ''}`
-  const frame = { back: { to: registerPath, label: 'Back to Campaign Register · GO07' }, code: 'GO 08', context: [context.line, 'Return retains the register filters'], today: context.today, sample: 'Live records · Spend is entered by hand · Leads count when recorded against this campaign' }
+  const frame = { back: { to: registerPath, label: 'Back to Campaign Register' }, context: [context.line, 'Return retains the register filters'], today: context.today, sample: 'Live records · Spend is entered by hand · Leads count when recorded against this campaign' }
 
   if (resource.error?.status === 404) {
     return (
@@ -53,7 +53,7 @@ export default function CampaignDetailPage() {
   const funnel = [['Leads recorded', attribution.leads, null], ['Converted to patients', attribution.converted, attribution.leads], ['Booked after converting', attribution.booked, attribution.converted], ['Completed a visit', attribution.consulted, attribution.booked]]
 
   return (
-    <GrowthFrame {...frame} crumb={`Owner Panel / Growth OS / Campaigns / ${campaign.code}`} title="Campaign Details & Performance" description={`${campaign.code} · ${campaign.name} · ${CAMPAIGN_STATUSES[campaign.status]} · ${attribution.leads} lead${attribution.leads === 1 ? '' : 's'} recorded`} actions={<>{manage && <ActionButton variant="brand" to={pathFor(ROUTES.campaignEdit, { campaignId })} state={here}>Edit Campaign · GO09</ActionButton>}<ActionButton to={ROUTES.audiences}>Manage audience · GO10</ActionButton></>}>
+    <GrowthFrame {...frame} crumb={`Owner Panel / Growth OS / Campaigns / ${campaign.code}`} title="Campaign Details & Performance" description={`${campaign.code} · ${campaign.name} · ${CAMPAIGN_STATUSES[campaign.status]} · ${attribution.leads} lead${attribution.leads === 1 ? '' : 's'} recorded`} actions={<>{manage && <ActionButton variant="brand" to={pathFor(ROUTES.campaignEdit, { campaignId })} state={here}>Edit Campaign</ActionButton>}<ActionButton to={ROUTES.audiences}>Manage audience</ActionButton></>}>
       <div className="mb-6 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <Section title="Overview" aside={campaign.code}>
           <p className="flex flex-wrap items-center gap-2 text-lg font-semibold">{campaign.name}<StatusPill tone={CAMPAIGN_TONE[campaign.status]}>{CAMPAIGN_STATUSES[campaign.status]}</StatusPill></p>
@@ -92,7 +92,7 @@ export default function CampaignDetailPage() {
       <Section title="History" aside="Append only" className="mb-6">
         <ul className="divide-y divide-slate-100 text-xs">{campaign.events.map((event) => <li key={event.id} className="grid gap-2 py-3 sm:grid-cols-[180px_1fr]"><span><strong>{when(stampOf(event.createdAt))}</strong><br /><span className="text-outline">{event.actor ?? 'ClinicOS'}</span></span><span>{event.text}</span></li>)}</ul>
       </Section>
-      <GrowthFooter code="GO 08" back={{ to: registerPath, label: 'Back to Campaign Register · Origin context retained' }} />
+      <GrowthFooter back={{ to: registerPath, label: 'Back to Campaign Register · Origin context retained' }} />
     </GrowthFrame>
   )
 }

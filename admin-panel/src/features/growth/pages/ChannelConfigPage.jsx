@@ -49,7 +49,7 @@ export default function ChannelConfigPage() {
   const connected = list.filter((entry) => entry.status === 'connected').length
 
   return (
-    <GrowthFrame back={{ to: ROUTES.messageTemplates, label: 'Message templates · GO23' }} crumb="Owner Panel / Growth OS / Channel Configuration" code="GO-25" title="Channel / Integration Configuration" description="Connect the clinic’s WhatsApp number, SMS sender, mail server, Facebook Page and Google Business Profile. Nothing is sent or published until a connection is checked." badge={<StatusPill tone={connected ? 'success' : 'warning'}>{admin && channels.data ? `${connected} of 3 connected` : 'Administrators only'}</StatusPill>} context={[context.line, 'Credentials are encrypted and never shown again after saving']} today={context.today} sample="Live configuration · Each organisation connects its own accounts">
+    <GrowthFrame back={{ to: ROUTES.messageTemplates, label: 'Message templates' }} crumb="Owner Panel / Growth OS / Channel Configuration" title="Channel / Integration Configuration" description="Connect the clinic’s WhatsApp number, SMS sender, mail server, Facebook Page and Google Business Profile. Nothing is sent or published until a connection is checked." badge={<StatusPill tone={connected ? 'success' : 'warning'}>{admin && channels.data ? `${connected} of 3 connected` : 'Administrators only'}</StatusPill>} context={[context.line, 'Credentials are encrypted and never shown again after saving']} today={context.today} sample="Live configuration · Each organisation connects its own accounts">
       {!admin && <Banner tone="warning" title="Only organisation administrators can view or change channels" className="mb-6">Ask someone with “Manage organization settings” to connect WhatsApp, SMS or email.</Banner>}
       {admin && !channels.data && <LoadingState label="Loading channels…" error={channels.error} onRetry={channels.reload} />}
       {admin && channels.data && (
@@ -70,7 +70,7 @@ export default function ChannelConfigPage() {
         </>
       )}
       {admin && <Integrations />}
-      <GrowthFooter code="GO-25" back={{ to: ROUTES.messageTemplates, label: 'Message templates · GO23' }} />
+      <GrowthFooter back={{ to: ROUTES.messageTemplates, label: 'Message templates' }} />
     </GrowthFrame>
   )
 }

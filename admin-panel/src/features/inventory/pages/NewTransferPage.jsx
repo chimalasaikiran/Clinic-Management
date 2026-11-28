@@ -1,3 +1,4 @@
+import { useAuth } from '../../auth/context/useAuth'
 import { useState } from 'react'
 import { ArrowRight, X } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -21,6 +22,7 @@ function presetLine(batches, itemId) {
 }
 
 export default function NewTransferPage() {
+  const { organisation } = useAuth()
   const { state, run } = useStock()
   const navigate = useNavigate()
   const [params] = useSearchParams()
@@ -67,7 +69,7 @@ export default function NewTransferPage() {
       crumbs={[{ label: 'Stock transfers', to: ROUTES.stockTransfers }, { label: 'New transfer' }]}
       title="New stock transfer"
       subtitle="Move stock between locations. Select available batches, confirm quantities and review before creating."
-      aside={<span className="text-[11px] text-outline">{formatDate(NOW.date)} · Aura Health</span>}
+      aside={<span className="text-[11px] text-outline">{formatDate(NOW.date)} · {organisation?.organisation.name}</span>}
     >
       <div className="grid gap-5 lg:grid-cols-[1.9fr_1fr]">
         <div className="flex flex-col gap-5">

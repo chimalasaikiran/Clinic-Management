@@ -15,6 +15,7 @@ import { CLINIC_CLASSIFICATIONS } from '../../onboarding/data/clinicOptions'
 import LoadingState from '../../patients/components/LoadingState'
 import { configApi } from '../api'
 import ConfigPage from '../components/ConfigPage'
+import PatientAppListing from '../components/PatientAppListing'
 import { BRANCH_STATUS, branchAddress, clock12, FACILITY_TYPES, WEEK_ORDER, WEEKDAYS } from '../configView'
 
 const SHORTCUTS = [
@@ -243,6 +244,7 @@ export default function BranchDetailPage() {
           )}
           <OperatingConfiguration branch={branch} organisation={organisation} />
           <Capabilities branch={branch} />
+          <PatientAppListing key={`app-${branch.version}`} branch={branch} manage={manage} onSaved={resource.reload} />
           {manage && <BranchLifecycle key={branch.version} branch={branch} onSaved={resource.reload} />}
         </div>
         <SidePanels branch={branch} organisation={organisation} />

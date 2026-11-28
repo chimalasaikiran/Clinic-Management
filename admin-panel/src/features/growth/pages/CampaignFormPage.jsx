@@ -35,14 +35,14 @@ export default function CampaignFormPage() {
   const campaign = useApiResource(() => (campaignId ? campaignsApi.campaign(campaignId) : Promise.resolve(null)), `campaign-form:${campaignId ?? 'new'}`)
   if (campaignId && campaign.error?.status === 404) {
     return (
-      <GrowthFrame back={{ to: ROUTES.campaigns, label: 'Back to Campaign Register' }} crumb="Owner Panel / Growth OS / Campaigns" code="GO 09" title="Campaign not found" sample="Live records">
+      <GrowthFrame back={{ to: ROUTES.campaigns, label: 'Back to Campaign Register' }} crumb="Owner Panel / Growth OS / Campaigns" title="Campaign not found" sample="Live records">
         <Banner tone="warning" title="No campaign matches this link">Open the Campaign Register to find the plan.</Banner>
       </GrowthFrame>
     )
   }
   if (campaignId && !campaign.data) {
     return (
-      <GrowthFrame back={{ to: ROUTES.campaigns, label: 'Back to Campaign Register' }} crumb="Owner Panel / Growth OS / Campaigns" code="GO 09" title="Create/Edit Campaign" sample="Live records">
+      <GrowthFrame back={{ to: ROUTES.campaigns, label: 'Back to Campaign Register' }} crumb="Owner Panel / Growth OS / Campaigns" title="Create/Edit Campaign" sample="Live records">
         <LoadingState label="Loading the campaign…" error={campaign.error} onRetry={campaign.reload} />
       </GrowthFrame>
     )
@@ -97,7 +97,7 @@ function CampaignForm({ campaign }) {
   }
 
   return (
-    <GrowthFrame back={{ to: backPath, label: campaign ? 'Back to Campaign Details · GO08' : 'Back to Campaign Register' }} crumb={`Owner Panel / Growth OS / Campaigns / ${campaign ? `${campaign.code} / Edit` : 'New'}`} code="GO 09" title="Create/Edit Campaign" description={campaign ? `Edit ${campaign.code} · ${campaign.name}. Changes are kept in the campaign history; leads already recorded keep their campaign.` : 'Plan a new campaign. Saving sends nothing.'} context={[context.line, campaign ? `Campaign branch: ${campaign.branch.name}` : 'New campaign · the code is assigned on save']} today={context.today} sample="Live records · Every change is kept in the campaign history">
+    <GrowthFrame back={{ to: backPath, label: campaign ? 'Back to Campaign Details' : 'Back to Campaign Register' }} crumb={`Owner Panel / Growth OS / Campaigns / ${campaign ? `${campaign.code} / Edit` : 'New'}`} title="Create/Edit Campaign" description={campaign ? `Edit ${campaign.code} · ${campaign.name}. Changes are kept in the campaign history; leads already recorded keep their campaign.` : 'Plan a new campaign. Saving sends nothing.'} context={[context.line, campaign ? `Campaign branch: ${campaign.branch.name}` : 'New campaign · the code is assigned on save']} today={context.today} sample="Live records · Every change is kept in the campaign history">
       {message && <Banner tone="danger" title="Not saved" className="mb-6">{message}</Banner>}
       {budgetChange !== 0 && <Banner tone="warning" title={`Unsaved budget change · ${formatINR(campaign.budget)} → ${formatINR(Number(values.budget))}`} className="mb-6">The saved plan stays {formatINR(campaign.budget)} until you confirm and save.</Banner>}
       <div className="mb-6 grid items-start gap-6 lg:grid-cols-[1fr_380px]">
@@ -143,7 +143,7 @@ function CampaignForm({ campaign }) {
         <ActionButton onClick={() => (dirty ? setLeaving(true) : navigate(backPath))}>Cancel</ActionButton>
         <ActionButton variant="brand" disabled={blocked || saving} onClick={save}>{saving ? 'Saving…' : 'Save campaign'}</ActionButton>
       </div>
-      <GrowthFooter code="GO 09" back={{ to: backPath, label: campaign ? 'Back to Campaign Details · GO08' : 'Back to Campaign Register' }} />
+      <GrowthFooter back={{ to: backPath, label: campaign ? 'Back to Campaign Details' : 'Back to Campaign Register' }} />
     </GrowthFrame>
   )
 }

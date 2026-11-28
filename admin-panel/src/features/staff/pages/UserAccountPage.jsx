@@ -6,13 +6,14 @@ import { InfoNote } from '../../../components/workspace/controls'
 import { SelectInput, TextInput } from '../../../components/workspace/FormControls'
 import PageIntro from '../../../components/workspace/PageIntro'
 import Panel from '../../../components/workspace/Panel'
-import { Banner } from '../../../components/workspace/RecordKit'
+import { Banner, TextLink } from '../../../components/workspace/RecordKit'
 import StatusPill from '../../../components/workspace/StatusPill'
 import WorkspacePage from '../../../components/workspace/WorkspacePage'
 import { pathFor, ROUTES } from '../../../config/routes'
 import { useApiResource } from '../../../hooks/useApiResource'
 import { useFormFields } from '../../../hooks/useFormFields'
 import { accessApi } from '../../auth/api'
+import { useAuth } from '../../auth/context/useAuth'
 import LoadingState from '../../patients/components/LoadingState'
 import { toPersonView } from '../adapters'
 import { staffApi } from '../api'
@@ -30,6 +31,7 @@ export default function UserAccountPage() {
 
 function AccountSetup({ record, onChange }) {
   const navigate = useNavigate()
+  const { can } = useAuth()
   const person = toPersonView(record)
   const [values, handleChange] = useFormFields({ email: record.email ?? '', role: '' })
   const [submitted, setSubmitted] = useState(false)
@@ -74,7 +76,16 @@ function AccountSetup({ record, onChange }) {
       <WorkspacePage>
         <PageIntro title="User account" description="This person already signs in to ClinicOS." />
         <PersonBanner person={person} subtitle={`${person.type} (${person.role}) · ${person.department}`} facts={[['Sign-in email', record.account.email], ['Roles', record.account.roles.join(', ') || '—'], ['Account status', record.account.status]]} />
-        <InfoNote icon={ShieldCheck}>Change this person&apos;s roles or suspend their access in Settings → Roles &amp; members.</InfoNote>
+        <InfoNote icon={ShieldCheck}>
+          {can('settings.roles') ? (
+            <>
+              Change this person&apos;s roles or suspend their access in{' '}
+              <TextLink to={`${ROUTES.roleMembers}?${new URLSearchParams({ q: record.account.email })}`}>Role Management → Members</TextLink>.
+            </>
+          ) : (
+            'Someone who manages roles can change this person’s roles or suspend their access.'
+          )}
+        </InfoNote>
         <div className="mt-5"><ActionButton to={profilePath}>Back to profile</ActionButton></div>
       </WorkspacePage>
     )

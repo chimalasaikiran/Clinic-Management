@@ -180,7 +180,7 @@ function PatientForm({ editing, refresh, lead }) {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <TextInput label="Preferred name / alias" name="alias" value={values.alias} onChange={update} placeholder="Known as, nickname, or clinical alias" hint="Optional" />
-              <TextInput label="Aadhaar card reference (last 4 digits)" name="aadhaarLast4" inputMode="numeric" maxLength={4} prefix="XXXX-XXXX-" value={values.aadhaarLast4} onChange={update} error={errors.aadhaarLast4} hint="Last 4 digits only" />
+              <TextInput label="Aadhaar card reference (last 4 digits)" name="aadhaarLast4" inputMode="numeric" maxLength={4} prefix="" value={values.aadhaarLast4} onChange={update} error={errors.aadhaarLast4} hint="Last 4 digits only" />
             </div>
           </FormSection>
 

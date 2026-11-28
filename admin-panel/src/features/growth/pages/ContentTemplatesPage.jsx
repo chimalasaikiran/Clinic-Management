@@ -36,7 +36,7 @@ export default function ContentTemplatesPage() {
   const manage = can('growth.manage')
 
   return (
-    <GrowthFrame back={{ to: backPath, label: 'Back to Content Calendar · GO11' }} crumb="Owner Panel / Growth OS / Templates" code="GO-13" title="Content Templates" description="Start a post from approved clinic copy. A template is a starting point; every post is still reviewed by a second person." actions={<>{manage && <ActionButton onClick={() => setEditing(blank())}>New template</ActionButton>}<ActionButton to={ROUTES.contentNew} state={state}>Return to edit · GO12</ActionButton></>} context={[context.line, 'Calendar filters are kept on return']} today={context.today} sample="Live records · Saving a template moves its version on; posts keep the version they started from">
+    <GrowthFrame back={{ to: backPath, label: 'Back to Content Calendar' }} crumb="Owner Panel / Growth OS / Templates" title="Content Templates" description="Start a post from approved clinic copy. A template is a starting point; every post is still reviewed by a second person." actions={<>{manage && <ActionButton onClick={() => setEditing(blank())}>New template</ActionButton>}<ActionButton to={ROUTES.contentNew} state={state}>Return to edit</ActionButton></>} context={[context.line, 'Calendar filters are kept on return']} today={context.today} sample="Live records · Saving a template moves its version on; posts keep the version they started from">
       {editing && <TemplateEditor key={editing.id ?? 'new'} template={editing} onDone={() => { setEditing(null); templates.reload() }} onCancel={() => setEditing(null)} />}
       <Section title="Browse templates" aside={`${shown.length} of ${all.length} templates`} className="mb-6">
         <div className="grid gap-4 sm:grid-cols-2"><SearchBox value={query} onChange={setQuery} label="Search templates" placeholder="Search title, category or code" /><FilterField label="" value={target} onChange={setTarget} options={[['', 'All networks'], ...Object.entries(TARGETS)]} /></div>
@@ -49,12 +49,12 @@ export default function ContentTemplatesPage() {
             <article key={template.id} className={cn('overflow-hidden rounded-md border bg-white', previewId === template.id ? 'border-brand' : 'border-slate-200')}>
               <div className={cn('p-6', previewId === template.id ? 'bg-teal-50' : 'bg-surface-low')}><p className="flex justify-between text-[11px] font-semibold tracking-wide text-brand uppercase"><span>{template.category}</span><span className="font-normal text-outline">v{template.version}</span></p><div className="my-3 h-0.5 w-8 bg-brand" /><p className="text-2xl leading-7 font-semibold">{template.title}</p></div>
               <div className="p-5 text-xs"><p className="flex items-center justify-between"><strong className="text-brand">{template.code} · v{template.version}</strong>{previewId === template.id && <StatusPill tone="success">Preview selected</StatusPill>}</p><p className="mt-3 leading-5 text-on-surface-variant">{template.body}</p><p className="mt-2 font-semibold">{template.cta} →</p><p className="mt-3 text-outline">For {targetsLabel(template.targets)} · updated by {template.updatedBy ?? '—'}</p>
-                <div className="mt-4 flex flex-wrap gap-3"><ActionButton onClick={() => setPreviewId(template.id)}>Preview</ActionButton>{manage && <ActionButton onClick={() => setEditing(template)}>Edit</ActionButton>}{manage && <ActionButton variant="brand" onClick={() => navigate(`${ROUTES.contentNew}?template=${template.id}`, { state })}>Use template → GO12</ActionButton>}</div></div>
+                <div className="mt-4 flex flex-wrap gap-3"><ActionButton onClick={() => setPreviewId(template.id)}>Preview</ActionButton>{manage && <ActionButton onClick={() => setEditing(template)}>Edit</ActionButton>}{manage && <ActionButton variant="brand" onClick={() => navigate(`${ROUTES.contentNew}?template=${template.id}`, { state })}>Use template →</ActionButton>}</div></div>
             </article>))}
         </div>
       )}
       {templates.data && shown.length === 0 && <p className="mb-6 rounded-md border border-slate-200 bg-white px-6 py-10 text-center text-sm text-on-surface-variant">{all.length ? 'No templates match these filters.' : 'No templates yet.'}</p>}
-      <GrowthFooter code="GO-13" back={{ to: backPath, label: 'Back to Content Calendar · GO11' }} />
+      <GrowthFooter back={{ to: backPath, label: 'Back to Content Calendar' }} />
     </GrowthFrame>
   )
 }

@@ -29,14 +29,14 @@ export default function CommunicationHistoryPage() {
 
   if (resource.error?.status === 404) {
     return (
-      <GrowthFrame back={{ to: ROUTES.conversations, label: 'Back to inbox' }} crumb="Owner Panel / Growth OS / Communication History" code="GO-24" title="Conversation not found">
+      <GrowthFrame back={{ to: ROUTES.conversations, label: 'Back to inbox' }} crumb="Owner Panel / Growth OS / Communication History" title="Conversation not found">
         <Banner tone="warning" title="No conversation matches this link">Open the inbox to find the thread.</Banner>
       </GrowthFrame>
     )
   }
   if (!resource.data) {
     return (
-      <GrowthFrame back={{ to: threadPath, label: 'Conversation thread · GO22' }} crumb="Owner Panel / Growth OS / Communication History" code="GO-24" title="Communication History & Preferences">
+      <GrowthFrame back={{ to: threadPath, label: 'Conversation thread' }} crumb="Owner Panel / Growth OS / Communication History" title="Communication History & Preferences">
         <LoadingState label="Loading history…" error={resource.error} onRetry={resource.reload} />
       </GrowthFrame>
     )
@@ -48,7 +48,7 @@ export default function CommunicationHistoryPage() {
   const entries = data.messages.map(toMessageView).filter((message) => !direction || (direction === 'Inbound') === message.inbound)
 
   return (
-    <GrowthFrame back={{ to: threadPath, label: 'Conversation thread · GO22 · Keep inbox context' }} crumb="Owner Panel / Growth OS / Communication History" code="GO-24" title="Communication History & Preferences" description="Review everything sent and received, and the contact’s recorded permission for this channel." badge={<StatusPill tone={thread.linked ? 'brand' : 'warning'}>{thread.linked ? `Linked · ${thread.contact}` : 'Unlinked contact'}</StatusPill>} context={[context.line, `${thread.number} · ${thread.channel} · ${thread.address}`]} today={context.today} sample="Live history · Receipts are as reported by the provider">
+    <GrowthFrame back={{ to: threadPath, label: 'Conversation thread · Keep inbox context' }} crumb="Owner Panel / Growth OS / Communication History" title="Communication History & Preferences" description="Review everything sent and received, and the contact’s recorded permission for this channel." badge={<StatusPill tone={thread.linked ? 'brand' : 'warning'}>{thread.linked ? `Linked · ${thread.contact}` : 'Unlinked contact'}</StatusPill>} context={[context.line, `${thread.number} · ${thread.channel} · ${thread.address}`]} today={context.today} sample="Live history · Receipts are as reported by the provider">
       <Section title="Find communications" aside="This conversation" className="mb-6"><div className="grid gap-4 sm:grid-cols-4"><FilterField label="Channel" value="" disabled options={[['', thread.channel]]} /><FilterField label="Direction" value={direction} onChange={(value) => filters.change('direction', value)} options={[['', 'All directions'], 'Inbound', 'Outbound']} /></div><p className="mt-3 text-[11px] text-outline">{entries.length} entr{entries.length === 1 ? 'y' : 'ies'} · oldest first · times in IST.</p></Section>
 
       <div className="mb-6 grid items-start gap-6 lg:grid-cols-[1.3fr_1fr]">
@@ -58,7 +58,7 @@ export default function CommunicationHistoryPage() {
         </Section>
         <Permission data={data} thread={thread} />
       </div>
-      <GrowthFooter code="GO-24" back={{ to: threadPath, label: 'Conversation thread · GO22' }} />
+      <GrowthFooter back={{ to: threadPath, label: 'Conversation thread' }} />
     </GrowthFrame>
   )
 }

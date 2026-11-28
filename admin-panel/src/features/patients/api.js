@@ -19,6 +19,9 @@ export const patientsApi = {
   update: (id, body) => api(`/v1/patients/${id}`, { method: 'PATCH', body }),
   setStatus: (id, status, note) => api(`/v1/patients/${id}/status`, { method: 'PATCH', body: { status, note } }),
   duplicates: (mobile, excludeId) => api(`/v1/patients/duplicates${queryString({ mobile, excludeId })}`),
+  appAccess: (id) => api(`/v1/patients/${id}/app-access`),
+  issueAppCode: (id) => post(`/v1/patients/${id}/app-link-code`),
+  revokeAppLink: (id, linkId) => api(`/v1/patients/${id}/app-links/${linkId}`, { method: 'DELETE' }),
 }
 
 export const appointmentsApi = {

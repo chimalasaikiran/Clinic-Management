@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import ActionButton from '../../../components/workspace/ActionButton'
 import StatusPill from '../../../components/workspace/StatusPill'
@@ -16,26 +17,34 @@ import { leadsApi } from '../leadsApi'
 import { messagingApi } from '../messagingApi'
 import { toConversationView } from '../messagingView'
 import { clinicNow, leadSummary, STAGES, toLeadView } from '../leadsView'
-import { useLeadContext } from '../useLeads'
+import { useLeadContext, useLeadOwners } from '../useLeads'
 
-const QUICK = [['Add Lead', ROUTES.leadNew, true], ['Create Campaign', ROUTES.campaignNew], ['Create Content', ROUTES.contentNew], ['Conversations', ROUTES.conversations], ['Reviews', ROUTES.reviews]]
+// Each action with the permission its page needs.
+const QUICK = [['Add Lead', ROUTES.leadNew, 'growth.leads'], ['Create Campaign', ROUTES.campaignNew, 'growth.manage'], ['Create Content', ROUTES.contentNew, 'growth.manage'], ['Conversations', ROUTES.conversations, 'growth.view'], ['Reviews', ROUTES.reviews, 'growth.view']]
+
+const RANGES = { month: 'Month to date', week: 'Last 7 days', thirty: 'Last 30 days' }
+const daysBefore = (iso, days) => new Date(Date.parse(`${iso}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10)
 
 const FOLLOW_UPS = 10
 
 export default function GrowthHomePage() {
-  const { can } = useAuth()
+  const { can, organisation } = useAuth()
   const context = useLeadContext()
   const branchId = context.branchId || undefined
   const today = clinicNow().date
-  const monthStart = `${today.slice(0, 8)}01`
-  const open = useApiResource(() => leadsApi.list({ branchId, due: 'open', sort: 'follow-up', pageSize: FOLLOW_UPS }), `home:${branchId}`)
-  const month = useApiResource(() => leadsApi.performance({ branchId, from: monthStart, to: today }), `home-month:${branchId}:${today}`).data
+  const [range, setRange] = useState('month')
+  const [ownerId, setOwnerId] = useState('')
+  const owners = useLeadOwners()
+  const from = range === 'month' ? `${today.slice(0, 8)}01` : daysBefore(today, range === 'week' ? 6 : 29)
+  const period = RANGES[range].toLowerCase()
+  const open = useApiResource(() => leadsApi.list({ branchId, ownerId: ownerId || undefined, due: 'open', sort: 'follow-up', pageSize: FOLLOW_UPS }), `home:${branchId}:${ownerId}`)
+  const month = useApiResource(() => leadsApi.performance({ branchId, from, to: today }), `home-period:${branchId}:${from}:${today}`).data
   const summary = leadSummary(open.data?.meta)
   const counts = summary.pipeline
   const followUps = (open.data?.data ?? []).map(toLeadView)
   const openTotal = open.data?.meta?.total ?? 0
   const overdue = summary.overdue
-  const quick = QUICK.filter(([label]) => label !== 'Add Lead' || can('growth.leads'))
+  const quick = QUICK.filter(([, , permission]) => can(permission))
   // Low ratings with no reply yet, newest first.
   const unanswered = useApiResource(() => (can('growth.view') ? contentApi.reviews({ response: 'none', branchId, pageSize: 20 }) : Promise.resolve(null)), `home-reviews:${branchId}`).data
   const needsAttention = (unanswered?.data ?? []).filter((review) => review.rating <= 3).slice(0, 3)
@@ -48,11 +57,14 @@ export default function GrowthHomePage() {
   const byTrigger = (trigger) => workflows?.find((workflow) => workflow.trigger === trigger && workflow.status === 'active') ?? workflows?.find((workflow) => workflow.trigger === trigger)
 
   return (
-    <GrowthFrame back={{ to: ROUTES.dashboard, label: 'Back to Owner Panel' }} crumb="Owner Panel / Growth" code="GO-01" title="Growth OS" description="Prioritize inquiries, follow-ups and patient relationships across Aura Health." sample="Live records · Leads, follow-ups, conversations, campaigns, workflows and reviews" context={[context.line, `Month to date · ${day(monthStart)} – ${day(today)} · Asia/Kolkata`]} today={context.today}>
-      <p className="mb-6 flex flex-wrap items-center gap-2 text-xs"><span className="text-[10px] font-semibold tracking-wide text-outline uppercase">Quick actions</span>{quick.map(([label, to, primary]) => <ActionButton key={label} to={to} variant={primary ? 'brand' : 'secondary'}>{label}</ActionButton>)}</p>
+    <GrowthFrame back={can('dashboard.view') ? { to: ROUTES.dashboard, label: 'Back to dashboard' } : null} crumb="Growth workspace" title="Growth OS" description={`Prioritize inquiries, follow-ups and patient relationships across ${organisation?.organisation.name ?? 'your clinic'}.`} sample="Live records · Leads, follow-ups, conversations, campaigns, workflows and reviews" context={[context.line, `${RANGES[range]} · ${day(from)} – ${day(today)} · Asia/Kolkata`]} today={context.today}>
+      <label className="mb-4 flex w-fit items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs text-outline">Date range
+        <select value={range} onChange={(event) => setRange(event.target.value)} className="bg-transparent font-medium text-on-surface">{Object.entries(RANGES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+      </label>
+      <p className="mb-6 flex flex-wrap items-center gap-2 text-xs"><span className="text-[10px] font-semibold tracking-wide text-outline uppercase">Quick actions</span>{quick.map(([label, to]) => <ActionButton key={label} to={to} variant={label === 'Add Lead' ? 'brand' : 'secondary'}>{label}</ActionButton>)}</p>
 
       <dl className="mb-2 grid gap-4 sm:grid-cols-4">
-        {[['New Leads', open.data ? String(counts.New) : '—', 'Leads at the New stage'], ['Follow-ups Due', open.data ? String(summary.followUpsDue) : '—', `${overdue} overdue · due by end of today`], ['Booked After Conversion', month ? String(month.booked) : '—', month ? `${month.converted} converted this month` : 'Loading'], ['Campaign Leads', month ? String(tagged) : '—', month ? `${percent(tagged, month.total)} of this month’s leads came from a campaign` : 'Loading']].map(([label, value, hint]) => (
+        {[['New Leads', open.data ? String(counts.New) : '—', 'Leads at the New stage'], ['Follow-ups Due', open.data ? String(summary.followUpsDue) : '—', `${overdue} overdue · due by end of today`], ['Booked After Conversion', month ? String(month.booked) : '—', month ? `${month.converted} converted · ${period}` : 'Loading'], ['Campaign Leads', month ? String(tagged) : '—', month ? `${percent(tagged, month.total)} of leads in this period came from a campaign` : 'Loading']].map(([label, value, hint]) => (
           <div key={label} className="rounded-md border border-slate-200 bg-white p-5"><dt className="text-[13px] font-medium">{label}</dt><dd className="mt-3 text-2xl font-semibold">{value}</dd><p className="mt-2 text-[11px] text-outline">{hint}</p></div>
         ))}
       </dl>
@@ -64,7 +76,7 @@ export default function GrowthHomePage() {
         <p className="flex justify-between border-t border-slate-200 px-4 py-2.5 text-xs text-outline"><span>Overdue follow-ups: {overdue}</span><span>Priority work below ↓</span></p>
       </div>
 
-      <Section title="Prioritized follow-ups" aside={openTotal > FOLLOW_UPS ? <Link to={ROUTES.leads} className="font-semibold text-brand hover:underline">{openTotal} open · Lead Register ↗</Link> : 'Overdue first, then next due'} className="mb-6">
+      <Section title="Prioritized follow-ups" aside={<span className="flex flex-wrap items-center gap-3"><select aria-label="Follow-up owner" value={ownerId} onChange={(event) => setOwnerId(event.target.value)} className="rounded border border-slate-200 bg-white px-2 py-1 text-xs"><option value="">All owners</option>{owners.map((owner) => <option key={owner.membershipId} value={owner.membershipId}>{owner.name}</option>)}</select>{openTotal > FOLLOW_UPS ? <Link to={ROUTES.leads} className="font-semibold text-brand hover:underline">{openTotal} open · Lead Register ↗</Link> : 'Overdue first, then next due'}</span>} className="mb-6">
         <div className="-mx-6 overflow-x-auto"><table className="w-full min-w-[820px] text-left text-xs">
           <thead className="bg-surface-low text-[10px] font-semibold tracking-wide text-on-surface-variant uppercase"><tr>{['Lead / inquiry', 'Source', 'Last contact · IST', 'Next action', 'Due · IST', 'Owner'].map((heading) => <th key={heading} scope="col" className="px-6 py-3">{heading}</th>)}</tr></thead>
           <tbody>{followUps.map((lead) => (
@@ -103,11 +115,11 @@ export default function GrowthHomePage() {
       <h2 className="mb-3 text-[17px] font-semibold">Keep care relationships moving</h2>
       <div className="mb-6 grid gap-4 lg:grid-cols-3">
         {[['Revisit follow-up', byTrigger('revisit_due'), 'Recall workflow'], ['No-show recovery', byTrigger('no_show'), 'Recovery workflow']].map(([title, workflow, link]) => (
-          <div key={title} className="rounded-md border border-slate-200 bg-white p-5 text-xs"><p className="text-[13px] font-semibold">{title}</p><StatusPill tone={workflow?.status === 'active' ? 'success' : 'neutral'} className="my-3">{workflow ? (workflow.status === 'active' ? 'On' : workflow.status === 'paused' ? 'Paused' : 'Draft') : 'Not set up'}</StatusPill><p className="font-medium">{workflow?.name ?? (workflows ? 'No workflow yet' : 'Loading…')}</p><p className="mt-1 text-on-surface-variant">{workflow ? `${workflow.lastWeek.queued} sent · ${workflow.lastWeek.skipped} skipped in the last 7 days` : 'Create one to send it automatically.'}</p><Link to={workflow ? pathFor(ROUTES.workflowEdit, { workflowId: workflow.id }) : ROUTES.workflowNew} className="mt-3 inline-block font-semibold text-brand hover:underline">{link} ↗</Link></div>
+          <div key={title} className="rounded-md border border-slate-200 bg-white p-5 text-xs"><p className="text-[13px] font-semibold">{title}</p><StatusPill tone={workflow?.status === 'active' ? 'success' : 'neutral'} className="my-3">{workflow ? (workflow.status === 'active' ? 'On' : workflow.status === 'paused' ? 'Paused' : 'Draft') : 'Not set up'}</StatusPill><p className="font-medium">{workflow?.name ?? (workflows ? 'No workflow yet' : 'Loading…')}</p><p className="mt-1 text-on-surface-variant">{workflow ? `${workflow.lastWeek.queued} sent · ${workflow.lastWeek.skipped} skipped in the last 7 days` : 'Create one to send it automatically.'}</p><Link to={!can('growth.manage') ? ROUTES.workflows : workflow ? pathFor(ROUTES.workflowEdit, { workflowId: workflow.id }) : ROUTES.workflowNew} className="mt-3 inline-block font-semibold text-brand hover:underline">{link} ↗</Link></div>
         ))}
         <div className="rounded-md border border-slate-200 bg-white p-5 text-xs"><p className="text-[13px] font-semibold">Workflow exceptions</p><StatusPill tone={exceptions ? 'warning' : 'neutral'} className="my-3">{exceptions === undefined ? 'Loading' : exceptions ? 'Needs review' : 'None'}</StatusPill><p className="font-medium">{exceptions === undefined ? '—' : `${exceptions} skipped or failed`}</p><p className="mt-1 text-on-surface-variant">Events a workflow could not send, with the reason.</p><Link to={ROUTES.workflowExecutions} className="mt-3 inline-block font-semibold text-brand hover:underline">Execution exceptions ↗</Link></div>
       </div>
-      <GrowthFooter code="GO-01" />
+      <GrowthFooter />
     </GrowthFrame>
   )
 }

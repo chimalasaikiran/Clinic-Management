@@ -18,7 +18,7 @@ const DECISIONS = [['reschedule', 'Reschedule'], ['complete', 'Complete original
 
 export default function LeadFollowUpPage() {
   const { leadId } = useParams()
-  return <LeadGate leadId={leadId} code="GO-05">{(lead) => <FollowUpForm key={lead.id} lead={lead} />}</LeadGate>
+  return <LeadGate leadId={leadId}>{(lead) => <FollowUpForm key={lead.id} lead={lead} />}</LeadGate>
 }
 
 function FollowUpForm({ lead }) {
@@ -60,7 +60,7 @@ function FollowUpForm({ lead }) {
   }
 
   return (
-    <GrowthFrame back={{ to: detailPath, label: 'Back to Lead Details' }} crumb={`Owner Panel / Growth OS / Leads / ${lead.name} / Lead Follow-up`} code="GO-05" title="Lead Follow-up" description="Record a contact attempt, plan the next action and resolve the original task only with explicit confirmation." context={[context.line, `Lead branch: ${lead.branch}.`]} today={context.today} sample={LIVE_NOTE}>
+    <GrowthFrame back={{ to: detailPath, label: 'Back to Lead Details' }} crumb={`Owner Panel / Growth OS / Leads / ${lead.name} / Lead Follow-up`} title="Lead Follow-up" description="Record a contact attempt, plan the next action and resolve the original task only with explicit confirmation." context={[context.line, `Lead branch: ${lead.branch}.`]} today={context.today} sample={LIVE_NOTE}>
       {failure && <Banner tone="danger" title="Not recorded" className="mb-6">{failure}</Banner>}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3 rounded-md border border-slate-200 bg-white p-5">
         <div><p className="flex flex-wrap items-center gap-2"><strong className="text-lg">{lead.name}</strong><StatusPill tone="success">{lead.stage}</StatusPill>{due !== 'None' && <StatusPill tone={TONES[due]}>{due} · Open</StatusPill>}</p><p className="mt-1 text-xs text-outline">{lead.number} · {lead.phone} · {lead.summary}</p></div>
@@ -112,7 +112,7 @@ function FollowUpForm({ lead }) {
         <ActionButton onClick={() => navigate(detailPath)}>Cancel</ActionButton>
         <ActionButton variant="brand" disabled={blocked || saving} onClick={record}>{saving ? 'Recording…' : 'Record Follow-up'}</ActionButton>
       </div>
-      <GrowthFooter code="GO-05" back={{ to: detailPath, label: 'Back to Lead Details' }} />
+      <GrowthFooter back={{ to: detailPath, label: 'Back to Lead Details' }} />
     </GrowthFrame>
   )
 }

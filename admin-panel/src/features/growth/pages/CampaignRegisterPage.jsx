@@ -31,8 +31,8 @@ export default function CampaignRegisterPage() {
   const tagged = rows.reduce((sum, campaign) => sum + campaign.leadCount, 0)
 
   return (
-    <GrowthFrame back={{ to: ROUTES.growth, label: 'Back to Owner Panel' }} crumb="Owner Panel / Growth OS / Campaigns" code="GO 07" title="Campaign Register" description="Plan clinic outreach, record what was spent, and see which campaigns brought enquiries that became patients." actions={can('growth.manage') && <ActionButton variant="brand" icon={Plus} to={ROUTES.campaignNew} state={state}>Create Campaign</ActionButton>} actionNote="Create / edit campaign · GO09" context={[context.line, 'Filters are kept in the address']} today={context.today} sample="Live records · Spend is entered by hand; leads count only when recorded against the campaign">
-      <p className="mb-2 text-right text-xs"><Link to={ROUTES.audiences} className="font-semibold text-brand hover:underline">Manage Audiences · GO10 ↗</Link></p>
+    <GrowthFrame back={{ to: ROUTES.growth, label: 'Back to Growth OS' }} crumb="Growth OS / Campaigns" title="Campaign Register" description="Plan clinic outreach, record what was spent, and see which campaigns brought enquiries that became patients." actions={can('growth.manage') && <ActionButton variant="brand" icon={Plus} to={ROUTES.campaignNew} state={state}>Create Campaign</ActionButton>} actionNote="Create / edit campaign" context={[context.line, 'Filters are kept in the address']} today={context.today} sample="Live records · Spend is entered by hand; leads count only when recorded against the campaign">
+      <p className="mb-2 text-right text-xs"><Link to={ROUTES.audiences} className="font-semibold text-brand hover:underline">Manage Audiences ↗</Link></p>
       <div className="mb-6 grid gap-4 lg:grid-cols-2">
         <div className="rounded-md border border-slate-200 bg-white p-5"><h2 className="text-[17px] font-semibold">Status is your plan</h2><p className="mt-2 text-xs leading-5 text-on-surface-variant">Draft, Scheduled, Active, Paused and Completed are set by your team. Only WhatsApp, SMS and email campaigns send anything, and only through a confirmed broadcast.</p></div>
         <div className="rounded-md border border-slate-200 bg-white p-5"><h2 className="text-[17px] font-semibold">Measured from your records</h2><p className="mt-2 text-xs leading-5 text-on-surface-variant">Leads are counted when they are recorded against a campaign; conversions follow those leads. Ad platforms’ reach and clicks are not connected.</p><p className="mt-2 text-[11px] text-outline">{tagged} lead{tagged === 1 ? '' : 's'} recorded against the campaigns shown.</p></div>
@@ -52,7 +52,7 @@ export default function CampaignRegisterPage() {
                 <td className="px-5 py-4 text-sm font-semibold">{formatINR(campaign.budget)}<br /><span className="text-xs font-normal text-outline">Planned budget<br />{range(campaign)}</span></td>
                 <td className="px-5 py-4">{formatINR(campaign.spent)}<br /><span className="text-outline">{campaign.spent ? 'Entered by the team' : 'None entered'}</span></td>
                 <td className="px-5 py-4">{campaign.leadCount}<br /><span className="text-outline">{campaign.leadCount && campaign.spent ? `${formatINR(Math.round(campaign.spent / campaign.leadCount))} per lead` : 'Cost per lead —'}</span></td>
-                <td className="px-5 py-4">{campaign.converted}<br /><span className="text-outline">Became patients</span><br />{can('growth.manage') && <Link to={pathFor(ROUTES.campaignEdit, { campaignId: campaign.id })} state={state} className="mt-1 inline-block font-semibold text-brand hover:underline">Edit · GO09</Link>}</td>
+                <td className="px-5 py-4">{campaign.converted}<br /><span className="text-outline">Became patients</span><br />{can('growth.manage') && <Link to={pathFor(ROUTES.campaignEdit, { campaignId: campaign.id })} state={state} className="mt-1 inline-block font-semibold text-brand hover:underline">Edit</Link>}</td>
               </tr>))}</tbody>
           </table>{rows.length === 0 && <p className="px-6 py-10 text-center text-sm text-on-surface-variant">{total || query.q || query.status || query.channel ? 'No campaigns match these filters.' : 'No campaigns yet. Create one to start recording where enquiries come from.'}</p>}</div>
         )}
@@ -63,7 +63,7 @@ export default function CampaignRegisterPage() {
         <Banner tone="brand" title="Attribution stays intact">A lead’s campaign is recorded with its source and is never moved to another campaign afterwards.</Banner>
         <Banner title="Permission before sending">Broadcasts reach only people with recorded permission for the channel, never anyone who opted out.</Banner>
       </div>
-      <GrowthFooter code="GO 07" back={{ to: ROUTES.growth, label: 'Back to Owner Panel · Register context retained on return' }} />
+      <GrowthFooter back={{ to: ROUTES.growth, label: 'Back to Growth OS · Register context retained on return' }} />
     </GrowthFrame>
   )
 }

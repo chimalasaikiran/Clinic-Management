@@ -57,6 +57,8 @@ import PrescriptionQueuePage from '../features/pharmacy/pages/PrescriptionQueueP
 import PharmacyRequestsPage from '../features/pharmacy/pages/PharmacyRequestsPage'
 import NewStockRequestPage from '../features/pharmacy/pages/NewStockRequestPage'
 import ReturnsPage from '../features/pharmacy/pages/ReturnsPage'
+import HelpInboxPage from '../features/requests/pages/HelpInboxPage'
+import RefillQueuePage from '../features/requests/pages/RefillQueuePage'
 import NewReturnPage from '../features/pharmacy/pages/NewReturnPage'
 import ReturnDetailPage from '../features/pharmacy/pages/ReturnDetailPage'
 import AppointmentsSchedulePage from '../features/appointments/pages/AppointmentsSchedulePage'
@@ -106,6 +108,7 @@ import DepartmentAccessPage from '../features/configuration/pages/DepartmentAcce
 import RolesProvider from '../features/role-management/context/RolesProvider'
 import RolesPage from '../features/role-management/pages/RolesPage'
 import CreateRolePage from '../features/role-management/pages/CreateRolePage'
+import MembersPage from '../features/role-management/pages/MembersPage'
 import PayrollProvider from '../features/payroll/context/PayrollProvider'
 import RunPayrollLayout from '../features/payroll/components/RunPayrollLayout'
 import PayrollOverviewPage from '../features/payroll/pages/PayrollOverviewPage'
@@ -327,6 +330,9 @@ export const routes = [
               { path: ROUTES.pharmacyRequests, element: <PharmacyRequestsPage /> },
               { path: ROUTES.pharmacyRequestNew, element: <NewStockRequestPage /> },
               { path: ROUTES.pharmacyReturns, element: <ReturnsPage /> },
+              { path: ROUTES.pharmacyRefills, element: <RefillQueuePage /> },
+              { path: ROUTES.helpRequests, element: <HelpInboxPage /> },
+              { path: ROUTES.helpRequest, element: <HelpInboxPage /> },
               { path: ROUTES.pharmacyReturnNew, element: <NewReturnPage /> },
               { path: ROUTES.pharmacyReturn, element: <ReturnDetailPage /> },
               { path: ROUTES.suppliers, element: <SuppliersPage /> },
@@ -411,6 +417,7 @@ export const routes = [
             children: [
               { path: ROUTES.roles, element: <RolesPage /> },
               { path: ROUTES.roleNew, element: <CreateRolePage /> },
+              { path: ROUTES.roleMembers, element: <MembersPage /> },
             ],
           },
 

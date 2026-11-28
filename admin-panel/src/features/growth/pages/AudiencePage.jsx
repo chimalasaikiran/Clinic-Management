@@ -34,7 +34,7 @@ export default function AudiencePage() {
   const manage = can('growth.manage')
 
   return (
-    <GrowthFrame back={{ to: ROUTES.campaigns, label: 'Back to Campaigns' }} crumb="Owner Panel / Growth OS / Campaigns / Audiences" code="GO 10" title="Audience Management" description="Define who a campaign reaches from live lead and patient records, and see how many each channel can reach after permission and opt-outs." actions={manage && <ActionButton variant="brand" icon={Plus} to={ROUTES.segmentNew} state={state}>Create segment</ActionButton>} actionNote={manage ? 'Run campaigns & patient messaging' : 'View only'} context={[context.line, 'Filters are kept in the address · Return retains the campaign selection']} today={context.today} sample="Live records · Sizes are counted from current leads, patients and recorded permission">
+    <GrowthFrame back={{ to: ROUTES.campaigns, label: 'Back to Campaigns' }} crumb="Owner Panel / Growth OS / Campaigns / Audiences" title="Audience Management" description="Define who a campaign reaches from live lead and patient records, and see how many each channel can reach after permission and opt-outs." actions={manage && <ActionButton variant="brand" icon={Plus} to={ROUTES.segmentNew} state={state}>Create segment</ActionButton>} actionNote={manage ? 'Run campaigns & patient messaging' : 'View only'} context={[context.line, 'Filters are kept in the address · Return retains the campaign selection']} today={context.today} sample="Live records · Sizes are counted from current leads, patients and recorded permission">
       <Banner tone="brand" title="Rules, counted live" className="mb-6">An audience stores its rules, never a list of people, so its size is always current. Ready audiences can be used for campaign broadcasts; each broadcast checks everyone again when it sends.</Banner>
 
       <Section title="Audience segments" aside={`${rows.length} definitions · No contact details shown`} className="mb-6">
@@ -57,7 +57,7 @@ export default function AudiencePage() {
       </Section>
 
       {selected && <AudiencePreview key={`${selected.id}:${selected.version}`} audience={selected} state={state} manage={manage} />}
-      <GrowthFooter code="GO 10" back={{ to: ROUTES.campaigns, label: 'Back to Campaigns · Context retained' }} />
+      <GrowthFooter back={{ to: ROUTES.campaigns, label: 'Back to Campaigns · Context retained' }} />
     </GrowthFrame>
   )
 }

@@ -18,6 +18,8 @@ export const ROUTES = {
   dashboard: '/dashboard',
 
   patients: '/patients',
+  helpRequests: '/patients/help-requests',
+  helpRequest: '/patients/help-requests/:ticketId',
   patientNew: '/patients/new',
   patientHub: '/patients/:patientId',
   patientEdit: '/patients/:patientId/edit',
@@ -78,6 +80,7 @@ export const ROUTES = {
   pharmacyRequests: '/pharmacy/stock-requests',
   pharmacyRequestNew: '/pharmacy/stock-requests/new',
   pharmacyReturns: '/pharmacy/returns',
+  pharmacyRefills: '/pharmacy/refills',
   pharmacyReturnNew: '/pharmacy/returns/new',
   pharmacyReturn: '/pharmacy/returns/:caseId',
 
@@ -158,6 +161,7 @@ export const ROUTES = {
 
   roles: '/roles',
   roleNew: '/roles/new',
+  roleMembers: '/roles/members',
 
   payroll: '/payroll',
   payrollHistory: '/payroll/history',

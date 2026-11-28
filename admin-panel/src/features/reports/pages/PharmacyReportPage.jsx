@@ -23,7 +23,7 @@ export default function PharmacyReportPage() {
   const [expiry, setExpiry] = useState('')
   const [query, setQuery] = useState('')
   const { report, today, restricted, loading, error, reload } = usePharmacyReport()
-  const frame = { code: 'RPT-04', title: 'Pharmacy & Inventory', back: { to: ROUTES.reports, label: '← Back to Overview · RPT-01' }, query, onQuery: setQuery }
+  const frame = { title: 'Pharmacy & Inventory', back: { to: ROUTES.reports, label: '← Back to Overview' }, query, onQuery: setQuery }
 
   if (restricted) {
     return <ReportsFrame {...frame} description="Stock and dispensing figures." notes={{ title: 'Inventory records not available to your role', text: 'Your role has no inventory or pharmacy permission, so no stock figures are shown.' }} />

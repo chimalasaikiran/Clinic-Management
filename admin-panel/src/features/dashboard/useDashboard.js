@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useApiResource } from '../../hooks/useApiResource'
+import { useLiveRefresh } from '../workspace/useLiveRefresh'
 import { useWorkspace } from '../workspace/useWorkspace'
 import { dashboardApi } from './api'
 
@@ -16,6 +17,7 @@ export function useDashboard() {
     `dashboard:${date}:${branchId}`,
   )
   const [now, setNow] = useState(() => Date.now())
+  useLiveRefresh(['appointments'], reload)
 
   useEffect(() => {
     const visible = () => document.visibilityState !== 'hidden'

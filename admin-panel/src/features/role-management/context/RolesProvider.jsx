@@ -63,6 +63,9 @@ export default function RolesProvider({ children }) {
     }
   }, [orgId])
 
+  // Re-reads in the background (for the user counts), keeping the current screen if it fails.
+  const refresh = useCallback(() => fetchRoles().then((next) => next.status === 'ready' && setState(next)), [])
+
   const addRole = useCallback(async (values) => {
     const role = fromApi(await accessApi.createRole(toApi(values)))
     setState((current) => ({ ...current, roles: [...current.roles, role] }))
@@ -86,8 +89,8 @@ export default function RolesProvider({ children }) {
   )
 
   const value = useMemo(
-    () => ({ roles: state.roles, branches: state.branches, getRole: (id) => state.roles.find((role) => role.id === id), addRole, updateRole, reload: load }),
-    [state.roles, state.branches, addRole, updateRole, load],
+    () => ({ roles: state.roles, branches: state.branches, getRole: (id) => state.roles.find((role) => role.id === id), addRole, updateRole, reload: load, refresh }),
+    [state.roles, state.branches, addRole, updateRole, load, refresh],
   )
 
   if (state.status !== 'ready') {

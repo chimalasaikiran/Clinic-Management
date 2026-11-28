@@ -159,6 +159,8 @@ export function createPatientsApi({ patients = [apiPatient()], practitioners = [
   const taken = (practitionerId, date, time, exceptId) => state.appointments.find((entry) => entry.practitioner.id === practitionerId && entry.date === date && entry.time === time && OPEN.includes(entry.status) && !entry.waitingQueue && entry.id !== exceptId)
 
   const patientsApi = {
+    // No app account is connected unless a test says otherwise.
+    appAccess: async () => ({ links: [], pendingCodeExpiresAt: null }),
     list: async (params = {}) => {
       record('patients.list', params)
       const needle = (params.query ?? '').toLowerCase()

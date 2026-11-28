@@ -69,7 +69,7 @@ describe('owner dashboard', () => {
       approvals: { attendanceUnmarked: null, payrollAdjustments: null, advances: null },
       locations: dashboardFixture(query).locations.map((row) => ({ ...row, collections: null })),
     })))
-    await openDashboard({ auth: authState({ permissions: ['dashboard.view', 'bookings.view', 'bookings.create', 'patients.view', 'staff.view'] }) })
+    await openDashboard({ auth: authState({ permissions: ['dashboard.view', 'dashboard.telemetry', 'bookings.view', 'bookings.create', 'patients.view', 'staff.view'] }) })
 
     expect(screen.queryByText('Financial snapshot')).not.toBeInTheDocument()
     expect(screen.queryByText('Payment reconciliation')).not.toBeInTheDocument()

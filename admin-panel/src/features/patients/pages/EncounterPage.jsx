@@ -15,6 +15,7 @@ import { usePatient } from '../context/usePatient'
 import CreateOrderDrawer from '../drawers/CreateOrderDrawer'
 import CreatePrescriptionDrawer from '../drawers/CreatePrescriptionDrawer'
 import RecordVitalsDrawer from '../drawers/RecordVitalsDrawer'
+import { toVitalsRequest } from '../vitals'
 import { formatDate, formatINR, formatTime } from '../format'
 import { byNewest } from '../selectors'
 import { bmiClass, bmiOf, bpStage } from '../validation'
@@ -108,10 +109,7 @@ function Workspace({ context, encounter }) {
 
   const recordVitals = async (record) => {
     try {
-      await clinicalApi.recordVitals(patientId, {
-        encounterId: encounter.id, systolic: record.bp.sys, diastolic: record.bp.dia, pulse: record.pulse, respiration: record.resp, temperatureF: record.temp, spo2: record.spo2,
-        weightKg: record.weight, heightCm: record.height, bloodSugar: record.rbs ?? undefined, painScore: record.pain ?? undefined, site: record.site, posture: record.posture, device: record.device,
-      })
+      await clinicalApi.recordVitals(patientId, toVitalsRequest(record, encounter.id))
       await refresh()
     } catch (error) {
       setNotice({ tone: 'danger', text: error.message })

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Info, MapPin } from 'lucide-react'
+import { Info } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import ActionButton from '../../../components/workspace/ActionButton'
 import { SelectInput, TextInput } from '../../../components/workspace/FormControls'
@@ -14,6 +14,7 @@ import { cn } from '../../../lib/cn'
 import { accessApi } from '../../auth/api'
 import { CLINIC_CLASSIFICATIONS } from '../../onboarding/data/clinicOptions'
 import { configApi } from '../api'
+import BranchLocationMap from '../components/BranchLocationMap'
 import ConfigPage from '../components/ConfigPage'
 import { FACILITY_TYPES } from '../configView'
 import { validateBranch } from '../validation'
@@ -44,9 +45,10 @@ const INITIAL_VALUES = {
   email: '',
 }
 
-function StepPanel({ step, title, subtitle, children }) {
+function StepPanel({ step, title, subtitle, badge, children }) {
   return (
     <Panel
+      action={badge}
       title={
         <span className="flex items-center gap-2">
           <span className="flex size-5 items-center justify-center rounded bg-surface-low text-[11px] font-bold text-on-surface-variant">
@@ -148,11 +150,18 @@ export default function CreateBranchPage() {
   const roles = (useApiResource(() => accessApi.roles(), 'roles').data ?? []).filter((role) => role.scope === 'branch' && role.status === 'active')
   const [values, handleChange] = useFormFields(INITIAL_VALUES)
   const [roleIds, setRoleIds] = useState([])
+  const [pin, setPin] = useState(null)
   const [submitted, setSubmitted] = useState(false)
   const [serverErrors, setServerErrors] = useState({})
   const [failure, setFailure] = useState('')
   const [pending, setPending] = useState(false)
   const errors = { ...(submitted ? validateBranch(values) : {}), ...serverErrors }
+
+  // Skip the lookup until the address is complete enough to resolve; try the street first, then the PIN area.
+  const part = (key) => values[key].trim()
+  const addressLabel = [part('addressLine1'), part('addressLine2'), part('city'), part('state'), part('pin')].filter(Boolean).join(', ')
+  const addressReady = Boolean(part('addressLine1') && part('city') && /^[1-9]\d{5}$/.test(part('pin')))
+  const geocodeQueries = addressReady ? [`${addressLabel}, India`, `${part('pin')}, ${part('city')}, ${part('state')}, India`, `${part('pin')}, India`] : []
 
   const cancel = () => navigate(ROUTES.organisation)
 
@@ -183,7 +192,7 @@ export default function CreateBranchPage() {
         <PageIntro
           eyebrow={
             <>
-              <span className="rounded border border-slate-200 bg-surface-low px-1.5 py-0.5 text-on-surface-variant">
+              <span className="rounded border border-slate-200 bg-surface-low px-1.5 py-0.5 text-on-surface-variant uppercase">
                 Branch master configuration · {organisation?.displayName ?? 'Organization'}
               </span>
             </>
@@ -203,7 +212,7 @@ export default function CreateBranchPage() {
         {failure && <Banner tone="danger" title="Branch not created" className="mb-5">{failure}</Banner>}
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
           <div className="flex min-w-0 flex-col gap-5">
-            <StepPanel step={1} title="Branch identity" subtitle="Physical facility identifier and internal system taxonomy.">
+            <StepPanel step={1} title="Branch identity" subtitle="Physical facility identifier and internal system taxonomy." badge={<span className="text-[10px] text-outline">* Required fields</span>}>
               <TextInput label="Branch name" name="name" required hint="Appears on patient invoices, OPD slips & SMS" value={values.name} onChange={handleChange} error={errors.name} placeholder="e.g. Kondapur Specialty Clinic" />
               <div className="grid gap-5 sm:grid-cols-2">
                 <TextInput label="Branch code" name="code" required hint="Used for rosters, ABDM node mapping and reporting" value={values.code} onChange={handleChange} error={errors.code} placeholder="e.g. KDP-01" />
@@ -219,7 +228,12 @@ export default function CreateBranchPage() {
               </fieldset>
             </StepPanel>
 
-            <StepPanel step={2} title="Location & physical address" subtitle="Physical clinic premises for patient appointments, regulatory geo-tagging, and ABDM registration.">
+            <StepPanel
+              step={2}
+              title="Location & physical address"
+              subtitle="Physical clinic premises for patient appointments, regulatory geo-tagging, and ABDM registration."
+              badge={pin && <StatusPill tone="success">Geo-tagged</StatusPill>}
+            >
               <TextInput label="Address line 1" name="addressLine1" required value={values.addressLine1} onChange={handleChange} error={errors.addressLine1} />
               <TextInput label="Address line 2" name="addressLine2" value={values.addressLine2} onChange={handleChange} />
               <div className="grid gap-5 sm:grid-cols-2">
@@ -228,10 +242,7 @@ export default function CreateBranchPage() {
                 <TextInput label="PIN code" name="pin" required inputMode="numeric" maxLength={6} value={values.pin} onChange={handleChange} error={errors.pin} />
                 <TextInput label="Country" value="India (IN / +91)" readOnly />
               </div>
-              <p className="flex items-center gap-2 rounded-md border border-slate-200 bg-surface-lowest p-3 text-xs text-on-surface-variant">
-                <MapPin className="size-4 text-brand" aria-hidden="true" />
-                The address appears on invoices, appointment messages and the branch’s public profile.
-              </p>
+              <BranchLocationMap value={pin} onChange={setPin} address={addressLabel} queries={geocodeQueries} />
             </StepPanel>
 
             <StepPanel step={3} title="Contact & communications" subtitle="Front-desk triage phone and patient SMS/WhatsApp delivery credentials.">

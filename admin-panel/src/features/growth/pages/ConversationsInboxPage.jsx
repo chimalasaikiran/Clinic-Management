@@ -53,7 +53,7 @@ export default function ConversationsInboxPage() {
   }
 
   return (
-    <GrowthFrame back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} crumb="Owner Panel / Growth OS / Conversations Inbox" code="GO-21" title="Conversations Inbox" description="Triage enquiries and replies, assign follow-up and link each conversation to the right lead or patient." badge={<StatusPill tone={connected.length ? 'success' : 'warning'}>{meta ? (connected.length ? `Live · ${connected.join(', ')}` : 'No channel connected') : 'Loading'}</StatusPill>} context={[context.line, 'Status / owner / unread / identity filters are kept in the address · Updates arrive as they happen']} today={context.today} sample="Live conversations · New messages and receipts appear without reloading">
+    <GrowthFrame back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} crumb="Owner Panel / Growth OS / Conversations Inbox" title="Conversations Inbox" description="Triage enquiries and replies, assign follow-up and link each conversation to the right lead or patient." badge={<StatusPill tone={connected.length ? 'success' : 'warning'}>{meta ? (connected.length ? `Live · ${connected.join(', ')}` : 'No channel connected') : 'Loading'}</StatusPill>} context={[context.line, 'Status / owner / unread / identity filters are kept in the address · Updates arrive as they happen']} today={context.today} sample="Live conversations · New messages and receipts appear without reloading">
       {meta && !connected.length && <Banner tone="warning" title="No messaging channel is connected yet" className="mb-4">Replies and delivery receipts arrive once an administrator connects WhatsApp, SMS or email. Conversations started from a lead are kept until then.</Banner>}
       {meta && <p className="mb-6 flex flex-wrap items-center gap-3">{Object.entries(meta.channels).map(([channel, status]) => <StatusPill key={channel} tone={CHANNEL_STATUS[status][1]}>{CHANNELS[channel]} · {CHANNEL_STATUS[status][0]}</StatusPill>)}<ActionButton to={ROUTES.channels} className="ml-auto">Channel configuration</ActionButton></p>}
       {failure && <Banner tone="danger" title="Not saved" className="mb-4">{failure}</Banner>}
@@ -70,7 +70,7 @@ export default function ConversationsInboxPage() {
             <ul className="-mx-6 divide-y divide-slate-100">{rows.map((thread) => (
               <li key={thread.id} className={cn('px-6 py-4 text-xs', selected?.id === thread.id && 'bg-teal-50/50')}>
                 <button type="button" onClick={() => setSelectedId(thread.id)} className="block w-full text-left"><p className="flex justify-between"><strong className="text-[15px]">{thread.unread && <span className="mr-2 inline-block size-2 rounded-full bg-brand" aria-label="Unread" />}{thread.contact}</strong><span className="text-outline">{when(thread.last)}</span></p><p className="mt-2 text-[13px]">{thread.preview}</p><p className="mt-2 flex flex-wrap gap-2"><StatusPill>{thread.channel} · {thread.maskedAddress}</StatusPill><StatusPill tone={thread.status === 'Open' ? 'success' : 'neutral'}>{thread.status}</StatusPill><StatusPill>{thread.unread ? 'Unread' : 'Read'}</StatusPill><StatusPill tone={thread.linked ? 'brand' : 'neutral'}>{thread.linked ? 'Linked' : 'Unlinked'}</StatusPill><span className="ml-auto text-outline">{thread.number}</span></p></button>
-                <Link to={pathFor(ROUTES.conversation, { threadId: thread.id })} state={state} className="mt-2 inline-block font-semibold text-brand hover:underline">Open conversation → GO22</Link>
+                <Link to={pathFor(ROUTES.conversation, { threadId: thread.id })} state={state} className="mt-2 inline-block font-semibold text-brand hover:underline">Open conversation →</Link>
               </li>))}</ul>
             {rows.length === 0 && <p className="py-8 text-center text-sm text-on-surface-variant">{meta.total === 0 && !filters.search ? 'No conversations yet. Start one from a lead, or wait for a reply on a connected channel.' : 'No conversations match these filters.'}</p>}
           </Section>
@@ -84,7 +84,7 @@ export default function ConversationsInboxPage() {
           )}
         </div>
       )}
-      <GrowthFooter code="GO-21" back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} />
+      <GrowthFooter back={{ to: ROUTES.growth, label: 'Growth OS · Owner overview' }} />
     </GrowthFrame>
   )
 }

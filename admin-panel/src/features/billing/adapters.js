@@ -26,6 +26,7 @@ export function toServiceView(service) {
     name: service.name,
     category: service.category,
     department: service.department ?? '',
+    patientBookable: Boolean(service.patientBookable),
     description: service.description,
     unit: service.unit ?? '',
     status: service.status === 'active' ? 'Active' : 'Inactive',
@@ -43,7 +44,7 @@ export function toServiceView(service) {
 // The request body for a service form, as the API expects it.
 export function toServiceRequest(view) {
   return {
-    code: view.code, name: view.name, category: view.category, department: view.department || null, description: view.description, unit: view.unit || null,
+    code: view.code, name: view.name, category: view.category, department: view.department || null, patientBookable: Boolean(view.patientBookable), description: view.description, unit: view.unit || null,
     status: view.status === 'Active' ? 'active' : 'inactive', price: view.price, taxTreatment: TAX_VALUE[view.tax], taxConfig: view.taxConfig || null,
     prices: Object.entries(view.branches).map(([branchId, entry]) => ({ branchId, price: entry.price })),
   }

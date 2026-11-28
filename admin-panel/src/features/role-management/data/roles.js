@@ -48,6 +48,7 @@ export const PERMISSION_GROUPS = [
     label: 'Clinical care',
     permissions: [
       { id: 'clinical.read', label: 'View encounters, notes & results' },
+      { id: 'clinical.vitals', label: 'Record vitals & collect specimens (nursing)' },
       { id: 'clinical.write', label: 'Record encounters, prescriptions & orders' },
     ],
   },

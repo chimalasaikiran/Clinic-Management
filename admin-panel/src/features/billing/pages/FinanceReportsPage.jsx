@@ -44,7 +44,7 @@ export default function FinanceReportsPage() {
   }
 
   return (
-    <BillingFrame back={{ to: ROUTES.billing, label: 'Back to Finance Workspace' }} crumb="Billing & Finance / Finance Reports" code="BF-22 / Billing & Finance" title="Finance Reports" description="Review available financial evidence with explicit report coverage. Source-slice values are not organization totals." actions={<ActionButton variant="brand" icon={Download} onClick={exportSlice}>Export source slice</ActionButton>} scope={false}>
+    <BillingFrame back={{ to: ROUTES.billing, label: 'Back to Finance Workspace' }} crumb="Billing & Finance / Finance Reports" code="Billing & Finance" title="Finance Reports" description="Review available financial evidence with explicit report coverage. Source-slice values are not organization totals." actions={<ActionButton variant="brand" icon={Download} onClick={exportSlice}>Export source slice</ActionButton>} scope={false}>
       <p className="mb-5 border-b border-slate-200 pb-4 text-[11px] text-outline">Return to Finance Workspace with {range.label} · All locations (3) · Billing model: All models · Queue context retained.</p>
       <div className="mb-6 grid items-end gap-4 sm:grid-cols-3 lg:grid-cols-[1fr_1fr_1fr_1fr]">
         <FilterField label="Date range · Source dates" value={range.id} onChange={(value) => filters.change('range', value, DATE_RANGES[0].id)} options={DATE_RANGES.map((entry) => [entry.id, entry.label])} />
@@ -94,7 +94,7 @@ export default function FinanceReportsPage() {
             </tr>))}</tbody></table></div>
         <p className="border-t border-slate-200 px-6 py-4 text-[11px] text-outline">Exports include only supplied collection, invoice-balance and refund records with report scope, date filters and source IDs. Unavailable reports cannot be exported; no all-data export is available.</p>
       </section>
-      <GovernanceFooter code="BF-22">Not a reconciled organization ledger. No revenue, discount, expense, settlement, branch revenue or profitability data is inferred from payment activity.</GovernanceFooter>
+      <GovernanceFooter>Not a reconciled organization ledger. No revenue, discount, expense, settlement, branch revenue or profitability data is inferred from payment activity.</GovernanceFooter>
     </BillingFrame>
   )
 }

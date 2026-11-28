@@ -44,7 +44,7 @@ export default function ReconciliationPage() {
   const exportComparison = () => exportCsv('reconciliation.csv', [['Source', 'Reference', 'Date', 'Source amount (INR)', 'ClinicOS payment', 'ClinicOS amount (INR)', 'Difference (INR)', 'Status'], ...rows.map(({ line, clinicos, difference, state: status }) => [line.source, line.reference, line.date, line.amount, line.paymentId ?? '', clinicos ?? '', difference, status])])
 
   return (
-    <BillingFrame back={{ to: ROUTES.billing, label: 'Billing & Finance' }} crumb="Billing & Finance / Reconciliation" code="BF-17 / Billing & Finance" title="Payment Reconciliation" description="Compare configured gateway and bank transactions with ClinicOS payments. Resolve exceptions without rewriting source records." actions={<><ActionButton icon={Upload} variant="brand" onClick={() => setImporting(true)}>Import statement</ActionButton><ActionButton icon={RefreshCw} disabled title="No bank or gateway connection is configured; import a statement file instead">Sync sources</ActionButton></>} scope={false}>
+    <BillingFrame back={{ to: ROUTES.billing, label: 'Billing & Finance' }} crumb="Billing & Finance / Reconciliation" code="Billing & Finance" title="Payment Reconciliation" description="Compare configured gateway and bank transactions with ClinicOS payments. Resolve exceptions without rewriting source records." actions={<><ActionButton icon={Upload} variant="brand" onClick={() => setImporting(true)}>Import statement</ActionButton><ActionButton icon={RefreshCw} disabled title="No bank or gateway connection is configured; import a statement file instead">Sync sources</ActionButton></>} scope={false}>
       <div className="mb-5 grid items-end gap-4 sm:grid-cols-3 lg:grid-cols-[1fr_1fr_1fr_1fr]">
         <FilterField label="Transaction date range" value={range.id} onChange={(value) => filters.change('range', value, DATE_RANGES[0].id)} options={DATE_RANGES.map((entry) => [entry.id, entry.label])} />
         <FilterField label="Source" value={filters.get('source')} onChange={(value) => filters.change('source', value)} options={[['', `All sources (${sources.length})`], ...sources]} />
@@ -88,7 +88,7 @@ export default function ReconciliationPage() {
 
       {actionError && <Banner tone="danger" title="Not saved" className="mb-6">{actionError}</Banner>}
       <Banner tone="neutral" title="Review before matching or reconciling" className="mb-6">A suggested match (same amount and day, no shared reference) counts only once you confirm it. Amount differences require evidence and a resolution note. Resolving an exception creates an audit entry, not a payment, receipt or adjustment.</Banner>
-      <GovernanceFooter code="BF-17">Source comparisons are read-only. Matching and resolution require explicit confirmation and preserve actor, timestamp, evidence and prior status in audit history.</GovernanceFooter>
+      <GovernanceFooter>Source comparisons are read-only. Matching and resolution require explicit confirmation and preserve actor, timestamp, evidence and prior status in audit history.</GovernanceFooter>
       {importing && <ImportStatement onClose={() => setImporting(false)} sources={sources} />}
     </BillingFrame>
   )

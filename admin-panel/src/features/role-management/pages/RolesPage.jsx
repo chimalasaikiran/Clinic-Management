@@ -133,6 +133,9 @@ export default function RolesPage() {
             <ActionButton icon={Download} onClick={download}>
               Export
             </ActionButton>
+            <ActionButton icon={Users} to={ROUTES.roleMembers}>
+              Members
+            </ActionButton>
             <ActionButton variant="primary" icon={Plus} to={ROUTES.roleNew}>
               Add role
             </ActionButton>

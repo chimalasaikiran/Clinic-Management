@@ -26,7 +26,7 @@ export default function RefundDetailPage() {
 
   if (!refund) {
     return (
-      <BillingFrame back={{ to: registerPath, label: 'Back to Refund Register' }} crumb="Billing & Finance / Refunds" code="BF-19 / Billing & Finance" title="Refund not found" scope={false}>
+      <BillingFrame back={{ to: registerPath, label: 'Back to Refund Register' }} crumb="Billing & Finance / Refunds" code="Billing & Finance" title="Refund not found" scope={false}>
         <Banner tone="warning" title="No refund matches this link">Open the Refund Register to find the record.</Banner>
       </BillingFrame>
     )
@@ -44,7 +44,7 @@ export default function RefundDetailPage() {
   const canProcess = isRequest && refund.status === 'Approved'
 
   return (
-    <BillingFrame back={{ to: registerPath, label: 'Back to Refund Register' }} crumb={`Billing & Finance / Refunds / ${refund.id}`} code="BF-19 / Billing & Finance" title="Refund Details" description={`${refund.id} · Review this refund (${refund.reason.toLowerCase()}) without changing settled payment history.`} actions={<ActionButton to={paymentPath} state={here}>Original payment {refund.paymentId} ↗</ActionButton>} scope={false}>
+    <BillingFrame back={{ to: registerPath, label: 'Back to Refund Register' }} crumb={`Billing & Finance / Refunds / ${refund.id}`} code="Billing & Finance" title="Refund Details" description={`${refund.id} · Review this refund (${refund.reason.toLowerCase()}) without changing settled payment history.`} actions={<ActionButton to={paymentPath} state={here}>Original payment {refund.paymentId} ↗</ActionButton>} scope={false}>
       <p className="mb-5 border-b border-slate-200 pb-4 text-[11px] text-outline">Return context retained: {state?.search ? 'filters applied' : 'default filters'}. The original payment returns here with this refund context.</p>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div><p className="text-[13px] font-semibold">{party.name}{party.mrn && ` · ${party.mrn}`} · {party.payer}</p><p className="mt-1 text-xs text-outline">{orgName} · {payment?.desk ?? 'Branch not recorded'}</p></div>
@@ -105,7 +105,7 @@ export default function RefundDetailPage() {
         <div className="rounded-md border border-slate-200 bg-white p-4 text-xs leading-5 text-on-surface-variant"><StatusPill tone="danger" className="mb-2">Failed · Verify before retry</StatusPill><p>A failed refund means money was not returned and its hold is released. Raise a new request to try again.</p></div>
         <div className="rounded-md border border-slate-200 bg-white p-4 text-xs leading-5 text-on-surface-variant"><StatusPill tone="success" className="mb-2">Completed · Read-only</StatusPill><p>Never retry or edit a completed refund; use a separate authorized, audited correction.</p></div>
       </div>
-      <GovernanceFooter code="BF-19">Refund ≠ payment ≠ receipt ≠ allocation. Reservations prevent double counting; finalized records are never changed silently.</GovernanceFooter>
+      <GovernanceFooter>Refund ≠ payment ≠ receipt ≠ allocation. Reservations prevent double counting; finalized records are never changed silently.</GovernanceFooter>
     </BillingFrame>
   )
 }

@@ -8,5 +8,8 @@ export const WorkspaceContext = createContext({
   setBranchId: () => {},
   alerts: null,
   reloadAlerts: () => {},
+  notifications: null,
+  reloadNotifications: () => {},
+  subscribeLive: () => () => {},
   health: null,
 })

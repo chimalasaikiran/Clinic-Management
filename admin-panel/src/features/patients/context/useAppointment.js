@@ -1,5 +1,6 @@
 import { useParams } from 'react-router-dom'
 import { useApiResource } from '../../../hooks/useApiResource'
+import { useLiveRefresh } from '../../workspace/useLiveRefresh'
 import { toAppointmentView } from '../adapters'
 import { appointmentsApi } from '../api'
 import { usePatient } from './usePatient'
@@ -16,6 +17,7 @@ export function useAppointment() {
     resource.reload()
     await context.refresh()
   }
+  useLiveRefresh(['appointments'], resource.reload)
 
   const appointment = resource.data?.id === appointmentId ? resource.data : undefined
   const belongs = appointment && context.patient && appointment.patientId === context.patient.id

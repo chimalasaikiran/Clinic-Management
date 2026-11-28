@@ -28,7 +28,7 @@ export default function PaymentRegisterPage() {
   const state = { search: filters.search }
 
   return (
-    <BillingFrame back={{ to: ROUTES.billing, label: 'Billing & Finance' }} crumb="Billing & Finance / Payments" code="BF-09 / Payments & receipts" title="Payment Register" description="Find recorded collections, inspect settlement status and review funds awaiting allocation." actions={<><ActionButton to={ROUTES.billingReceipts}>Receipt Register ↗</ActionButton><ActionButton variant="primary" icon={Plus} to={ROUTES.billingPaymentNew} state={state}>Record Payment</ActionButton></>} scope={false}>
+    <BillingFrame back={{ to: ROUTES.billing, label: 'Billing & Finance' }} crumb="Billing & Finance / Payments" code="Payments & receipts" title="Payment Register" description="Find recorded collections, inspect settlement status and review funds awaiting allocation." actions={<><ActionButton to={ROUTES.billingReceipts}>Receipt Register ↗</ActionButton><ActionButton variant="primary" icon={Plus} to={ROUTES.billingPaymentNew} state={state}>Record Payment</ActionButton></>} scope={false}>
       <Scope left={`${scopeText} / ${range.label} · All models`} />
 
       <Section title="Find payments" aside="Search within the available source records; filters preserve your return context." className="mb-6">
@@ -67,7 +67,7 @@ export default function PaymentRegisterPage() {
       </Section>
 
       <Banner title="Unallocated is not unavailable">Unallocated is the amount received less allocations and refunds. A paid invoice does not by itself establish a payment’s allocation; open the payment to see its allocations. No organization totals are inferred.</Banner>
-      <GovernanceFooter code="BF-09">Settled payments are read-only. Allocations and receipts remain distinct linked records; corrections use separate governed records.</GovernanceFooter>
+      <GovernanceFooter>Settled payments are read-only. Allocations and receipts remain distinct linked records; corrections use separate governed records.</GovernanceFooter>
     </BillingFrame>
   )
 }

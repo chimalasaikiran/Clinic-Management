@@ -37,6 +37,25 @@ export function alertItems(alerts) {
   return (alerts?.items ?? []).filter((item) => ALERTS[item.id]).map((item) => ({ id: item.id, title: ALERTS[item.id].title(item.count), detail: ALERTS[item.id].detail(item), to: ALERTS[item.id].to }))
 }
 
+// Where a notice opens: the booking, the refill queue or the help request it is about.
+function noticeTarget(item) {
+  if (item.entityType === 'refill_request') return ROUTES.pharmacyRefills
+  if (item.entityType === 'support_ticket' && item.entityId) return pathFor(ROUTES.helpRequest, { ticketId: item.entityId })
+  if (item.entityType === 'appointment' && item.patientId) return pathFor(ROUTES.appointment, { patientId: item.patientId, appointmentId: item.entityId })
+  return ROUTES.appointments
+}
+
+// The person's own notices (from /v1/notifications), newest first, each linking to the booking it is about.
+export function noticeItems(response, limit = 5) {
+  return (response?.data ?? []).slice(0, limit).map((item) => ({
+    id: item.id,
+    title: item.title,
+    detail: item.body,
+    unread: !item.readAt,
+    to: noticeTarget(item),
+  }))
+}
+
 const STATUS = { pending: 'Pending', confirmed: 'Confirmed', arrived: 'Arrived', in_progress: 'In progress', completed: 'Completed', cancelled: 'Cancelled', no_show: 'No-show' }
 
 // /v1/search results as the groups the header lists; groups the person cannot read (null) or with no match are left out.

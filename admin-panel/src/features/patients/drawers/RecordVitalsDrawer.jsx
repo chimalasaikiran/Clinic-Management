@@ -12,7 +12,7 @@ import { bmiClass, bmiOf, bpStage, validateVitals } from '../validation'
 const BLANK = { systolic: '', diastolic: '', pulse: '', resp: '', temp: '', spo2: '', weight: '', height: '', rbs: '', pain: '', site: 'Right Arm, Upper Brachial', posture: 'Seated' }
 
 // Records one set of vital signs against the open encounter. `onSave` receives the finished vitals record.
-export default function RecordVitalsDrawer({ open, onClose, patient, encounter, onSave }) {
+export default function RecordVitalsDrawer({ open, onClose, patient, encounter, onSave, summary, eyebrow, description = 'Capture physiological measurements for the open encounter.', submitLabel = 'Save vitals to encounter' }) {
   const [values, setValues] = useState(BLANK)
   const [submitted, setSubmitted] = useState(false)
   const errors = submitted ? validateVitals(values) : {}
@@ -31,7 +31,7 @@ export default function RecordVitalsDrawer({ open, onClose, patient, encounter, 
     setSubmitted(true)
     if (Object.keys(validateVitals(values)).length) return
     onSave({
-      patientId: patient.id, encounterId: encounter.id, date: TODAY, time: clockTime(), by: 'Recorded at encounter', bp: { sys: Number(values.systolic), dia: Number(values.diastolic) },
+      patientId: patient?.id, encounterId: encounter?.id, date: TODAY, time: clockTime(), by: 'Recorded at encounter', bp: { sys: Number(values.systolic), dia: Number(values.diastolic) },
       pulse: Number(values.pulse), resp: Number(values.resp), temp: Number(values.temp), spo2: Number(values.spo2), weight: Number(values.weight), height: Number(values.height),
       rbs: values.rbs ? Number(values.rbs) : null, pain: values.pain ? Number(values.pain) : null, site: values.site, posture: values.posture, device: 'Manual entry',
     })
@@ -42,19 +42,19 @@ export default function RecordVitalsDrawer({ open, onClose, patient, encounter, 
     <Drawer
       open={open}
       onClose={finish}
-      eyebrow={`${encounter?.id ?? ''} · Vitals capture`}
+      eyebrow={eyebrow ?? `${encounter?.id ?? ''} · Vitals capture`}
       title="Record Vitals"
-      description="Capture physiological measurements for the open encounter."
+      description={description}
       width="max-w-xl"
       footer={
         <div className="flex items-center justify-between gap-3">
           <ActionButton onClick={finish}>Cancel / Discard</ActionButton>
-          <ActionButton variant="primary" type="submit" form="vitals-form">Save vitals to encounter</ActionButton>
+          <ActionButton variant="primary" type="submit" form="vitals-form">{submitLabel}</ActionButton>
         </div>
       }
     >
       <form id="vitals-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-5 p-5">
-        <PatientStrip patient={patient} />
+        {summary ?? <PatientStrip patient={patient} />}
 
         <fieldset className="rounded-md border border-slate-200 p-4">
           <legend className="px-1 text-sm font-semibold">Cardiorespiratory profile</legend>

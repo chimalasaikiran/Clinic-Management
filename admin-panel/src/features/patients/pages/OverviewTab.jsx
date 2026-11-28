@@ -5,6 +5,7 @@ import StatusPill from '../../../components/workspace/StatusPill'
 import { pathFor, ROUTES } from '../../../config/routes'
 import { ledgerSummary } from '../billing'
 import EmptyState from '../components/EmptyState'
+import PatientAppAccess from '../components/PatientAppAccess'
 import { KeyValueRows } from '../components/parts'
 import Timeline from '../components/Timeline'
 import { usePatient } from '../context/usePatient'
@@ -160,6 +161,8 @@ export default function OverviewTab() {
               ))}
             </dl>
           </Card>
+
+          <PatientAppAccess patientId={patientId} />
 
           <Card title="Family & caregiver" tag={<StatusPill>{family.length} Linked</StatusPill>}>
             {family[0] ? (

@@ -56,12 +56,12 @@ export function Section({ title, aside, children, className }) {
   )
 }
 
-export function GovernanceFooter({ code, children }) {
+export function GovernanceFooter({ children }) {
   return (
     <footer className="mt-8 flex items-start gap-4 border-t border-slate-300 pt-4 text-[11px] text-outline">
       <ShieldCheck className="size-4 shrink-0 text-brand" aria-hidden="true" />
       <p className="flex-1 text-xs text-on-surface-variant">{children}</p>
-      <span className="whitespace-nowrap">ClinicOS · {code}</span>
+      <span className="whitespace-nowrap">ClinicOS</span>
     </footer>
   )
 }

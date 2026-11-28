@@ -19,7 +19,7 @@ export default function PaymentDetailPage() {
 
   if (!payment) {
     return (
-      <BillingFrame back={{ to: registerPath, label: 'Payment Register' }} crumb="Billing & Finance / Payments" code="BF-11 / Payments & receipts" title="Payment not found" scope={false}>
+      <BillingFrame back={{ to: registerPath, label: 'Payment Register' }} crumb="Billing & Finance / Payments" code="Payments & receipts" title="Payment not found" scope={false}>
         <Banner tone="warning" title="No payment matches this link">Open the Payment Register to find the record.</Banner>
       </BillingFrame>
     )
@@ -33,7 +33,7 @@ export default function PaymentDetailPage() {
   const allocationPath = pathFor(ROUTES.billingAllocation, { paymentId })
 
   return (
-    <BillingFrame back={{ to: registerPath, label: 'Payment Register · filtered view' }} crumb={`Billing & Finance / Payments / ${payment.id}`} code="BF-11 / Payments & receipts" title="Payment Details" description={`${payment.id} · A settled collection with a separate, ${allocationStatus.toLowerCase()} balance.`} actions={<>{payment.receiptId && <ActionButton to={pathFor(ROUTES.billingReceipt, { receiptId: payment.receiptId })} state={here}>Receipt {payment.receiptId} ↗</ActionButton>}<ActionButton variant="primary" to={unallocated > 0 ? allocationPath : undefined} state={here} disabled={unallocated <= 0}>Manage allocation</ActionButton></>} scope={false}>
+    <BillingFrame back={{ to: registerPath, label: 'Payment Register · filtered view' }} crumb={`Billing & Finance / Payments / ${payment.id}`} code="Payments & receipts" title="Payment Details" description={`${payment.id} · A settled collection with a separate, ${allocationStatus.toLowerCase()} balance.`} actions={<>{payment.receiptId && <ActionButton to={pathFor(ROUTES.billingReceipt, { receiptId: payment.receiptId })} state={here}>Receipt {payment.receiptId} ↗</ActionButton>}<ActionButton variant="primary" to={unallocated > 0 ? allocationPath : undefined} state={here} disabled={unallocated <= 0}>Manage allocation</ActionButton></>} scope={false}>
       <Scope left={`${orgName} · ${payment.desk} / ${patient?.name} · ${patient?.mrn}`} />
 
       <p className="mb-5 flex flex-wrap items-center gap-2 text-xs"><StatusPill tone="success">Settled & Recorded · Verified</StatusPill><StatusPill tone={unallocated > 0 ? 'brand' : 'success'}>{allocationStatus}</StatusPill><StatusPill>Read-only payment</StatusPill><span className="text-outline">Transaction status and allocation status are independent.</span></p>
@@ -100,7 +100,7 @@ export default function PaymentDetailPage() {
         </ul>
       </Section>
 
-      <GovernanceFooter code="BF-11">Settled payment information is read-only. Corrections require separate governed records; managing allocation does not modify the payment transaction.</GovernanceFooter>
+      <GovernanceFooter>Settled payment information is read-only. Corrections require separate governed records; managing allocation does not modify the payment transaction.</GovernanceFooter>
     </BillingFrame>
   )
 }

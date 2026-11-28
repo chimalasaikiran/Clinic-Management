@@ -19,7 +19,7 @@ export default function ReceiptRegisterPage() {
   const state = { search: filters.search }
 
   return (
-    <BillingFrame back={{ to: ROUTES.billing, label: 'Billing & Finance' }} crumb="Billing & Finance / Receipts" code="BF-14 / Payments & receipts" title="Receipt Register" description="Find the receipt issued with each recorded payment, then open it to print or download." actions={<ActionButton to={ROUTES.billingPayments}>Payment Register ↗</ActionButton>} scope={false}>
+    <BillingFrame back={{ to: ROUTES.billing, label: 'Billing & Finance' }} crumb="Billing & Finance / Receipts" code="Payments & receipts" title="Receipt Register" description="Find the receipt issued with each recorded payment, then open it to print or download." actions={<ActionButton to={ROUTES.billingPayments}>Payment Register ↗</ActionButton>} scope={false}>
       <Scope left={`${scopeText} / All recorded dates · All models`} />
 
       <Section title="Find receipts" aside="Every payment is given a receipt number when it is recorded." className="mb-6">
@@ -60,7 +60,7 @@ export default function ReceiptRegisterPage() {
           <p className="text-xs leading-6 text-on-surface-variant">Open the receipt to print or download it and to see its linked payment. Back returns to this register with the search preserved.</p>
         </Section>
       </div>
-      <GovernanceFooter code="BF-14">Payment ≠ Allocation ≠ Receipt. Receipts are issued with the payment and never edited afterwards.</GovernanceFooter>
+      <GovernanceFooter>Payment ≠ Allocation ≠ Receipt. Receipts are issued with the payment and never edited afterwards.</GovernanceFooter>
     </BillingFrame>
   )
 }

@@ -65,7 +65,7 @@ export default function CreateInvoicePage() {
   }
 
   return (
-    <BillingFrame back={{ to: ROUTES.billingInvoices, label: 'Invoice Register' }} crumb="Billing & Finance / Invoices / New invoice" code="BF-07 / Billing & Finance" title="Create / Review Invoice" badge={<span className="rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-normal text-on-surface-variant">{draft.savedAt ? `Draft saved ${draft.savedAt}` : 'Draft · not saved'}</span>} description="Build an invoice only from verified, eligible charges. A draft is not an issued invoice." scope={false}>
+    <BillingFrame back={{ to: ROUTES.billingInvoices, label: 'Invoice Register' }} crumb="Billing & Finance / Invoices / New invoice" code="Billing & Finance" title="Create / Review Invoice" badge={<span className="rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-normal text-on-surface-variant">{draft.savedAt ? `Draft saved ${draft.savedAt}` : 'Draft · not saved'}</span>} description="Build an invoice only from verified, eligible charges. A draft is not an issued invoice." scope={false}>
       <ol className="mb-5 grid overflow-hidden rounded-lg border border-slate-200 bg-white sm:grid-cols-3">
         {STEPS.map(([title, hint], index) => <li key={title} aria-current={index === step ? 'step' : undefined} className={cn('border-b-2 px-5 py-3 text-xs', index === step ? 'border-brand' : 'border-transparent text-outline')}><strong className="block text-[13px] text-on-surface">{index + 1} {title}</strong>{hint}</li>)}
       </ol>

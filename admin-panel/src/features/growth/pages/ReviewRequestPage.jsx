@@ -32,7 +32,7 @@ export default function ReviewRequestPage() {
   const manage = can('growth.manage')
 
   return (
-    <GrowthFrame back={{ to: ROUTES.reviews, label: 'Back to reviews · GO16' }} crumb="Owner Panel / Growth OS / Review Requests" code="GO-18" title="Review Request Workflow" description="Ask for honest feedback after a completed visit, with the branch’s public review link. Every visit is asked the same way." badge={<StatusPill tone={active ? 'success' : 'warning'}>{active ? 'On' : 'Off'}</StatusPill>} context={[context.line, 'Review requests run as a workflow with the same permission, quiet-hours and weekly-limit rules']} today={context.today} sample="Live records · Sent through the connected messaging channel">
+    <GrowthFrame back={{ to: ROUTES.reviews, label: 'Back to reviews' }} crumb="Owner Panel / Growth OS / Review Requests" title="Review Request Workflow" description="Ask for honest feedback after a completed visit, with the branch’s public review link. Every visit is asked the same way." badge={<StatusPill tone={active ? 'success' : 'warning'}>{active ? 'On' : 'Off'}</StatusPill>} context={[context.line, 'Review requests run as a workflow with the same permission, quiet-hours and weekly-limit rules']} today={context.today} sample="Live records · Sent through the connected messaging channel">
       <Banner tone="brand" title="No review gating" className="mb-6">Requests go to every completed visit, never only to people expected to be happy. They offer the public review link and do not ask for a rating first. Nothing is offered in return.</Banner>
       <div className="mb-6 grid items-start gap-6 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
@@ -46,13 +46,13 @@ export default function ReviewRequestPage() {
                   <p className="mt-1 text-outline">Last 7 days: {workflow.lastWeek.queued} sent · {workflow.lastWeek.skipped} skipped</p>
                 </li>))}</ul>
             )}
-            {manage && <ActionButton className="mt-4" variant="brand" to={`${ROUTES.workflowNew}?trigger=review_request`}>Create review-request workflow → GO28</ActionButton>}
+            {manage && <ActionButton className="mt-4" variant="brand" to={`${ROUTES.workflowNew}?trigger=review_request`}>Create review-request workflow →</ActionButton>}
           </Section>
           <Section title="Recent requests" aside={requests[0] ? requests[0].code : 'None'}>
             {!requests[0] ? <p className="text-xs text-outline">Entries appear once a review-request workflow is on.</p> : !runs.data ? <LoadingState label="Loading…" error={runs.error} /> : (
               <ul className="space-y-2 text-xs">{runs.data.data.map((run) => <li key={run.id} className="flex justify-between gap-3"><span>{when(stampOf(run.createdAt))} · {run.patient?.fullName ?? 'Patient'}</span><span className={run.outcome === 'queued' ? 'text-brand' : 'text-outline'}>{run.outcome === 'queued' ? 'Request queued' : run.skipLabel}</span></li>)}{!runs.data.data.length && <li className="text-outline">No completed visits have come due yet.</li>}</ul>
             )}
-            <Link to={ROUTES.workflowExecutions} className="mt-3 inline-block text-xs font-semibold text-brand hover:underline">All workflow events → GO29</Link>
+            <Link to={ROUTES.workflowExecutions} className="mt-3 inline-block text-xs font-semibold text-brand hover:underline">All workflow events →</Link>
           </Section>
         </div>
         <div className="space-y-6">
@@ -65,11 +65,11 @@ export default function ReviewRequestPage() {
               <li className={active ? 'text-brand' : 'text-amber-700'}>{active ? '✓' : '—'} A review-request workflow is on</li>
               <li className="text-on-surface-variant">Each person needs recorded permission for the channel; without it the visit is skipped and the reason recorded.</li>
             </ul>
-            <ActionButton className="mt-4" to={ROUTES.businessProfile}>Business profile · GO15</ActionButton>
+            <ActionButton className="mt-4" to={ROUTES.businessProfile}>Business profile</ActionButton>
           </Section>
         </div>
       </div>
-      <GrowthFooter code="GO-18" back={{ to: ROUTES.reviews, label: 'Back to reviews · GO16' }} />
+      <GrowthFooter back={{ to: ROUTES.reviews, label: 'Back to reviews' }} />
     </GrowthFrame>
   )
 }

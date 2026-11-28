@@ -27,5 +27,6 @@ export const accessApi = {
   branches: () => api('/v1/branches'),
   members: () => api('/v1/members'),
   setMemberRoles: (id, roleIds) => api(`/v1/members/${id}/roles`, { method: 'PUT', body: { roleIds } }),
+  setMemberStatus: (id, status) => api(`/v1/members/${id}`, { method: 'PATCH', body: { status } }),
   invite: (email, roleIds) => api('/v1/invitations', { method: 'POST', body: { email, roleIds } }),
 }

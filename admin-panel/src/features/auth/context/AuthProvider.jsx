@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { apiConfigured, configureApi } from '../../../lib/api'
 import { authApi } from '../api'
 import { AuthContext } from './authContext'
@@ -38,7 +38,9 @@ export default function AuthProvider({ children }) {
   const [state, setState] = useState(initialState)
   const stateRef = useRef(state)
 
-  useEffect(() => {
+  // A layout effect: pages fetch in their own effects, which run before this provider's ordinary effects would,
+  // so right after sign-in or an organisation switch they would send no (or the previous) organisation.
+  useLayoutEffect(() => {
     stateRef.current = state
   }, [state])
 

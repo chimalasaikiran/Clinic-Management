@@ -4,6 +4,7 @@ import { useApiResource } from '../../hooks/useApiResource'
 import { useVisibleInterval } from '../../hooks/useVisibleInterval'
 import { useAuth } from '../auth/context/useAuth'
 import { workspaceApi } from './api'
+import { useLiveConnection } from './useLiveConnection'
 import { WorkspaceContext } from './workspaceContext'
 import { permittedBranches } from './workspaceView'
 
@@ -53,9 +54,21 @@ export default function WorkspaceProvider({ children }) {
 
   const alerts = useApiResource(() => workspaceApi.alerts({ branchId: branchId || undefined }), `alerts:${orgId}:${branchId}`)
   const health = useApiResource(checkHealth, 'health')
+  const notifications = useApiResource(() => workspaceApi.notifications(), `notifications:${orgId}`)
   const { reload: reloadAlerts } = alerts
+  const { reload: reloadNotifications } = notifications
+  const subscribeLive = useLiveConnection(orgId)
+  useEffect(
+    () =>
+      subscribeLive(['notifications', 'appointments', 'requests'], () => {
+        reloadAlerts()
+        reloadNotifications()
+      }),
+    [subscribeLive, reloadAlerts, reloadNotifications],
+  )
   useVisibleInterval(() => {
     reloadAlerts()
+    reloadNotifications()
     health.reload()
   }, REFRESH_MS)
 
@@ -77,10 +90,14 @@ export default function WorkspaceProvider({ children }) {
         setChoice({ orgId, value: next })
       },
       alerts: alerts.data,
+      alertsError: alerts.error,
       reloadAlerts,
+      notifications: notifications.data,
+      reloadNotifications,
+      subscribeLive,
       health: health.data,
     }),
-    [branches, branchesLoaded, branchId, orgId, alerts.data, reloadAlerts, health.data],
+    [branches, branchesLoaded, branchId, orgId, alerts.data, alerts.error, reloadAlerts, notifications.data, reloadNotifications, subscribeLive, health.data],
   )
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>

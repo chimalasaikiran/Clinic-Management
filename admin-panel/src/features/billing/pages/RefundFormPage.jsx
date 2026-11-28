@@ -51,7 +51,7 @@ export default function RefundFormPage() {
   }
 
   return (
-    <BillingFrame back={{ to: registerPath, label: 'Refund Register' }} crumb="Billing & Finance / Refunds / Create" code="BF-16 / Billing & Finance" title="Create / Review Refund" badge={<StatusPill tone="warning">{over ? 'Draft · Validation required' : 'Draft'}</StatusPill>} description="Create a separate refund against a verified payment. Approval and gateway processing happen after submission." scope={false}>
+    <BillingFrame back={{ to: registerPath, label: 'Refund Register' }} crumb="Billing & Finance / Refunds / Create" code="Billing & Finance" title="Create / Review Refund" badge={<StatusPill tone="warning">{over ? 'Draft · Validation required' : 'Draft'}</StatusPill>} description="Create a separate refund against a verified payment. Approval and gateway processing happen after submission." scope={false}>
       <ol className="mb-6 flex flex-wrap gap-x-6 border-b border-slate-200 pb-4 text-xs">
         <li className="font-semibold text-brand">{payment ? '✓ ' : '1 '}Original payment selected</li><li className="font-semibold">2 Refund details & confirmation</li><li className="text-outline">3 Submit for approval</li>
       </ol>
@@ -110,7 +110,7 @@ export default function RefundFormPage() {
           </Section>
         </div>
       </div>
-      <GovernanceFooter code="BF-16">Never refund more than the eligible remaining balance. Submission errors retain the draft; recheck request status before retrying to avoid duplicate requests.</GovernanceFooter>
+      <GovernanceFooter>Never refund more than the eligible remaining balance. Submission errors retain the draft; recheck request status before retrying to avoid duplicate requests.</GovernanceFooter>
     </BillingFrame>
   )
 }

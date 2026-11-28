@@ -3,19 +3,19 @@ import { Link } from 'react-router-dom'
 import WorkspacePage from '../../../components/workspace/WorkspacePage'
 import { useLeadContext } from '../useLeads'
 
-// Page frame for the Growth OS screens: back link and trail, workflow code, title, return-context card, data-source note.
-export default function GrowthFrame({ back, crumb, code, title, badge, description, actions, actionNote, context, today, sample = 'Live records', children }) {
+// Page frame for the Growth OS screens: back link and trail, title, return-context card, data-source note.
+export default function GrowthFrame({ back, crumb, title, badge, description, actions, actionNote, context, today, sample = 'Live records', children }) {
   // Pages that do not pass their own context line show the organisation, working location and today's date.
   const fallback = useLeadContext()
   return (
     <WorkspacePage>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs">
-        <Link to={back.to} className="font-medium text-brand hover:underline">← {back.label}</Link>
+        {back ? <Link to={back.to} className="font-medium text-brand hover:underline">← {back.label}</Link> : <span />}
         <span className="text-outline">{crumb}</span>
       </div>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 max-w-3xl flex-1 basis-96">
-          <p className="mb-1 text-[11px] font-semibold tracking-wide text-brand uppercase">{code} / Growth workspace</p>
+          <p className="mb-1 text-[11px] font-semibold tracking-wide text-brand uppercase">Growth workspace</p>
           <h1 className="flex flex-wrap items-center gap-3 text-[28px] leading-9 font-bold tracking-tight">{title}</h1>
           {description && <p className="mt-1 text-sm text-on-surface-variant">{description}</p>}
         </div>
@@ -35,11 +35,11 @@ export default function GrowthFrame({ back, crumb, code, title, badge, descripti
   )
 }
 
-export function GrowthFooter({ code, back }) {
+export function GrowthFooter({ back }) {
   return (
     <footer className="mt-8 flex flex-wrap items-center justify-between gap-2 border-t border-slate-300 pt-4 text-xs">
       {back ? <Link to={back.to} className="font-medium text-brand hover:underline">← {back.label}</Link> : <span />}
-      <span className="text-[11px] text-outline">ClinicOS · {code}</span>
+      <span className="text-[11px] text-outline">ClinicOS</span>
     </footer>
   )
 }
