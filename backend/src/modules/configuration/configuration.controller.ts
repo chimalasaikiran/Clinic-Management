@@ -8,7 +8,7 @@ import { parse, uuid } from '../../common/validation/validation'
 import { CurrentAuth } from '../auth/auth.decorators'
 import { CurrentAccess, OrgFromQuery, OrgMember, RequireAnyPermission, RequirePermissions } from '../permissions/access.decorators'
 import {
-  acceptanceSchema, agreementSchema, agreementStateSchema, closureSchema, contactSchema, createBranchSchema, createDepartmentSchema, departmentMembersSchema, hoursSchema, operationsSchema, organisationSchema,
+  acceptanceSchema, agreementSchema, agreementStateSchema, closureSchema, contactSchema, createBranchSchema, createDepartmentSchema, departmentMembersSchema, hoursSchema, patientAppListingSchema, operationsSchema, organisationSchema,
   partnerActiveSchema, partnerSchema, specialtiesSchema, updateAgreementSchema, updateBranchSchema, updateDepartmentSchema,
 } from './configuration.schemas'
 import { DepartmentsService } from './departments.service'
@@ -114,6 +114,12 @@ export class BranchesController {
   @RequirePermissions('settings.organisation')
   async update(@Param('id') id: string, @Body() body: unknown, @CurrentAuth() auth: AuthContext, @CurrentAccess() access: AccessContext, @Client() client: ClientInfo) {
     return { data: await this.organisation.updateBranch(access, parse(uuid, id), parse(updateBranchSchema, body), auth.userId, client) }
+  }
+
+  @Put(':id/patient-app')
+  @RequirePermissions('settings.organisation')
+  async patientApp(@Param('id') id: string, @Body() body: unknown, @CurrentAuth() auth: AuthContext, @CurrentAccess() access: AccessContext, @Client() client: ClientInfo) {
+    return { data: await this.organisation.setPatientAppListing(access, parse(uuid, id), parse(patientAppListingSchema, body), auth.userId, client) }
   }
 
   @Put(':id/hours')

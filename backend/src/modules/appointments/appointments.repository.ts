@@ -26,6 +26,7 @@ export const appointmentSelect = {
   practitioner: { select: { id: true, displayName: true, credentials: true, specialty: true, department: true, room: true, slotMinutes: true } },
   branch: { select: { id: true, name: true, city: true } },
   bookedBy: { select: { fullName: true } },
+  service: { select: { name: true } },
 } as const satisfies Prisma.AppointmentSelect
 
 export const eventSelect = {
@@ -62,7 +63,11 @@ export interface NewAppointment {
   notifySms: boolean
   queueToken: string | null
   arrivedAt: Date | null
-  bookedById: string
+  // Staff bookings name the user; bookings made in the patient app name the account instead.
+  bookedById?: string
+  bookedByAccountId?: string
+  serviceId?: string
+  quotedFee?: number
 }
 
 export interface NewEvent {
@@ -74,7 +79,8 @@ export interface NewEvent {
   toStartsAt?: Date | null
   reason?: string | null
   note?: string | null
-  actorUserId: string
+  actorUserId?: string
+  actorAccountId?: string
 }
 
 @Injectable()

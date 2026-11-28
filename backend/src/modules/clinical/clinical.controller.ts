@@ -3,7 +3,7 @@ import { Client } from '../../common/decorators/client.decorator'
 import type { AccessContext, AuthContext, ClientInfo } from '../../common/utils/request'
 import { parse, uuid } from '../../common/validation/validation'
 import { CurrentAuth } from '../auth/auth.decorators'
-import { CurrentAccess, RequirePermissions } from '../permissions/access.decorators'
+import { CurrentAccess, RequireAnyPermission, RequirePermissions } from '../permissions/access.decorators'
 import { acknowledgeAlertSchema, addendumSchema, alertSchema, allergySchema, diagnosisSchema, startEncounterSchema, updateEncounterSchema, vitalsSchema, worklistSchema } from './clinical.schemas'
 import { ChartService } from './chart.service'
 import { ClinicalService } from './clinical.service'
@@ -57,7 +57,7 @@ export class ClinicalController {
 
   @Post('patients/:id/vitals')
   @HttpCode(201)
-  @RequirePermissions('clinical.write')
+  @RequireAnyPermission('clinical.write', 'clinical.vitals')
   async vitals(@Param('id') id: string, @Body() body: unknown, @CurrentAuth() auth: AuthContext, @CurrentAccess() access: AccessContext, @Client() client: ClientInfo) {
     return { data: await this.clinical.recordVitals(access, parse(uuid, id), auth.userId, parse(vitalsSchema, body), client) }
   }
@@ -88,6 +88,12 @@ export class ClinicalController {
   @RequirePermissions('clinical.write')
   async alert(@Param('id') id: string, @Body() body: unknown, @CurrentAuth() auth: AuthContext, @CurrentAccess() access: AccessContext, @Client() client: ClientInfo) {
     return { data: await this.clinical.raiseAlert(access, parse(uuid, id), auth.userId, parse(alertSchema, body), client) }
+  }
+
+  @Get('alerts/:id')
+  @RequirePermissions('clinical.read')
+  async getAlert(@Param('id') id: string, @CurrentAccess() access: AccessContext) {
+    return { data: await this.clinical.alert(access, parse(uuid, id)) }
   }
 
   @Post('alerts/:id/acknowledge')

@@ -17,8 +17,15 @@ export interface AccessContext {
   branchScope: 'all' | readonly string[]
 }
 
+// The signed-in patient app account (set by PatientGuard). A different realm from staff: never both.
+export interface PatientContext {
+  accountId: string
+  sessionId: string
+}
+
 export interface AppRequest extends Request {
   traceId: string
+  patient?: PatientContext
   auth?: AuthContext
   access?: AccessContext
 }

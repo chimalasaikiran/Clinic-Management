@@ -7,7 +7,7 @@ import { PrismaService } from '../../database/prisma.service'
 import type { Prisma } from '../../generated/prisma/client'
 import { MAX_MEDIA_BYTES, sniffImage } from '../content/content.logic'
 import { localDate } from '../scheduling/clinic-time'
-import type { ClosureInput, ContactInput, CreateBranchInput, HoursInput, OperationsInput, OrganisationInput, SpecialtiesInput, UpdateBranchInput } from './configuration.schemas'
+import type { ClosureInput, ContactInput, CreateBranchInput, HoursInput, OperationsInput, OrganisationInput, PatientAppListingInput, SpecialtiesInput, UpdateBranchInput } from './configuration.schemas'
 import { DepartmentsService } from './departments.service'
 
 const organisationSelect = {
@@ -18,6 +18,7 @@ const organisationSelect = {
 const branchSelect = {
   id: true, code: true, name: true, addressLine1: true, addressLine2: true, city: true, state: true, pinCode: true, country: true, phone: true, email: true, facilityType: true,
   status: true, isPrimary: true, version: true, createdAt: true, updatedAt: true,
+  listedInPatientApp: true, latitude: true, longitude: true,
   departments: { select: { department: { select: { id: true, code: true, name: true, status: true } } } },
   hours: { orderBy: [{ weekday: 'asc' }, { start: 'asc' }], select: { weekday: true, start: true, end: true, label: true } },
 } as const satisfies Prisma.BranchSelect
@@ -113,8 +114,8 @@ export class OrganisationConfigService {
   // ─── Branches ─────────────────────────────────────────────────────────────
 
   view(row: BranchRow, today?: { appointments: number; staff: number }) {
-    const { departments, ...rest } = row
-    return { ...rest, departments: departments.map((entry) => entry.department), today: today ?? null }
+    const { departments, latitude, longitude, ...rest } = row
+    return { ...rest, latitude: latitude === null ? null : Number(latitude), longitude: longitude === null ? null : Number(longitude), departments: departments.map((entry) => entry.department), today: today ?? null }
   }
 
   async branches(access: AccessContext) {
@@ -169,6 +170,16 @@ export class OrganisationConfigService {
     const { count } = await this.prisma.branch.updateMany({ where: { id, orgId: access.orgId, version }, data: { ...fields, version: { increment: 1 } } })
     if (count === 0) throw conflict('BRANCH_CHANGED', 'Someone else changed this branch. Reload it and try again.')
     await this.audit.record({ action: 'branch.updated', entityType: 'branch', entityId: id, orgId: access.orgId, actorUserId, details: { status: input.status } }, client)
+    return this.branch(access, id)
+  }
+
+  async setPatientAppListing(access: AccessContext, id: string, input: PatientAppListingInput, actorUserId: string, client: ClientInfo) {
+    const current = await this.findBranch(access, id)
+    if (input.listedInPatientApp && current.status !== 'active') throw unprocessable('BRANCH_NOT_ACTIVE', 'Only an active branch can be listed in the patient app.')
+    const { version, ...fields } = input
+    const { count } = await this.prisma.branch.updateMany({ where: { id, orgId: access.orgId, version }, data: { ...fields, version: { increment: 1 } } })
+    if (count === 0) throw conflict('BRANCH_CHANGED', 'Someone else changed this branch. Reload it and try again.')
+    await this.audit.record({ action: 'branch.patient_app_listing_changed', entityType: 'branch', entityId: id, orgId: access.orgId, actorUserId, details: { listed: input.listedInPatientApp } }, client)
     return this.branch(access, id)
   }
 

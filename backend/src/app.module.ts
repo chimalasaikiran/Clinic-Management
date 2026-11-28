@@ -14,6 +14,7 @@ import { HealthModule } from './modules/health/health.module'
 import { InventoryModule } from './modules/inventory/inventory.module'
 import { DashboardModule } from './modules/dashboard/dashboard.module'
 import { LeadsModule } from './modules/leads/leads.module'
+import { NotificationsModule } from './modules/notifications/notifications.module'
 import { MessagingModule } from './modules/messaging/messaging.module'
 import { CampaignsModule } from './modules/campaigns/campaigns.module'
 import { ConfigurationModule } from './modules/configuration/configuration.module'
@@ -26,6 +27,11 @@ import { ReportsModule } from './modules/reports/reports.module'
 import { InvitationsModule } from './modules/invitations/invitations.module'
 import { MembersModule } from './modules/members/members.module'
 import { OrganisationsModule } from './modules/organisations/organisations.module'
+import { PatientAuthModule } from './modules/patient-auth/patient-auth.module'
+import { PatientGuard } from './modules/patient-auth/patient.guard'
+import { PatientBookingModule } from './modules/patient-booking/patient-booking.module'
+import { PatientRecordsModule } from './modules/patient-records/patient-records.module'
+import { PatientRequestsModule } from './modules/patient-requests/patient-requests.module'
 import { PatientsModule } from './modules/patients/patients.module'
 import { AccessGuard } from './modules/permissions/access.guard'
 import { PermissionsModule } from './modules/permissions/permissions.module'
@@ -56,6 +62,11 @@ export class AppModule {
         InvitationsModule,
         SchedulingModule,
         PatientsModule,
+        PatientAuthModule,
+        NotificationsModule,
+        PatientBookingModule,
+        PatientRecordsModule,
+        PatientRequestsModule,
         AppointmentsModule,
         StaffModule,
         ClinicalModule,
@@ -77,6 +88,7 @@ export class AppModule {
         // Order matters: authenticate the session first, then check organisation access.
         { provide: APP_GUARD, useExisting: SessionGuard },
         { provide: APP_GUARD, useExisting: AccessGuard },
+        { provide: APP_GUARD, useExisting: PatientGuard },
         { provide: APP_FILTER, useClass: ErrorFilter },
       ],
     }

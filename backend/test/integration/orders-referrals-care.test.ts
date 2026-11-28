@@ -90,6 +90,7 @@ describe('diagnostic orders', () => {
     await c.owner.post(`/v1/orders/${order.id}/review`).send({ outcome: 'action', note: 'short' }).expect(400)
     const reviewed = (await c.owner.post(`/v1/orders/${order.id}/review`).send({ outcome: 'action', note: 'Start basal insulin; review in two weeks.' }).expect(200)).body.data
     expect(reviewed).toMatchObject({ status: 'reviewed', review: { outcome: 'action', by: 'Siddharth Verma' } })
+    expect((await c.owner.get(`/v1/orders/${order.id}`).expect(200)).body.data).toMatchObject({ id: order.id, status: 'reviewed', result: { flag: 'critical' } })
     chart = await c.chart()
     expect(chart.alerts.find((entry: { id: string }) => entry.id === alert.id).status).toBe('resolved')
     expect((await c.owner.post(`/v1/orders/${order.id}/review`).send({ outcome: 'action', note: 'Start basal insulin; review in two weeks.' }).expect(409)).body.error.code).toBe('ORDER_STATE')
@@ -199,9 +200,11 @@ describe('access', () => {
     const desk = await member(c, 'desk@aura.test', 'Front Desk & Reception')
     await desk.post(`/v1/patients/${c.patient.id}/orders`).send({ branchId: c.branchId, indication: 'Diabetes follow-up', items: [HBA1C] }).expect(403)
     await desk.post(`/v1/orders/${order.id}/cancel`).send({ reason: 'Trying without permission.' }).expect(403)
+    await desk.get(`/v1/orders/${order.id}`).expect(403)
 
     const other = await clinic('owner@other.test')
     await other.owner.post(`/v1/orders/${order.id}/cancel`).send({ reason: 'Another organisation trying.' }).expect(404)
+    await other.owner.get(`/v1/orders/${order.id}`).expect(404)
     await other.owner.post(`/v1/patients/${c.patient.id}/prescriptions`).send({ branchId: other.branchId, indication: 'Back pain', items: [NAPROXEN] }).expect(404)
     // Their own branch id cannot be used for another organisation's patient, and vice versa.
     await c.owner.post(`/v1/patients/${c.patient.id}/orders`).send({ branchId: other.branchId, indication: 'Diabetes follow-up', items: [HBA1C] }).expect(422)

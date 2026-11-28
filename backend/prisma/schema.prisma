@@ -152,6 +152,12 @@ model User {
   insuranceAgreementsActivated InsuranceAgreement[] @relation("InsuranceAgreementActivatedBy")
   insuranceDocuments           InsuranceDocument[]  @relation("InsuranceDocumentCreatedBy")
 
+  patientLinkCodesIssued PatientLinkCode[]   @relation("LinkCodeIssuedBy")
+  patientLinksRevoked    PatientLink[]       @relation("LinkRevokedBy")
+  refillDecisions        RefillRequest[]     @relation("RefillDecidedBy")
+  supportReplies         SupportMessage[]    @relation("SupportReplyAuthor")
+  staffAppChallenges     StaffAppChallenge[]
+
   @@map("users")
 }
 
@@ -167,6 +173,9 @@ model Session {
   revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
   ip         String?   @db.VarChar(64)
   userAgent  String?   @map("user_agent") @db.VarChar(300)
+  // 'browser': the admin panel, by HttpOnly cookie. 'app': the staff app, by bearer token. Neither works as the other.
+  kind       String    @default("browser") @db.VarChar(10)
+  deviceName String?   @map("device_name") @db.VarChar(120)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -312,6 +321,11 @@ model Organisation {
   insurancePartners   InsurancePartner[]
   insuranceAgreements InsuranceAgreement[]
   insuranceDocuments  InsuranceDocument[]
+  patientLinks        PatientLink[]
+  patientLinkCodes    PatientLinkCode[]
+  notifications       Notification[]
+  refillRequests      RefillRequest[]
+  supportTickets      SupportTicket[]
 
   @@map("organisations")
 }
@@ -326,25 +340,29 @@ enum BranchStatus {
 }
 
 model Branch {
-  id           String       @id @default(uuid(7)) @db.Uuid
-  orgId        String       @map("org_id") @db.Uuid
-  code         String       @db.VarChar(20)
-  name         String       @db.VarChar(240)
-  city         String       @db.VarChar(80)
-  state        String       @db.VarChar(80)
-  status       BranchStatus @default(active)
-  addressLine1 String?      @map("address_line1") @db.VarChar(240)
-  addressLine2 String?      @map("address_line2") @db.VarChar(240)
-  pinCode      String?      @map("pin_code") @db.Char(6)
-  country      String       @default("India") @db.VarChar(60)
-  phone        String?      @db.VarChar(15)
-  email        String?      @db.VarChar(254)
-  facilityType String?      @map("facility_type") @db.VarChar(80)
+  id                 String       @id @default(uuid(7)) @db.Uuid
+  orgId              String       @map("org_id") @db.Uuid
+  code               String       @db.VarChar(20)
+  name               String       @db.VarChar(240)
+  city               String       @db.VarChar(80)
+  state              String       @db.VarChar(80)
+  status             BranchStatus @default(active)
+  addressLine1       String?      @map("address_line1") @db.VarChar(240)
+  addressLine2       String?      @map("address_line2") @db.VarChar(240)
+  pinCode            String?      @map("pin_code") @db.Char(6)
+  country            String       @default("India") @db.VarChar(60)
+  phone              String?      @db.VarChar(15)
+  email              String?      @db.VarChar(254)
+  facilityType       String?      @map("facility_type") @db.VarChar(80)
   // The branch created with the organisation; it cannot be paused or closed.
-  isPrimary    Boolean      @default(false) @map("is_primary")
-  version      Int          @default(1)
-  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  isPrimary          Boolean      @default(false) @map("is_primary")
+  // The clinic opts in to the patient app by listing a branch. Until then no record is matched to an account.
+  listedInPatientApp Boolean      @default(false) @map("listed_in_patient_app")
+  latitude           Decimal?     @db.Decimal(9, 6)
+  longitude          Decimal?     @db.Decimal(9, 6)
+  version            Int          @default(1)
+  createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organisation   Organisation               @relation(fields: [orgId], references: [id])
   roleBranches   RoleBranch[]
@@ -379,6 +397,9 @@ model Branch {
   closures            BranchClosure[]
   departments         DepartmentBranch[]
   insuranceAgreements InsuranceAgreementBranch[]
+  savedBy             SavedClinic[]
+  refillRequests      RefillRequest[]
+  supportTickets      SupportTicket[]
 
   @@unique([orgId, code])
   @@map("branches")
@@ -416,8 +437,9 @@ model Membership {
   ownedCampaigns Campaign[] @relation("CampaignOwner")
   ownedWorkflows Workflow[] @relation("WorkflowOwner")
 
-  ownedContent     ContentPost[] @relation("ContentOwner")
-  ownedEscalations Escalation[]  @relation("EscalationOwner")
+  ownedContent     ContentPost[]  @relation("ContentOwner")
+  ownedEscalations Escalation[]   @relation("EscalationOwner")
+  notifications    Notification[]
 
   @@unique([orgId, userId])
   @@index([userId, status])
@@ -613,7 +635,7 @@ model Patient {
   statusNote        String?       @map("status_note") @db.VarChar(160)
   // Reserved for a future patient portal: the login allowed to see this record. Unused until then.
   portalUserId      String?       @unique @map("portal_user_id") @db.Uuid
-  createdById       String        @map("created_by") @db.Uuid
+  createdById       String?       @map("created_by") @db.Uuid
   version           Int           @default(1)
   createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -621,7 +643,7 @@ model Patient {
   organisation  Organisation      @relation(fields: [orgId], references: [id])
   homeBranch    Branch            @relation(fields: [homeBranchId], references: [id])
   portalUser    User?             @relation("PatientPortalUser", fields: [portalUserId], references: [id])
-  createdBy     User              @relation("PatientCreatedBy", fields: [createdById], references: [id])
+  createdBy     User?             @relation("PatientCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   appointments  Appointment[]
   encounters    Encounter[]
   vitalSigns    VitalSign[]
@@ -644,6 +666,10 @@ model Patient {
 
   broadcastRecipients BroadcastRecipient[]
   workflowRuns        WorkflowRun[]
+  appLinks            PatientLink[]
+  appLinkCodes        PatientLinkCode[]
+  refillRequests      RefillRequest[]
+  supportTickets      SupportTicket[]
 
   @@unique([orgId, mrn])
   @@index([orgId, mobile])
@@ -663,20 +689,22 @@ enum PractitionerStatus {
 
 // A member of staff who sees patients (doctor, therapist). Appointments are booked against this profile.
 model Practitioner {
-  id           String             @id @default(uuid(7)) @db.Uuid
-  orgId        String             @map("org_id") @db.Uuid
-  membershipId String             @unique @map("membership_id") @db.Uuid
-  displayName  String             @map("display_name") @db.VarChar(120)
-  credentials  String?            @db.VarChar(120)
-  specialty    String             @db.VarChar(120)
-  department   String             @db.VarChar(120)
-  room         String?            @db.VarChar(60)
+  id            String             @id @default(uuid(7)) @db.Uuid
+  orgId         String             @map("org_id") @db.Uuid
+  membershipId  String             @unique @map("membership_id") @db.Uuid
+  displayName   String             @map("display_name") @db.VarChar(120)
+  credentials   String?            @db.VarChar(120)
+  specialty     String             @db.VarChar(120)
+  department    String             @db.VarChar(120)
+  room          String?            @db.VarChar(60)
   // Length of one appointment slot; every booking with this practitioner takes one slot.
-  slotMinutes  Int                @map("slot_minutes")
-  status       PractitionerStatus @default(active)
-  version      Int                @default(1)
-  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  slotMinutes   Int                @map("slot_minutes")
+  status        PractitionerStatus @default(active)
+  // Offered to patients booking in the app.
+  onlineBooking Boolean            @default(false) @map("online_booking")
+  version       Int                @default(1)
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organisation Organisation               @relation(fields: [orgId], references: [id])
   membership   Membership                 @relation(fields: [membershipId], references: [id])
@@ -740,39 +768,46 @@ enum BookingChannel {
 }
 
 model Appointment {
-  id             String            @id @default(uuid(7)) @db.Uuid
-  orgId          String            @map("org_id") @db.Uuid
+  id                String            @id @default(uuid(7)) @db.Uuid
+  orgId             String            @map("org_id") @db.Uuid
   // Human-facing identifier (APT-000001) from the organisation counter.
-  reference      String            @db.VarChar(20)
-  patientId      String            @map("patient_id") @db.Uuid
-  practitionerId String            @map("practitioner_id") @db.Uuid
-  branchId       String            @map("branch_id") @db.Uuid
-  startsAt       DateTime          @map("starts_at") @db.Timestamptz(6)
-  endsAt         DateTime          @map("ends_at") @db.Timestamptz(6)
-  type           AppointmentType
-  status         AppointmentStatus
-  channel        BookingChannel
+  reference         String            @db.VarChar(20)
+  patientId         String            @map("patient_id") @db.Uuid
+  practitionerId    String            @map("practitioner_id") @db.Uuid
+  branchId          String            @map("branch_id") @db.Uuid
+  startsAt          DateTime          @map("starts_at") @db.Timestamptz(6)
+  endsAt            DateTime          @map("ends_at") @db.Timestamptz(6)
+  type              AppointmentType
+  status            AppointmentStatus
+  channel           BookingChannel
   // A walk-in waiting for the next free chamber rather than holding a slot of their own.
-  waitingQueue   Boolean           @default(false) @map("waiting_queue")
-  reason         String            @db.VarChar(500)
-  internalNote   String?           @map("internal_note") @db.VarChar(1000)
-  notifyWhatsapp Boolean           @default(true) @map("notify_whatsapp")
-  notifySms      Boolean           @default(true) @map("notify_sms")
-  queueToken     String?           @map("queue_token") @db.VarChar(10)
-  arrivedAt      DateTime?         @map("arrived_at") @db.Timestamptz(6)
-  closedReason   String?           @map("closed_reason") @db.VarChar(120)
-  bookedById     String            @map("booked_by") @db.Uuid
-  version        Int               @default(1)
-  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  waitingQueue      Boolean           @default(false) @map("waiting_queue")
+  reason            String            @db.VarChar(500)
+  internalNote      String?           @map("internal_note") @db.VarChar(1000)
+  notifyWhatsapp    Boolean           @default(true) @map("notify_whatsapp")
+  notifySms         Boolean           @default(true) @map("notify_sms")
+  queueToken        String?           @map("queue_token") @db.VarChar(10)
+  arrivedAt         DateTime?         @map("arrived_at") @db.Timestamptz(6)
+  closedReason      String?           @map("closed_reason") @db.VarChar(120)
+  // Exactly one of these two is set: staff booked it, or the patient did in the app.
+  bookedById        String?           @map("booked_by") @db.Uuid
+  bookedByAccountId String?           @map("booked_by_account_id") @db.Uuid
+  // The service the patient chose in the app, and the fee they were shown.
+  serviceId         String?           @map("service_id") @db.Uuid
+  quotedFee         Decimal?          @map("quoted_fee") @db.Decimal(12, 2)
+  version           Int               @default(1)
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organisation Organisation       @relation(fields: [orgId], references: [id])
-  patient      Patient            @relation(fields: [patientId], references: [id])
-  practitioner Practitioner       @relation(fields: [practitionerId], references: [id])
-  branch       Branch             @relation(fields: [branchId], references: [id])
-  bookedBy     User               @relation("AppointmentBookedBy", fields: [bookedById], references: [id])
-  events       AppointmentEvent[]
-  encounter    Encounter?
+  organisation    Organisation       @relation(fields: [orgId], references: [id])
+  patient         Patient            @relation(fields: [patientId], references: [id])
+  practitioner    Practitioner       @relation(fields: [practitionerId], references: [id])
+  branch          Branch             @relation(fields: [branchId], references: [id])
+  bookedBy        User?              @relation("AppointmentBookedBy", fields: [bookedById], references: [id], onDelete: Restrict)
+  bookedByAccount PatientAccount?    @relation(fields: [bookedByAccountId], references: [id], onDelete: Restrict)
+  service         BillingService?    @relation(fields: [serviceId], references: [id])
+  events          AppointmentEvent[]
+  encounter       Encounter?
 
   workflowRuns WorkflowRun[]
 
@@ -785,20 +820,22 @@ model Appointment {
 
 // Append-only history of everything that happened to an appointment.
 model AppointmentEvent {
-  id            String             @id @default(uuid(7)) @db.Uuid
-  appointmentId String             @map("appointment_id") @db.Uuid
-  action        String             @db.VarChar(40)
-  fromStatus    AppointmentStatus? @map("from_status")
-  toStatus      AppointmentStatus  @map("to_status")
-  fromStartsAt  DateTime?          @map("from_starts_at") @db.Timestamptz(6)
-  toStartsAt    DateTime?          @map("to_starts_at") @db.Timestamptz(6)
-  reason        String?            @db.VarChar(120)
-  note          String?            @db.VarChar(1000)
-  actorUserId   String             @map("actor_user_id") @db.Uuid
-  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  id             String             @id @default(uuid(7)) @db.Uuid
+  appointmentId  String             @map("appointment_id") @db.Uuid
+  action         String             @db.VarChar(40)
+  fromStatus     AppointmentStatus? @map("from_status")
+  toStatus       AppointmentStatus  @map("to_status")
+  fromStartsAt   DateTime?          @map("from_starts_at") @db.Timestamptz(6)
+  toStartsAt     DateTime?          @map("to_starts_at") @db.Timestamptz(6)
+  reason         String?            @db.VarChar(120)
+  note           String?            @db.VarChar(1000)
+  actorUserId    String?            @map("actor_user_id") @db.Uuid
+  actorAccountId String?            @map("actor_account_id") @db.Uuid
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  actor       User        @relation(fields: [actorUserId], references: [id])
+  appointment  Appointment     @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  actor        User?           @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  actorAccount PatientAccount? @relation(fields: [actorAccountId], references: [id], onDelete: Restrict)
 
   @@index([appointmentId, createdAt])
   @@map("appointment_events")
@@ -1266,14 +1303,15 @@ model Prescription {
   createdAt              DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   version                Int                @default(1)
 
-  organisation Organisation        @relation(fields: [orgId], references: [id])
-  patient      Patient             @relation(fields: [patientId], references: [id])
-  encounter    Encounter?          @relation(fields: [encounterId], references: [id])
-  branch       Branch              @relation(fields: [branchId], references: [id])
-  createdBy    User                @relation("PrescriptionCreatedBy", fields: [createdById], references: [id])
-  items        PrescriptionItem[]
-  events       PrescriptionEvent[]
-  dispenses    Dispense[]
+  organisation   Organisation        @relation(fields: [orgId], references: [id])
+  patient        Patient             @relation(fields: [patientId], references: [id])
+  encounter      Encounter?          @relation(fields: [encounterId], references: [id])
+  branch         Branch              @relation(fields: [branchId], references: [id])
+  createdBy      User                @relation("PrescriptionCreatedBy", fields: [createdById], references: [id])
+  items          PrescriptionItem[]
+  events         PrescriptionEvent[]
+  dispenses      Dispense[]
+  refillRequests RefillRequest[]
 
   @@unique([orgId, reference])
   @@index([orgId, patientId, createdAt])
@@ -1676,30 +1714,33 @@ enum ReconExceptionStatus {
 
 // The organisation's service catalogue: what can be charged and at what default price and tax.
 model BillingService {
-  id           String               @id @default(uuid(7)) @db.Uuid
-  orgId        String               @map("org_id") @db.Uuid
-  code         String               @db.VarChar(40)
-  name         String               @db.VarChar(200)
-  category     String               @db.VarChar(80)
-  department   String?              @db.VarChar(120)
-  description  String               @default("") @db.VarChar(2000)
-  unit         String?              @db.VarChar(40)
-  status       BillingServiceStatus @default(inactive)
-  price        Decimal              @db.Decimal(12, 2)
-  taxTreatment TaxTreatment         @default(not_configured) @map("tax_treatment")
-  taxConfig    String?              @map("tax_config") @db.VarChar(80)
+  id              String               @id @default(uuid(7)) @db.Uuid
+  orgId           String               @map("org_id") @db.Uuid
+  code            String               @db.VarChar(40)
+  name            String               @db.VarChar(200)
+  category        String               @db.VarChar(80)
+  department      String?              @db.VarChar(120)
+  description     String               @default("") @db.VarChar(2000)
+  unit            String?              @db.VarChar(40)
+  status          BillingServiceStatus @default(inactive)
+  // Offered as a service a patient can book in the app; its department decides which therapists can take it.
+  patientBookable Boolean              @default(false) @map("patient_bookable")
+  price           Decimal              @db.Decimal(12, 2)
+  taxTreatment    TaxTreatment         @default(not_configured) @map("tax_treatment")
+  taxConfig       String?              @map("tax_config") @db.VarChar(80)
   // GST percentage that follows from the tax configuration; 0 unless taxable.
-  gstRate      Decimal              @default(0) @map("gst_rate") @db.Decimal(5, 2)
-  createdById  String               @map("created_by") @db.Uuid
-  createdAt    DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
-  version      Int                  @default(1)
+  gstRate         Decimal              @default(0) @map("gst_rate") @db.Decimal(5, 2)
+  createdById     String               @map("created_by") @db.Uuid
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version         Int                  @default(1)
 
   organisation Organisation          @relation(fields: [orgId], references: [id])
   createdBy    User                  @relation("BillingServiceCreatedBy", fields: [createdById], references: [id])
   prices       BillingServicePrice[]
   charges      Charge[]
   invoiceLines InvoiceLine[]
+  appointments Appointment[]
 
   @@unique([orgId, code])
   @@map("billing_services")
@@ -4089,4 +4130,311 @@ model InsuranceAgreementBranch {
 
   @@id([agreementId, branchId])
   @@map("insurance_agreement_branches")
+}
+
+// ─── Patient app identity ───────────────────────────────────────────────────
+// Patients are a separate sign-in realm from staff: their own accounts and sessions, never `users` / `sessions`,
+// so a patient token cannot satisfy a staff route.
+
+enum PatientAccountStatus {
+  active
+  disabled
+  deleted
+
+  @@map("patient_account_status")
+}
+
+enum PatientLinkMethod {
+  mobile_dob
+  clinic_code
+  // The patient created the record by booking at a clinic that had none for them.
+  self_registered
+
+  @@map("patient_link_method")
+}
+
+model PatientAccount {
+  id                String               @id @default(uuid(7)) @db.Uuid
+  // Ten digits, proven by a one-time code. One account per number; null once the account is deleted.
+  mobile            String?              @unique @db.VarChar(10)
+  fullName          String               @map("full_name") @db.VarChar(120)
+  email             String?              @db.VarChar(254)
+  passwordHash      String?              @map("password_hash") @db.VarChar(255)
+  // Set once. Records are matched on it, so the app cannot change it afterwards.
+  dateOfBirth       DateTime?            @map("date_of_birth") @db.Date
+  gender            Gender?
+  bloodGroup        String?              @map("blood_group") @db.VarChar(3)
+  addressLine       String?              @map("address_line") @db.VarChar(240)
+  city              String?              @db.VarChar(80)
+  state             String?              @db.VarChar(80)
+  pinCode           String?              @map("pin_code") @db.Char(6)
+  emergencyName     String?              @map("emergency_name") @db.VarChar(120)
+  emergencyRelation String?              @map("emergency_relation") @db.VarChar(40)
+  emergencyPhone    String?              @map("emergency_phone") @db.VarChar(10)
+  language          String               @default("en") @db.VarChar(5)
+  status            PatientAccountStatus @default(active)
+  version           Int                  @default(1)
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  sessions           PatientSession[]
+  links              PatientLink[]
+  consents           PatientConsent[]
+  bookedAppointments Appointment[]
+  appointmentEvents  AppointmentEvent[]
+  savedClinics       SavedClinic[]
+  notifications      Notification[]
+  refillRequests     RefillRequest[]
+  supportTickets     SupportTicket[]
+  supportMessages    SupportMessage[]
+
+  @@map("patient_accounts")
+}
+
+// One-time sign-in codes, and the short-lived ticket that lets a verified new number create an account.
+model PatientOtp {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  mobile     String    @db.VarChar(10)
+  codeHash   String    @map("code_hash") @db.Char(64)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  attempts   Int       @default(0)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(6)
+  ticketHash String?   @unique @map("ticket_hash") @db.Char(64)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([mobile, createdAt(sort: Desc)])
+  @@index([expiresAt])
+  @@map("patient_otps")
+}
+
+model PatientSession {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  accountId  String    @map("account_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash") @db.Char(64)
+  deviceName String    @map("device_name") @db.VarChar(120)
+  platform   String    @db.VarChar(20)
+  ip         String?   @db.VarChar(64)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+
+  account PatientAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, revokedAt])
+  @@index([expiresAt])
+  @@map("patient_sessions")
+}
+
+// Which clinic records an account may read. A row is never deleted: a revoked link stops the automatic
+// match from quietly restoring access.
+model PatientLink {
+  id          String            @id @default(uuid(7)) @db.Uuid
+  accountId   String            @map("account_id") @db.Uuid
+  orgId       String            @map("org_id") @db.Uuid
+  patientId   String            @map("patient_id") @db.Uuid
+  method      PatientLinkMethod
+  verifiedAt  DateTime          @default(now()) @map("verified_at") @db.Timestamptz(6)
+  revokedAt   DateTime?         @map("revoked_at") @db.Timestamptz(6)
+  // Null when the patient removed the link themselves.
+  revokedById String?           @map("revoked_by") @db.Uuid
+
+  account      PatientAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  organisation Organisation   @relation(fields: [orgId], references: [id])
+  patient      Patient        @relation(fields: [patientId], references: [id])
+  revokedBy    User?          @relation("LinkRevokedBy", fields: [revokedById], references: [id])
+
+  @@unique([accountId, patientId])
+  @@index([orgId, patientId])
+  @@map("patient_links")
+}
+
+// A single-use code the clinic desk hands to a patient whose record could not be matched automatically.
+model PatientLinkCode {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  orgId      String    @map("org_id") @db.Uuid
+  patientId  String    @map("patient_id") @db.Uuid
+  codeHash   String    @unique @map("code_hash") @db.Char(64)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt     DateTime? @map("used_at") @db.Timestamptz(6)
+  issuedById String    @map("issued_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [orgId], references: [id])
+  patient      Patient      @relation(fields: [patientId], references: [id])
+  issuedBy     User         @relation("LinkCodeIssuedBy", fields: [issuedById], references: [id])
+
+  @@index([patientId, createdAt])
+  @@map("patient_link_codes")
+}
+
+// Append-only: the newest row for a purpose is the current answer.
+model PatientConsent {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  accountId     String   @map("account_id") @db.Uuid
+  purpose       String   @db.VarChar(40)
+  granted       Boolean
+  policyVersion String   @map("policy_version") @db.VarChar(20)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  account PatientAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, purpose, createdAt(sort: Desc)])
+  @@map("patient_consents")
+}
+
+// A clinic a patient bookmarked in the app.
+model SavedClinic {
+  accountId String   @map("account_id") @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  account PatientAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  branch  Branch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, branchId])
+  @@map("saved_clinics")
+}
+
+// One in-app notification for exactly one recipient: a staff membership or a patient account.
+model Notification {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  orgId        String    @map("org_id") @db.Uuid
+  membershipId String?   @map("membership_id") @db.Uuid
+  accountId    String?   @map("account_id") @db.Uuid
+  // What happened, e.g. appointment_booked.
+  kind         String    @db.VarChar(40)
+  title        String    @db.VarChar(160)
+  body         String    @db.VarChar(500)
+  // What it is about, so the client can open the right screen.
+  entityType   String?   @map("entity_type") @db.VarChar(40)
+  entityId     String?   @map("entity_id") @db.Uuid
+  patientId    String?   @map("patient_id") @db.Uuid
+  readAt       DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation    @relation(fields: [orgId], references: [id])
+  membership   Membership?     @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  account      PatientAccount? @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([membershipId, createdAt(sort: Desc)])
+  @@index([accountId, createdAt(sort: Desc)])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+enum RefillStatus {
+  requested
+  approved
+  declined
+  cancelled
+
+  @@map("refill_status")
+}
+
+// A patient asks, in the app, for more of a prescription. The clinic approves (the pharmacy then dispenses as
+// usual) or declines with a reason the patient sees.
+model RefillRequest {
+  id             String       @id @default(uuid(7)) @db.Uuid
+  orgId          String       @map("org_id") @db.Uuid
+  branchId       String       @map("branch_id") @db.Uuid
+  patientId      String       @map("patient_id") @db.Uuid
+  prescriptionId String       @map("prescription_id") @db.Uuid
+  accountId      String       @map("account_id") @db.Uuid
+  status         RefillStatus @default(requested)
+  // From the patient, optional.
+  note           String?      @db.VarChar(500)
+  // To the patient: required when declining.
+  decisionNote   String?      @map("decision_note") @db.VarChar(500)
+  decidedById    String?      @map("decided_by") @db.Uuid
+  decidedAt      DateTime?    @map("decided_at") @db.Timestamptz(6)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  version        Int          @default(1)
+
+  organisation Organisation   @relation(fields: [orgId], references: [id])
+  branch       Branch         @relation(fields: [branchId], references: [id])
+  patient      Patient        @relation(fields: [patientId], references: [id])
+  prescription Prescription   @relation(fields: [prescriptionId], references: [id])
+  account      PatientAccount @relation(fields: [accountId], references: [id])
+  decidedBy    User?          @relation("RefillDecidedBy", fields: [decidedById], references: [id])
+
+  @@index([orgId, status, createdAt])
+  @@index([prescriptionId, createdAt])
+  @@map("refill_requests")
+}
+
+enum SupportStatus {
+  open
+  answered
+  resolved
+
+  @@map("support_status")
+}
+
+// A help request from the patient app to one clinic.
+model SupportTicket {
+  id         String        @id @default(uuid(7)) @db.Uuid
+  orgId      String        @map("org_id") @db.Uuid
+  // The patient's home branch at the clinic, so branch-scoped staff see it.
+  branchId   String        @map("branch_id") @db.Uuid
+  patientId  String        @map("patient_id") @db.Uuid
+  accountId  String        @map("account_id") @db.Uuid
+  // Human-facing identifier (HLP-000001) from the organisation counter.
+  reference  String        @db.VarChar(20)
+  category   String        @db.VarChar(60)
+  subject    String        @db.VarChar(120)
+  status     SupportStatus @default(open)
+  resolvedAt DateTime?     @map("resolved_at") @db.Timestamptz(6)
+  createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version    Int           @default(1)
+
+  organisation Organisation     @relation(fields: [orgId], references: [id])
+  branch       Branch           @relation(fields: [branchId], references: [id])
+  patient      Patient          @relation(fields: [patientId], references: [id])
+  account      PatientAccount   @relation(fields: [accountId], references: [id])
+  messages     SupportMessage[]
+
+  @@unique([orgId, reference])
+  @@index([orgId, status, updatedAt])
+  @@index([accountId, updatedAt])
+  @@map("support_tickets")
+}
+
+// One message on a ticket, from exactly one of: the patient's account or a staff user.
+model SupportMessage {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  ticketId        String   @map("ticket_id") @db.Uuid
+  authorAccountId String?  @map("author_account_id") @db.Uuid
+  authorUserId    String?  @map("author_user_id") @db.Uuid
+  body            String   @db.VarChar(2000)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  ticket        SupportTicket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorAccount PatientAccount? @relation(fields: [authorAccountId], references: [id])
+  authorUser    User?           @relation("SupportReplyAuthor", fields: [authorUserId], references: [id])
+
+  @@index([ticketId, createdAt])
+  @@map("support_messages")
+}
+
+// The second step of signing in to the staff app: a code sent by SMS to the mobile on the staff record, after the
+// password was right. The app holds a random ticket for it; only hashes are stored.
+model StaffAppChallenge {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  mobile     String    @db.VarChar(10)
+  ticketHash String    @unique @map("ticket_hash") @db.Char(64)
+  codeHash   String    @map("code_hash") @db.Char(64)
+  deviceName String    @map("device_name") @db.VarChar(120)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  attempts   Int       @default(0)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@map("staff_app_challenges")
 }

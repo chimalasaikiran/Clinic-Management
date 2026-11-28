@@ -7,6 +7,8 @@ export interface NewSession {
   expiresAt: Date
   ip: string | null
   userAgent: string | null
+  kind?: 'browser' | 'app'
+  deviceName?: string | null
 }
 
 @Injectable()
@@ -32,7 +34,7 @@ export class SessionsRepository {
     return this.prisma.session.findMany({
       where: { userId, revokedAt: null, expiresAt: { gt: now } },
       orderBy: { lastSeenAt: 'desc' },
-      select: { id: true, createdAt: true, lastSeenAt: true, expiresAt: true, ip: true, userAgent: true },
+      select: { id: true, createdAt: true, lastSeenAt: true, expiresAt: true, ip: true, userAgent: true, kind: true, deviceName: true },
     })
   }
 

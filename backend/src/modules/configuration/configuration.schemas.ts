@@ -66,6 +66,16 @@ export const createBranchSchema = z.object({
 
 export const updateBranchSchema = z.object({ ...branchFields, status: z.enum(['planned', 'active', 'paused', 'inactive']), version })
 
+// Whether patients see this branch in the app. Coordinates are optional and always come as a pair.
+export const patientAppListingSchema = z
+  .object({
+    listedInPatientApp: z.boolean(),
+    latitude: z.number().min(-90, 'Latitude is between -90 and 90.').max(90, 'Latitude is between -90 and 90.').nullable(),
+    longitude: z.number().min(-180, 'Longitude is between -180 and 180.').max(180, 'Longitude is between -180 and 180.').nullable(),
+    version,
+  })
+  .refine((value) => (value.latitude === null) === (value.longitude === null), { path: ['longitude'], message: 'Enter both latitude and longitude, or neither.' })
+
 export const hoursSchema = z.object({
   sessions: z
     .array(
@@ -138,6 +148,7 @@ export type OrganisationInput = z.infer<typeof organisationSchema>
 export type CreateBranchInput = z.infer<typeof createBranchSchema>
 export type UpdateBranchInput = z.infer<typeof updateBranchSchema>
 export type HoursInput = z.infer<typeof hoursSchema>
+export type PatientAppListingInput = z.infer<typeof patientAppListingSchema>
 export type ClosureInput = z.infer<typeof closureSchema>
 export type CreateDepartmentInput = z.infer<typeof createDepartmentSchema>
 export type UpdateDepartmentInput = z.infer<typeof updateDepartmentSchema>

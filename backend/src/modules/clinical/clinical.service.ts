@@ -1,12 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { AuditService } from '../../common/audit/audit.service'
 import { conflict, notFound, unprocessable } from '../../common/errors/app-error'
+import { LiveEvent, LiveService } from '../../common/realtime/live.service'
 import type { AccessContext, ClientInfo } from '../../common/utils/request'
 import { ENV, Env } from '../../config/env'
 import { CountersRepository, formatNumber } from '../../database/counters.repository'
 import { PrismaService, Tx } from '../../database/prisma.service'
 import { AppointmentsRepository } from '../appointments/appointments.repository'
 import { transition } from '../appointments/lifecycle'
+import { NotificationsService } from '../notifications/notifications.service'
 import { CareScope, CareScopeService } from '../scheduling/care-scope.service'
 import { PractitionersRepository } from '../scheduling/practitioners.repository'
 import { addDays, localDate, localMinute, minuteToTime, zonedInstant } from '../scheduling/clinic-time'
@@ -31,6 +33,8 @@ export class ClinicalService {
     private readonly careScope: CareScopeService,
     private readonly practitioners: PractitionersRepository,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
+    private readonly live: LiveService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -103,6 +107,8 @@ export class ClinicalService {
   // From an arrived appointment: starts the appointment and opens its encounter in one transaction.
   async startEncounter(access: AccessContext, actorUserId: string, input: StartEncounterInput, client: ClientInfo) {
     const scope = await this.careScope.resolve(access)
+    // Filled when the visit's appointment changes status, and published once that is committed.
+    const events: LiveEvent[] = []
     const id = await this.prisma.transaction(async (tx) => {
       const reference = formatNumber('ENC-', await this.counters.next(tx, access.orgId, 'encounter_reference'))
       if ('appointmentId' in input) {
@@ -113,18 +119,22 @@ export class ClinicalService {
         const toStatus = transition('start', appointment.status)
         await this.appointments.update(tx, appointment.id, { status: toStatus })
         await this.appointments.addEvent(tx, { appointmentId: appointment.id, action: 'start', fromStatus: appointment.status, toStatus, actorUserId })
+        events.push(...(await this.notifications.appointmentChanged(tx, { appointmentId: appointment.id, by: 'clinic' })))
         const created = await this.clinical.createEncounter(tx, {
           orgId: access.orgId, reference, patientId: appointment.patientId, appointmentId: appointment.id, practitionerId: appointment.practitionerId,
           branchId: appointment.branchId, type: `${appointment.practitioner.department} consultation`, reason: appointment.reason, chiefComplaint: appointment.reason, createdById: actorUserId,
         })
         await this.audit.record({ action: 'encounter.started', entityType: 'encounter', entityId: created.id, orgId: access.orgId, actorUserId, details: { reference, appointmentId: appointment.id } }, client, tx)
+        events.push({ topic: 'records', orgId: access.orgId, entityId: created.id, patientId: appointment.patientId, branchId: appointment.branchId })
         return created.id
       }
       if (!(await this.clinical.visiblePatient(access.orgId, scope, input.patientId, tx))) throw notFound('Patient not found.')
       const created = await this.clinical.createEncounter(tx, { orgId: access.orgId, reference, patientId: input.patientId, branchId: input.branchId, type: input.type, reason: input.reason, chiefComplaint: input.reason, createdById: actorUserId })
       await this.audit.record({ action: 'encounter.started', entityType: 'encounter', entityId: created.id, orgId: access.orgId, actorUserId, details: { reference } }, client, tx)
+      events.push({ topic: 'records', orgId: access.orgId, entityId: created.id, patientId: input.patientId, branchId: input.branchId })
       return created.id
     })
+    await this.live.publish(events)
     return this.encounter(access, id)
   }
 
@@ -138,12 +148,14 @@ export class ClinicalService {
       }
       await this.audit.record({ action: 'encounter.updated', entityType: 'encounter', entityId: id, orgId: access.orgId, actorUserId }, client, tx)
     })
+    await this.chartChanged(access.orgId, current.patientId, id, current.branch.id)
     return this.encounter(access, id)
   }
 
   // Locks the encounter, files its note and completes the visit. Needs a complaint and at least one diagnosis.
   async signEncounter(access: AccessContext, id: string, actorUserId: string, client: ClientInfo) {
     const scope = await this.careScope.resolve(access)
+    const events: LiveEvent[] = []
     await this.prisma.transaction(async (tx) => {
       if (!(await this.clinical.lockEncounter(tx, access.orgId, id))) throw notFound('Encounter not found.')
       const encounter = await this.clinical.encounter(access.orgId, scope, id, tx)
@@ -164,26 +176,31 @@ export class ClinicalService {
           const toStatus = transition('complete', appointment.status)
           await this.appointments.update(tx, appointment.id, { status: toStatus })
           await this.appointments.addEvent(tx, { appointmentId: appointment.id, action: 'complete', fromStatus: appointment.status, toStatus, actorUserId, note: `Encounter ${encounter.reference} signed` })
+          events.push(...(await this.notifications.appointmentChanged(tx, { appointmentId: appointment.id, by: 'clinic' })))
         }
       }
+      events.push(...(await this.notifications.recordChanged(tx, { orgId: access.orgId, patientId: encounter.patientId, branchId: encounter.branch.id, entityType: 'encounter', entityId: id, notice: 'consultation_signed' })))
       await this.audit.record({ action: 'encounter.signed', entityType: 'encounter', entityId: id, orgId: access.orgId, actorUserId }, client, tx)
     })
+    await this.live.publish(events)
     return this.encounter(access, id)
   }
 
   async recordVitals(access: AccessContext, patientId: string, actorUserId: string, input: VitalsInput, client: ClientInfo) {
     const scope = await this.visiblePatient(access, patientId)
-    if (input.encounterId) await this.openEncounterOf(access.orgId, scope, input.encounterId, patientId)
+    const encounter = input.encounterId ? await this.openEncounterOf(access.orgId, scope, input.encounterId, patientId) : null
     const row = await this.clinical.createVitals({ ...input, orgId: access.orgId, patientId, recordedById: actorUserId })
     await this.audit.record({ action: 'vitals.recorded', entityType: 'patient', entityId: patientId, orgId: access.orgId, actorUserId }, client)
+    await this.chartChanged(access.orgId, patientId, row.id, encounter?.branch.id)
     return this.vitalsView(row)
   }
 
   async addDiagnosis(access: AccessContext, patientId: string, actorUserId: string, input: DiagnosisInput, client: ClientInfo) {
     const scope = await this.visiblePatient(access, patientId)
-    if (input.encounterId) await this.openEncounterOf(access.orgId, scope, input.encounterId, patientId)
+    const encounter = input.encounterId ? await this.openEncounterOf(access.orgId, scope, input.encounterId, patientId) : null
     const row = await this.clinical.createDiagnosis({ ...input, orgId: access.orgId, patientId, recordedById: actorUserId })
     await this.audit.record({ action: 'diagnosis.recorded', entityType: 'patient', entityId: patientId, orgId: access.orgId, actorUserId, details: { icd: input.icd } }, client)
+    await this.chartChanged(access.orgId, patientId, row.id, encounter?.branch.id)
     return this.diagnosisView(row)
   }
 
@@ -206,6 +223,7 @@ export class ClinicalService {
       }
       await this.audit.record({ action: 'allergy.recorded', entityType: 'patient', entityId: patientId, orgId: access.orgId, actorUserId }, client, tx)
     })
+    await this.chartChanged(access.orgId, patientId, patientId)
     return this.chart(access, patientId).then((chart) => chart.allergies[0])
   }
 
@@ -213,21 +231,29 @@ export class ClinicalService {
     await this.visiblePatient(access, patientId)
     const row = await this.clinical.createAlert(this.prisma, { ...input, orgId: access.orgId, patientId, createdById: actorUserId })
     await this.audit.record({ action: 'alert.raised', entityType: 'patient', entityId: patientId, orgId: access.orgId, actorUserId, details: { severity: input.severity } }, client)
+    await this.chartChanged(access.orgId, patientId, row.id)
     return this.alertView(row)
   }
 
+  // One alert, for the alert review screen. Hidden (404) outside the member's care scope.
+  async alert(access: AccessContext, id: string) {
+    return this.alertView(await this.findAlert(access, id))
+  }
+
   async acknowledgeAlert(access: AccessContext, id: string, actorUserId: string, input: { disposition: string; justification: string }, client: ClientInfo) {
-    await this.findAlert(access, id)
+    const alert = await this.findAlert(access, id)
     const changed = await this.clinical.closeAlert(id, 'active', { status: 'acknowledged', disposition: input.disposition, justification: input.justification, acknowledgedById: actorUserId, acknowledgedAt: new Date() })
     if (changed === 0) throw conflict('ALERT_CLOSED', 'This alert is no longer active.')
     await this.audit.record({ action: 'alert.acknowledged', entityType: 'alert', entityId: id, orgId: access.orgId, actorUserId }, client)
+    await this.chartChanged(access.orgId, alert.patientId, id)
     return this.alertView((await this.findAlert(access, id))!)
   }
 
   async resolveAlert(access: AccessContext, id: string, actorUserId: string, client: ClientInfo) {
-    await this.findAlert(access, id)
+    const alert = await this.findAlert(access, id)
     if ((await this.clinical.closeAlert(id, 'active', { status: 'resolved' })) === 0) throw conflict('ALERT_CLOSED', 'This alert is no longer active.')
     await this.audit.record({ action: 'alert.resolved', entityType: 'alert', entityId: id, orgId: access.orgId, actorUserId }, client)
+    await this.chartChanged(access.orgId, alert.patientId, id)
     return this.alertView((await this.findAlert(access, id))!)
   }
 
@@ -288,6 +314,23 @@ export class ClinicalService {
     if (encounter.patientId !== patientId) throw unprocessable('ENCOUNTER_MISMATCH', 'That encounter belongs to a different patient.')
     if (encounter.status !== 'in_progress') throw conflict('ENCOUNTER_SIGNED', 'This encounter is signed and locked.')
     return encounter
+  }
+
+  // Tells open charts that something changed. Only ids travel; the branch is the encounter's, else the patient's home.
+  private async chartChanged(orgId: string, patientId: string, entityId: string, branchId?: string) {
+    const branch = branchId ?? (await this.visitingBranch(orgId, patientId))
+    if (branch) await this.live.publish([{ topic: 'records', orgId, entityId, patientId, branchId: branch }])
+  }
+
+  // The branch of the patient's visit under way today, or their home branch.
+  private async visitingBranch(orgId: string, patientId: string) {
+    const today = localDate(new Date(), this.env.CLINIC_TIMEZONE)
+    const visit = await this.prisma.appointment.findFirst({
+      where: { orgId, patientId, status: { in: ['arrived', 'in_progress'] }, startsAt: { gte: zonedInstant(today, 0, this.env.CLINIC_TIMEZONE) } },
+      orderBy: { startsAt: 'asc' },
+      select: { branchId: true },
+    })
+    return visit?.branchId ?? (await this.prisma.patient.findFirst({ where: { id: patientId, orgId }, select: { homeBranchId: true } }))?.homeBranchId
   }
 
   private async findAlert(access: AccessContext, id: string) {

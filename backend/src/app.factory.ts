@@ -62,7 +62,7 @@ export function configureHttp(app: NestExpressApplication, env: Env, logger: pin
     origin: env.CORS_ORIGINS,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'X-Org-Id', 'X-Request-Id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Org-Id', 'X-Request-Id'],
     exposedHeaders: ['X-Request-Id', 'Retry-After'],
     maxAge: 600,
   })

@@ -184,6 +184,7 @@ describe('clinical core', () => {
     await c.owner.post(`/v1/alerts/${alert.id}/acknowledge`).send({ disposition: 'acknowledged', justification: 'short' }).expect(400)
     const done = await c.owner.post(`/v1/alerts/${alert.id}/acknowledge`).send({ disposition: 'acknowledged', justification: 'Reviewed with the patient; no beta-lactams ordered.' }).expect(200)
     expect(done.body.data).toMatchObject({ status: 'acknowledged', acknowledgedBy: 'Siddharth Verma' })
+    expect((await c.owner.get(`/v1/alerts/${alert.id}`).expect(200)).body.data).toMatchObject({ id: alert.id, status: 'acknowledged', disposition: 'acknowledged' })
     expect((await c.owner.post(`/v1/alerts/${alert.id}/resolve`).expect(409)).body.error.code).toBe('ALERT_CLOSED')
 
     const worklist = (await c.owner.get(`/v1/clinical/worklist?date=${today()}`).expect(200)).body.data

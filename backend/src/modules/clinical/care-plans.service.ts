@@ -1,14 +1,16 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { AuditService } from '../../common/audit/audit.service'
+import { LiveService } from '../../common/realtime/live.service'
 import { conflict, notFound, unprocessable } from '../../common/errors/app-error'
 import type { AccessContext, ClientInfo } from '../../common/utils/request'
 import { ENV, Env } from '../../config/env'
 import { CountersRepository, formatNumber } from '../../database/counters.repository'
-import { PrismaService } from '../../database/prisma.service'
+import { PrismaService, Tx } from '../../database/prisma.service'
 import { localDate } from '../scheduling/clinic-time'
 import { compliance, completionProblem, planStatus, reviewSummary } from './care-plans.logic'
 import { CarePlanRow, CarePlansRepository } from './care-plans.repository'
 import type { CarePlanReviewInput, CreateCarePlanInput } from './care-plans.schemas'
+import { NotificationsService } from '../notifications/notifications.service'
 import { ClinicalRepository } from './clinical.repository'
 import { ClinicalService } from './clinical.service'
 
@@ -24,6 +26,8 @@ export class CarePlansService {
     private readonly clinicalRecords: ClinicalRepository,
     private readonly counters: CountersRepository,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
+    private readonly live: LiveService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -52,7 +56,7 @@ export class CarePlansService {
     await this.clinical.visiblePatient(access, patientId)
     if (!(await this.plans.activePractitioner(access.orgId, input.leadPractitionerId))) throw unprocessable('PRACTITIONER_INVALID', 'Choose an active therapist as the responsible clinician.')
 
-    const id = await this.prisma.transaction(async (tx) => {
+    const { id, events } = await this.prisma.transaction(async (tx) => {
       const reference = formatNumber('CP-', await this.counters.next(tx, access.orgId, 'care_plan_reference'))
       const created = await this.plans.create(tx, {
         orgId: access.orgId,
@@ -73,8 +77,10 @@ export class CarePlansService {
         interventions: { create: input.interventions.map((entry, position) => ({ ...entry, position })) },
       })
       await this.audit.record({ action: 'care_plan.activated', entityType: 'care_plan', entityId: created.id, orgId: access.orgId, actorUserId, details: { reference, goals: input.goals.length } }, client, tx)
-      return created.id
+      const events = await this.planChanged(tx, access.orgId, patientId, created.id, true)
+      return { id: created.id, events }
     })
+    await this.live.publish(events)
     return this.view((await this.plans.find(access.orgId, id))!)
   }
 
@@ -93,7 +99,7 @@ export class CarePlansService {
     const summary = reviewSummary(goals)
     const detail = `${input.observation} (${summary})${input.barriers.length ? ` Barriers: ${input.barriers.join(', ')}.` : ''}`
 
-    await this.prisma.transaction(async (tx) => {
+    const events = await this.prisma.transaction(async (tx) => {
       const changed = await this.plans.updateIfVersion(tx, id, input.version, {
         compliance: compliance(statuses),
         status: planStatus(statuses),
@@ -113,8 +119,16 @@ export class CarePlansService {
         })
       }
       await this.audit.record({ action: 'care_plan.reviewed', entityType: 'care_plan', entityId: id, orgId: access.orgId, actorUserId, details: { mode: input.mode, escalated: escalate } }, client, tx)
+      return this.planChanged(tx, access.orgId, plan.patientId, id, false)
     })
+    await this.live.publish(events)
     return this.view((await this.plans.find(access.orgId, id))!)
+  }
+
+  // A care plan belongs to no branch; notices name the patient's home branch.
+  private async planChanged(tx: Tx, orgId: string, patientId: string, id: string, started: boolean) {
+    const { homeBranchId } = await tx.patient.findUniqueOrThrow({ where: { id: patientId }, select: { homeBranchId: true } })
+    return this.notifications.recordChanged(tx, { orgId, patientId, branchId: homeBranchId, entityType: 'care_plan', entityId: id, ...(started && { notice: 'care_plan_started' as const }) })
   }
 
   private async find(access: AccessContext, id: string) {

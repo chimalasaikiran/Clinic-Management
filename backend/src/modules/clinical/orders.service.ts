@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common'
 import { AuditService } from '../../common/audit/audit.service'
+import { LiveService } from '../../common/realtime/live.service'
 import { conflict, notFound, unprocessable } from '../../common/errors/app-error'
 import type { AccessContext, ClientInfo } from '../../common/utils/request'
 import { CountersRepository, formatNumber } from '../../database/counters.repository'
 import { PrismaService } from '../../database/prisma.service'
 import type { OrderStatus } from '../../generated/prisma/client'
+import { NotificationsService } from '../notifications/notifications.service'
 import { ClinicalRepository } from './clinical.repository'
 import { ClinicalService } from './clinical.service'
 import { ClinicianRepository } from './clinician.repository'
@@ -21,6 +23,8 @@ export class OrdersService {
     private readonly clinician: ClinicianRepository,
     private readonly counters: CountersRepository,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
+    private readonly live: LiveService,
   ) {}
 
   view = (row: OrderRow) => {
@@ -56,7 +60,7 @@ export class OrdersService {
     // Imaging and special diagnostics have no specimen; any laboratory test makes it a lab order.
     const kind = input.items.every((item) => item.category !== 'Laboratory') ? 'imaging' : 'lab'
 
-    const id = await this.prisma.transaction(async (tx) => {
+    const { id, events } = await this.prisma.transaction(async (tx) => {
       const reference = formatNumber('ORD-', await this.counters.next(tx, access.orgId, 'order_reference'))
       const created = await this.orders.create(tx, {
         orgId: access.orgId,
@@ -76,8 +80,9 @@ export class OrdersService {
       })
       await this.orders.addEvent(tx, created.id, 'ordered', actorUserId, encounter ? `Linked to ${encounter.reference}.` : '')
       await this.audit.record({ action: 'order.placed', entityType: 'order', entityId: created.id, orgId: access.orgId, actorUserId, details: { reference, items: input.items.length } }, client, tx)
-      return created.id
+      return { id: created.id, events: await this.notifications.recordChanged(tx, { orgId: access.orgId, patientId, branchId, entityType: 'order', entityId: created.id }) }
     })
+    await this.live.publish(events)
     return this.view((await this.orders.find(access.orgId, id))!)
   }
 
@@ -93,7 +98,7 @@ export class OrdersService {
   async recordResult(access: AccessContext, id: string, actorUserId: string, input: ResultInput, client: ClientInfo) {
     const order = await this.find(access, id)
     const from: OrderStatus[] = order.kind === 'lab' ? ['processing'] : ['ordered', 'processing']
-    await this.prisma.transaction(async (tx) => {
+    const events = await this.prisma.transaction(async (tx) => {
       if ((await this.orders.advance(tx, id, from, { status: 'awaiting_review', resultSummary: input.summary, resultFlag: input.flag })) === 0) {
         throw conflict('ORDER_STATE', order.kind === 'lab' && order.status === 'ordered' ? 'Collect the specimen before recording a result.' : 'This order already has a result or was cancelled.')
       }
@@ -107,21 +112,31 @@ export class OrdersService {
         })
       }
       await this.audit.record({ action: 'order.resulted', entityType: 'order', entityId: id, orgId: access.orgId, actorUserId, details: { flag: input.flag } }, client, tx)
+      // The patient sees that a result exists, not what it says, until a clinician has reviewed it.
+      return this.notifications.recordChanged(tx, { orgId: access.orgId, patientId: order.patientId, branchId: order.branch.id, entityType: 'order', entityId: id })
     })
+    await this.live.publish(events)
     return this.view((await this.orders.find(access.orgId, id))!)
+  }
+
+  // One order, for the result review screen. Hidden (404) unless the patient is in the member's care scope.
+  async get(access: AccessContext, id: string) {
+    return this.view(await this.find(access, id))
   }
 
   // Clinician sign-off; resolves the result's alerts in the same transaction.
   async review(access: AccessContext, id: string, actorUserId: string, input: ReviewInput, client: ClientInfo) {
     const order = await this.find(access, id)
-    await this.prisma.transaction(async (tx) => {
+    const events = await this.prisma.transaction(async (tx) => {
       if ((await this.orders.advance(tx, id, ['awaiting_review'], { status: 'reviewed', reviewOutcome: input.outcome, reviewNote: input.note })) === 0) {
         throw conflict('ORDER_STATE', 'This order is not awaiting review.')
       }
       await this.orders.addEvent(tx, id, 'reviewed', actorUserId, input.note)
       const cleared = await this.orders.resolveAlerts(tx, id)
       await this.audit.record({ action: 'order.reviewed', entityType: 'order', entityId: id, orgId: access.orgId, actorUserId, details: { reference: order.reference, outcome: input.outcome, alertsResolved: cleared } }, client, tx)
+      return this.notifications.recordChanged(tx, { orgId: access.orgId, patientId: order.patientId, branchId: order.branch.id, entityType: 'order', entityId: id, notice: 'result_ready' })
     })
+    await this.live.publish(events)
     return this.view((await this.orders.find(access.orgId, id))!)
   }
 
@@ -132,11 +147,13 @@ export class OrdersService {
   }
 
   private async step(access: AccessContext, order: OrderRow, from: OrderStatus[], data: Parameters<OrdersRepository['advance']>[3], action: string, actorUserId: string, note: string, client: ClientInfo, refusal: string) {
-    await this.prisma.transaction(async (tx) => {
+    const events = await this.prisma.transaction(async (tx) => {
       if ((await this.orders.advance(tx, order.id, from, data)) === 0) throw conflict('ORDER_STATE', refusal)
       await this.orders.addEvent(tx, order.id, action, actorUserId, note)
       await this.audit.record({ action: `order.${action}`, entityType: 'order', entityId: order.id, orgId: access.orgId, actorUserId, details: { reference: order.reference } }, client, tx)
+      return this.notifications.recordChanged(tx, { orgId: access.orgId, patientId: order.patientId, branchId: order.branch.id, entityType: 'order', entityId: order.id })
     })
+    await this.live.publish(events)
   }
 
   private async find(access: AccessContext, id: string) {

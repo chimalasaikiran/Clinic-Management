@@ -13,8 +13,11 @@ const profile = {
   slotMinutes: z.coerce.number({ error: 'Choose a slot length.' }).int().min(5, 'Slots must be at least 5 minutes.').max(240, 'Slots can be at most 240 minutes.'),
 }
 
-export const createPractitionerSchema = z.object({ membershipId: uuid, ...profile })
-export const updatePractitionerSchema = z.object({ ...profile, status: z.enum(['active', 'inactive']) })
+// Left out of a request, the setting keeps its current value (off for a new profile).
+const onlineBooking = z.boolean().optional()
+
+export const createPractitionerSchema = z.object({ membershipId: uuid, ...profile, onlineBooking })
+export const updatePractitionerSchema = z.object({ ...profile, onlineBooking, status: z.enum(['active', 'inactive']) })
 
 export const availabilitySchema = z.object({
   windows: z

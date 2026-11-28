@@ -22,6 +22,8 @@ export const serviceSchema = z
     name: text(200, 'Enter the service name.'),
     category: z.enum(SERVICE_CATEGORIES, { error: 'Choose the service category.' }),
     department: optionalText(120),
+    // Left out of a request, the setting keeps its current value.
+    patientBookable: z.boolean().optional(),
     description: freeText(2000),
     unit: optionalText(40),
     status: z.enum(['active', 'inactive']),
@@ -36,6 +38,7 @@ export const serviceSchema = z
     if (configs && !(value.taxConfig && value.taxConfig in configs)) ctx.addIssue({ code: 'custom', path: ['taxConfig'], message: 'Choose the applicable organization tax configuration.' })
     if (value.status === 'active' && value.taxTreatment === 'not_configured') ctx.addIssue({ code: 'custom', path: ['taxTreatment'], message: 'Choose a tax treatment before activating. “Not configured” is not a tax decision.' })
     if (value.status === 'active' && value.prices.length === 0) ctx.addIssue({ code: 'custom', path: ['prices'], message: 'Select at least one location before activating this service.' })
+    if (value.patientBookable && !value.department) ctx.addIssue({ code: 'custom', path: ['department'], message: 'Choose a department. It decides which therapists can take bookings made in the patient app.' })
     if (new Set(value.prices.map((entry) => entry.branchId)).size !== value.prices.length) ctx.addIssue({ code: 'custom', path: ['prices'], message: 'List each location once.' })
   })
 export type ServiceInput = z.infer<typeof serviceSchema>

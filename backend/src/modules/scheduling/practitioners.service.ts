@@ -27,6 +27,7 @@ export function practitionerView(row: PractitionerRow) {
     department: row.department,
     room: row.room,
     slotMinutes: row.slotMinutes,
+    onlineBooking: row.onlineBooking,
     status: row.status,
     version: row.version,
     availability: row.availability.map((window) => ({

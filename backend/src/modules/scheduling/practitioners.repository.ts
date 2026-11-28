@@ -10,6 +10,7 @@ export interface PractitionerInput {
   department: string
   room: string | null
   slotMinutes: number
+  onlineBooking?: boolean
 }
 
 export interface AvailabilityRow {
@@ -28,6 +29,7 @@ const practitionerView = {
   department: true,
   room: true,
   slotMinutes: true,
+  onlineBooking: true,
   status: true,
   version: true,
   membership: { select: { userId: true, user: { select: { fullName: true, email: true } } } },

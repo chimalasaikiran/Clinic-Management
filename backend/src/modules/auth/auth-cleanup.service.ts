@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common'
 import { RateLimitService } from '../../common/security/rate-limit.service'
 import { ENV, Env } from '../../config/env'
+import { PrismaService } from '../../database/prisma.service'
 import { SessionsRepository } from './sessions.repository'
 import { VerificationCodesRepository } from './verification-codes.repository'
 
@@ -18,6 +19,7 @@ export class AuthCleanupService implements OnApplicationBootstrap, OnApplication
     private readonly sessions: SessionsRepository,
     private readonly codes: VerificationCodesRepository,
     private readonly limits: RateLimitService,
+    private readonly prisma: PrismaService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -36,6 +38,7 @@ export class AuthCleanupService implements OnApplicationBootstrap, OnApplication
       const before = new Date(Date.now() - KEEP_MS)
       await this.sessions.deleteFinished(before)
       await this.codes.deleteFinished(before)
+      await this.prisma.staffAppChallenge.deleteMany({ where: { expiresAt: { lt: before } } })
       await this.limits.prune()
     } catch (error) {
       this.logger.warn({ err: error }, 'Auth housekeeping failed; it will run again next hour')

@@ -4,6 +4,7 @@ import type { AccessContext } from '../../common/utils/request'
 import { isoDate, parse, uuid } from '../../common/validation/validation'
 import { CurrentAccess, OrgMember, RequirePermissions } from '../permissions/access.decorators'
 import { DashboardService } from './dashboard.service'
+import { DayService } from './day.service'
 
 export const dashboardQuery = z.object({ date: isoDate.optional(), branchId: uuid.optional() })
 export const alertsQuery = z.object({ branchId: uuid.optional() })
@@ -11,7 +12,17 @@ export const alertsQuery = z.object({ branchId: uuid.optional() })
 @Controller({ path: 'dashboard', version: '1' })
 @RequirePermissions('dashboard.view')
 export class DashboardController {
-  constructor(private readonly dashboard: DashboardService) {}
+  constructor(
+    private readonly dashboard: DashboardService,
+    private readonly days: DayService,
+  ) {}
+
+  // The day's patient list behind the doctor, nurse and reception dashboards.
+  @Get('day')
+  @RequirePermissions('dashboard.view', 'bookings.view')
+  async day(@Query() query: unknown, @CurrentAccess() access: AccessContext) {
+    return { data: await this.days.day(access, parse(dashboardQuery, query)) }
+  }
 
   @Get()
   async overview(@Query() query: unknown, @CurrentAccess() access: AccessContext) {

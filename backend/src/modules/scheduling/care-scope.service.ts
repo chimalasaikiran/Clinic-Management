@@ -5,6 +5,7 @@ import { PractitionersRepository } from './practitioners.repository'
 // Which patients and appointments a member works with, on top of their permissions:
 //  - Members who can create bookings (front desk, managers, owners) work with every patient, and with the
 //    appointments at the branches their roles cover.
+//  - Nursing staff (clinical.vitals) prepare whoever arrives, so they work the same way within their branches.
 //  - A therapist who cannot create bookings sees only their own appointments and the patients booked with them.
 //  - Anyone else with patient access (for example pharmacy) can look patients up but sees no appointments.
 export interface CareScope {
@@ -21,7 +22,7 @@ export class CareScopeService {
 
   async resolve(access: AccessContext): Promise<CareScope> {
     const branches = access.branchScope
-    if (access.permissions.has('bookings.create')) return { appointments: 'all', patients: 'all', branches }
+    if (access.permissions.has('bookings.create') || access.permissions.has('clinical.vitals')) return { appointments: 'all', patients: 'all', branches }
     const practitioner = await this.practitioners.findByMembership(access.membershipId)
     if (practitioner) return { appointments: { practitionerId: practitioner.id }, patients: { practitionerId: practitioner.id }, branches }
     return { appointments: 'none', patients: 'all', branches }

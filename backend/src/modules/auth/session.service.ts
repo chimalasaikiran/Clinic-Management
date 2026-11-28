@@ -11,6 +11,8 @@ export const MAX_SESSIONS_PER_USER = 20
 // lastSeenAt is written at most this often, so busy pages do not cause a write per request.
 const TOUCH_INTERVAL_MS = 60_000
 
+export type SessionKind = 'browser' | 'app'
+
 export const sessionEnded = {
   missing: () => unauthorized('SESSION_MISSING', 'Sign in to continue.'),
   invalid: () => unauthorized('SESSION_INVALID', 'Your session is no longer valid. Sign in again.'),
@@ -27,20 +29,30 @@ export class SessionService {
     @Inject(ENV) private readonly env: Env,
   ) {}
 
-  async start(userId: string, client: ClientInfo, db?: Db) {
+  // How long a session of each kind may last in total, and without being used.
+  private limits(kind: SessionKind) {
+    return kind === 'app'
+      ? { maxMs: this.env.STAFF_APP_SESSION_MAX_DAYS * 86_400_000, idleMs: this.env.STAFF_APP_SESSION_IDLE_HOURS * 3_600_000 }
+      : { maxMs: this.env.SESSION_MAX_AGE_HOURS * 3_600_000, idleMs: this.env.SESSION_IDLE_MINUTES * 60_000 }
+  }
+
+  async start(userId: string, client: ClientInfo, db?: Db, app?: { deviceName: string }) {
     const token = generateToken()
-    const expiresAt = new Date(Date.now() + this.env.SESSION_MAX_AGE_HOURS * 3_600_000)
-    const session = await this.sessions.create({ userId, tokenHash: this.hash(token), expiresAt, ip: client.ip, userAgent: client.userAgent }, db)
+    const kind: SessionKind = app ? 'app' : 'browser'
+    const expiresAt = new Date(Date.now() + this.limits(kind).maxMs)
+    const session = await this.sessions.create({ userId, tokenHash: this.hash(token), expiresAt, ip: client.ip, userAgent: client.userAgent, kind, deviceName: app?.deviceName ?? null }, db)
     await this.sessions.revokeOldest(userId, MAX_SESSIONS_PER_USER, db)
     return { token, expiresAt, sessionId: session.id }
   }
 
-  async authenticate(token: string): Promise<AuthContext> {
+  // `transport` is how the token arrived. A cookie token sent as a bearer token, or the reverse, is refused, so a
+  // browser session cannot be lifted into the app's longer limits.
+  async authenticate(token: string, transport: SessionKind = 'browser'): Promise<AuthContext> {
     const session = await this.sessions.findByTokenHash(this.hash(token))
-    if (!session || session.revokedAt) throw sessionEnded.invalid()
+    if (!session || session.revokedAt || session.kind !== transport) throw sessionEnded.invalid()
 
     const now = Date.now()
-    const idleLimit = this.env.SESSION_IDLE_MINUTES * 60_000
+    const idleLimit = this.limits(transport).idleMs
     if (session.expiresAt.getTime() <= now || now - session.lastSeenAt.getTime() > idleLimit) {
       await this.sessions.revoke(session.id)
       throw sessionEnded.expired()

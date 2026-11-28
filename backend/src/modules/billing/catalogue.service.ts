@@ -11,7 +11,7 @@ import { FinanceSupport } from './finance.support'
 
 const FIELD_LABELS: Record<string, string> = {
   code: 'code', name: 'name', category: 'category', department: 'department', description: 'description', unit: 'unit',
-  status: 'status', price: 'price', taxTreatment: 'tax treatment', taxConfig: 'tax configuration', prices: 'locations & prices',
+  status: 'status', patientBookable: 'patient app booking', price: 'price', taxTreatment: 'tax treatment', taxConfig: 'tax configuration', prices: 'locations & prices',
 }
 
 const SETTING_LABELS: Record<string, string> = {

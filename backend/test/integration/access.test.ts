@@ -52,7 +52,7 @@ describe('organisation setup', () => {
     const roles = await rolesOf(browser, orgId)
     // The system role first; the defaults are created in one transaction, so their relative order is not asserted.
     expect(roles[0]!.name).toBe('Super Admin')
-    expect(roles.map((role) => role.name).sort()).toEqual(['Accountant / Billing', 'Branch Manager', 'Clinician', 'Front Desk & Reception', 'HR & Compliance Officer', 'Pharmacist', 'Super Admin'])
+    expect(roles.map((role) => role.name).sort()).toEqual(['Accountant / Billing', 'Branch Manager', 'Clinician', 'Front Desk & Reception', 'Growth & Marketing', 'HR & Compliance Officer', 'Nurse', 'Pharmacist', 'Super Admin'])
     expect(roles.find((role) => role.name === 'Super Admin')!.users).toBe(1)
 
     const branches = await browser.get('/v1/branches').set('X-Org-Id', orgId).expect(200)

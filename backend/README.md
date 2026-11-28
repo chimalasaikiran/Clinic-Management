@@ -488,7 +488,7 @@ version keeps serving. Never run `migrate dev` or `migrate reset` against the ma
 | `MESSAGING_SECRET_KEY` | to connect channels | | 32 random bytes, base64: encrypts each organisation's WhatsApp, SMS and email credentials. Changing it makes saved credentials unreadable |
 | `MESSAGING_WORKER` | | `true` | Send queued messages, start due broadcasts, run workflows, publish approved posts and replies, and fetch Google reviews from this process |
 | `PUBLIC_API_URL` | for webhooks and post images | | Public https address of this API, shown as the webhook URL and used for the signed image links Meta fetches (a tunnel in development) |
-| `REALTIME_DATABASE_URL` | | | Neon **direct** connection string, so live inbox updates reach every API instance |
+| `REALTIME_DATABASE_URL` | | | Neon **direct** connection string, so live updates (inbox, bookings, notifications) reach every API instance |
 
 The backend refuses to start with a missing, placeholder or unsafe value and names the variable.
 In production it also requires HTTPS for `APP_URL` and `CORS_ORIGINS`, `COOKIE_SECURE=true`, and EmailJS or SMTP.

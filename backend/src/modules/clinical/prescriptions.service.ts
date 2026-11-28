@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto'
 import { Injectable } from '@nestjs/common'
 import { AuditService } from '../../common/audit/audit.service'
+import { LiveEvent, LiveService } from '../../common/realtime/live.service'
 import { conflict, notFound, unprocessable } from '../../common/errors/app-error'
 import type { AccessContext, ClientInfo } from '../../common/utils/request'
 import { CountersRepository, formatNumber } from '../../database/counters.repository'
 import { PrismaService } from '../../database/prisma.service'
+import { NotificationsService } from '../notifications/notifications.service'
 import { ClinicalService } from './clinical.service'
 import { ClinicianRepository } from './clinician.repository'
 import { PrescriptionRow, PrescriptionsRepository } from './prescriptions.repository'
@@ -22,6 +24,8 @@ export class PrescriptionsService {
     private readonly clinician: ClinicianRepository,
     private readonly counters: CountersRepository,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
+    private readonly live: LiveService,
   ) {}
 
   view = ({ dispenses, ...row }: PrescriptionRow) => ({
@@ -62,7 +66,7 @@ export class PrescriptionsService {
       throw unprocessable('PRECAUTION_REQUIRED', 'Acknowledge the NSAID precaution for this patient’s raised blood pressure before signing.')
     }
 
-    const id = await this.prisma.transaction(async (tx) => {
+    const { id, events } = await this.prisma.transaction(async (tx) => {
       const reference = formatNumber('RX-', await this.counters.next(tx, access.orgId, 'prescription_reference'))
       const createdAt = new Date()
       const items = input.items.map((item, position) => ({
@@ -92,18 +96,22 @@ export class PrescriptionsService {
       })
       await this.prescriptions.addEvent(tx, created.id, 'signed', actorUserId, encounter ? `Linked to ${encounter.reference}.` : '')
       await this.audit.record({ action: 'prescription.signed', entityType: 'prescription', entityId: created.id, orgId: access.orgId, actorUserId, details: { reference, items: items.length } }, client, tx)
-      return created.id
+      const events = await this.notifications.recordChanged(tx, { orgId: access.orgId, patientId, branchId, entityType: 'prescription', entityId: created.id, notice: 'prescription_issued' })
+      return { id: created.id, events }
     })
+    await this.live.publish(events)
     return this.view((await this.prescriptions.find(access.orgId, id))!)
   }
 
   async discontinue(access: AccessContext, id: string, actorUserId: string, reason: string, client: ClientInfo) {
     const current = await this.find(access, id)
-    await this.prisma.transaction(async (tx) => {
+    const events: LiveEvent[] = await this.prisma.transaction(async (tx) => {
       if ((await this.prescriptions.setStatus(tx, id, 'active', 'discontinued')) === 0) throw conflict('PRESCRIPTION_CLOSED', 'This prescription is no longer active.')
       await this.prescriptions.addEvent(tx, id, 'discontinued', actorUserId, reason)
       await this.audit.record({ action: 'prescription.discontinued', entityType: 'prescription', entityId: id, orgId: access.orgId, actorUserId, details: { reference: current.reference } }, client, tx)
+      return this.notifications.recordChanged(tx, { orgId: access.orgId, patientId: current.patientId, branchId: current.branch.id, entityType: 'prescription', entityId: id, notice: 'prescription_stopped' })
     })
+    await this.live.publish(events)
     return this.view((await this.prescriptions.find(access.orgId, id))!)
   }
 

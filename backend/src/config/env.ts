@@ -47,6 +47,17 @@ const schema = z
     EMAILJS_PUBLIC_KEY: z.string().optional(),
     EMAILJS_PRIVATE_KEY: z.string().optional(),
 
+    // Patient app sign-in codes (MSG91 Flow with a DLT template that takes the code as var1). Without them, codes are
+    // printed to the console in development and patient sign-in answers "not set up" in production.
+    MSG91_AUTH_KEY: z.string().optional(),
+    MSG91_OTP_TEMPLATE_ID: z.string().optional(),
+    // Patient app sessions: how long an unused phone stays signed in, and the most any sign-in lasts.
+    // Staff app sessions: long enough for a shift, short enough that a lost phone stops working within days.
+    STAFF_APP_SESSION_IDLE_HOURS: z.coerce.number().int().min(1).max(72).default(12),
+    STAFF_APP_SESSION_MAX_DAYS: z.coerce.number().int().min(1).max(30).default(7),
+    PATIENT_SESSION_IDLE_DAYS: z.coerce.number().int().min(1).max(90).default(30),
+    PATIENT_SESSION_MAX_DAYS: z.coerce.number().int().min(1).max(365).default(90),
+
     TRUST_PROXY: z.coerce.number().int().min(0).default(0),
 
     // Messaging (Growth). The key encrypts each organisation's WhatsApp, SMS and email credentials: 32 random bytes,
@@ -78,6 +89,10 @@ const schema = z
     const problem = (path: string, message: string) => ctx.addIssue({ code: 'custom', path: [path], message })
 
     if (env.COOKIE_SAMESITE === 'none' && !env.COOKIE_SECURE) problem('COOKIE_SAMESITE', '"none" requires COOKIE_SECURE=true')
+
+    if (Boolean(env.MSG91_AUTH_KEY) !== Boolean(env.MSG91_OTP_TEMPLATE_ID)) {
+      problem(env.MSG91_AUTH_KEY ? 'MSG91_OTP_TEMPLATE_ID' : 'MSG91_AUTH_KEY', 'is required when the other MSG91_ setting is set')
+    }
 
     const emailJs = EMAILJS_KEYS.filter((key) => env[key])
     if (emailJs.length > 0 && emailJs.length < EMAILJS_KEYS.length) {

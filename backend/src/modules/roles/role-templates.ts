@@ -51,6 +51,22 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
     permissions: ['dashboard.view', 'bookings.view', 'bookings.notes', 'patients.view', 'clinical.read', 'clinical.write', 'pharmacy.view'],
   },
   {
+    name: 'Nurse',
+    category: 'Operations',
+    scope: 'branch',
+    system: false,
+    description: 'Prepares checked-in patients: records vital signs, collects specimens and hands over to the clinician.',
+    permissions: ['dashboard.view', 'bookings.view', 'bookings.notes', 'patients.view', 'clinical.read', 'clinical.vitals'],
+  },
+  {
+    name: 'Growth & Marketing',
+    category: 'Operations',
+    scope: 'org',
+    system: false,
+    description: 'Works enquiries, campaigns, content, conversations and reviews, without access to patient records.',
+    permissions: ['growth.view', 'growth.leads', 'growth.manage'],
+  },
+  {
     name: 'Pharmacist',
     category: 'Operations',
     scope: 'branch',

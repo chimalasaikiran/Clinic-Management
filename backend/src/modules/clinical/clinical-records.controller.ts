@@ -1,9 +1,9 @@
-import { Body, Controller, HttpCode, Param, Post } from '@nestjs/common'
+import { Body, Controller, Get, HttpCode, Param, Post } from '@nestjs/common'
 import { Client } from '../../common/decorators/client.decorator'
 import type { AccessContext, AuthContext, ClientInfo } from '../../common/utils/request'
 import { parse, uuid } from '../../common/validation/validation'
 import { CurrentAuth } from '../auth/auth.decorators'
-import { CurrentAccess, RequirePermissions } from '../permissions/access.decorators'
+import { CurrentAccess, RequireAnyPermission, RequirePermissions } from '../permissions/access.decorators'
 import { carePlanReviewSchema, createCarePlanSchema } from './care-plans.schemas'
 import { CarePlansService } from './care-plans.service'
 import { cancelOrderSchema, collectSchema, createOrderSchema, resultSchema, reviewSchema } from './orders.schemas'
@@ -14,7 +14,8 @@ import { createReferralSchema, followUpSchema, triageSchema } from './referrals.
 import { ReferralsService } from './referrals.service'
 
 // Prescriptions, diagnostic orders, referrals and care plans. They are read with the patient's chart
-// (GET /patients/:id/chart, clinical.read); every change here needs clinical.write and the patient in scope.
+// (GET /patients/:id/chart, clinical.read); every change here needs clinical.write and the patient in scope,
+// except specimen collection, which nursing staff may also do.
 @Controller({ version: '1' })
 @RequirePermissions('clinical.write')
 export class ClinicalRecordsController {
@@ -45,6 +46,7 @@ export class ClinicalRecordsController {
 
   @Post('orders/:id/collect')
   @HttpCode(200)
+  @RequireAnyPermission('clinical.write', 'clinical.vitals')
   async collect(@Param('id') id: string, @Body() body: unknown, @CurrentAuth() auth: AuthContext, @CurrentAccess() access: AccessContext, @Client() client: ClientInfo) {
     return { data: await this.orders.collect(access, parse(uuid, id), auth.userId, parse(collectSchema, body ?? {}).note, client) }
   }
@@ -53,6 +55,12 @@ export class ClinicalRecordsController {
   @HttpCode(200)
   async result(@Param('id') id: string, @Body() body: unknown, @CurrentAuth() auth: AuthContext, @CurrentAccess() access: AccessContext, @Client() client: ClientInfo) {
     return { data: await this.orders.recordResult(access, parse(uuid, id), auth.userId, parse(resultSchema, body), client) }
+  }
+
+  @Get('orders/:id')
+  @RequirePermissions('clinical.read')
+  async getOrder(@Param('id') id: string, @CurrentAccess() access: AccessContext) {
+    return { data: await this.orders.get(access, parse(uuid, id)) }
   }
 
   @Post('orders/:id/review')

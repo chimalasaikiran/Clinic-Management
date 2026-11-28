@@ -1,12 +1,15 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { AuditService } from '../../common/audit/audit.service'
 import { conflict, notFound, unprocessable } from '../../common/errors/app-error'
+import { LiveService } from '../../common/realtime/live.service'
 import type { AccessContext, ClientInfo } from '../../common/utils/request'
 import { ENV, Env } from '../../config/env'
 import { CountersRepository, formatNumber } from '../../database/counters.repository'
 import { violatedConstraint } from '../../database/prisma-errors'
 import { PrismaService, Tx } from '../../database/prisma.service'
 import type { AppointmentStatus, Prisma } from '../../generated/prisma/client'
+import type { AppointmentNotice } from '../notifications/notification.logic'
+import { NotificationsService } from '../notifications/notifications.service'
 import { branchAllowed, CareScope, CareScopeService } from '../scheduling/care-scope.service'
 import { addDays, localDate, localMinute, minuteToTime, timeToMinute, weekdayOf, zonedInstant } from '../scheduling/clinic-time'
 import { BOOKING_HORIZON_DAYS } from '../scheduling/scheduling.constants'
@@ -20,6 +23,9 @@ const PRACTITIONER_OVERLAP = 'appointments_practitioner_no_overlap'
 const PATIENT_OVERLAP = 'appointments_patient_no_overlap'
 
 type Practitioner = NonNullable<Awaited<ReturnType<AppointmentsRepository['practitioner']>>>
+
+// What each staff action is worth telling the patient; the others only refresh the screens that show the queue.
+const NOTICES: Partial<Record<AppointmentAction, AppointmentNotice>> = { confirm: 'confirmed', reschedule: 'rescheduled', checkIn: 'checked_in', cancel: 'cancelled' }
 
 interface Change {
   data?: Prisma.AppointmentUncheckedUpdateInput
@@ -35,6 +41,8 @@ export class AppointmentsService {
     private readonly careScope: CareScopeService,
     private readonly practitionerRecords: PractitionersRepository,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
+    private readonly live: LiveService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -73,7 +81,8 @@ export class AppointmentsService {
       queueToken: row.queueToken,
       arrivedAt: row.arrivedAt ? this.stamp(row.arrivedAt).time : null,
       closedReason: row.closedReason,
-      bookedBy: row.bookedBy.fullName,
+      bookedBy: row.bookedBy?.fullName ?? 'Patient app',
+      service: row.service?.name ?? null,
       createdAt: row.createdAt.toISOString(),
       version: row.version,
       ...(events && {
@@ -86,7 +95,7 @@ export class AppointmentsService {
           to: event.toStartsAt ? this.stamp(event.toStartsAt) : null,
           reason: event.reason,
           note: showNotes ? event.note : null,
-          actor: event.actor.fullName,
+          actor: event.actor?.fullName ?? 'Patient app',
           at: event.createdAt.toISOString(),
           ...this.stamp(event.createdAt),
         })),
@@ -140,7 +149,7 @@ export class AppointmentsService {
     const status: AppointmentStatus = input.arrivedNow || input.waitingQueue ? 'arrived' : input.status
 
     try {
-      const id = await this.prisma.transaction(async (tx) => {
+      const { id, events } = await this.prisma.transaction(async (tx) => {
         await this.assertBookablePatient(tx, access.orgId, input.patientId, input.practitionerId, input.date)
         const reference = formatNumber('APT-', await this.counters.next(tx, access.orgId, 'appointment_reference'))
         const queueToken = status === 'arrived' ? await this.nextToken(tx, access.orgId, input.branchId, today, input.waitingQueue ? 'W' : 'A') : null
@@ -166,8 +175,10 @@ export class AppointmentsService {
         })
         await this.appointments.addEvent(tx, { appointmentId: created.id, action: walkIn ? 'walk_in' : 'booked', fromStatus: null, toStatus: status, toStartsAt: startsAt, actorUserId })
         await this.audit.record({ action: 'appointment.booked', entityType: 'appointment', entityId: created.id, orgId: access.orgId, actorUserId, details: { reference } }, client, tx)
-        return created.id
+        const events = await this.notifications.appointmentChanged(tx, { appointmentId: created.id, notice: status === 'arrived' ? 'checked_in' : 'booked', by: 'clinic' })
+        return { id: created.id, events }
       })
+      await this.live.publish(events)
       return this.get(access, id)
     } catch (error) {
       throw this.bookingConflict(error)
@@ -236,7 +247,7 @@ export class AppointmentsService {
     apply: (row: AppointmentRow & { orgId: string }, tx: Tx) => Promise<Change>,
   ) {
     const scope = await this.careScope.resolve(access)
-    await this.prisma.transaction(async (tx) => {
+    const events = await this.prisma.transaction(async (tx) => {
       if (!(await this.appointments.lock(tx, access.orgId, id))) throw notFound('Appointment not found.')
       const row = await this.appointments.find({ AND: [this.appointments.scoped(access.orgId, scope), { id }] }, tx)
       if (!row) throw notFound('Appointment not found.')
@@ -255,7 +266,9 @@ export class AppointmentsService {
         actorUserId,
       })
       await this.audit.record({ action: `appointment.${action}`, entityType: 'appointment', entityId: id, orgId: access.orgId, actorUserId, details: { from: row.status, to: toStatus } }, client, tx)
+      return this.notifications.appointmentChanged(tx, { appointmentId: id, notice: NOTICES[action], by: 'clinic' })
     })
+    await this.live.publish(events)
     return this.get(access, id)
   }
 

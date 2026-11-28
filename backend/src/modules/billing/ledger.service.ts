@@ -126,7 +126,7 @@ export class LedgerService {
   private serviceView(row: Prisma.BillingServiceGetPayload<{ include: { prices: { select: { branchId: true; price: true } } } }>, events: unknown[]) {
     return {
       id: row.id, code: row.code, name: row.name, category: row.category, department: row.department, description: row.description, unit: row.unit, status: row.status,
-      price: num(row.price), taxTreatment: row.taxTreatment, taxConfig: row.taxConfig, gstRate: num(row.gstRate), prices: row.prices.map((entry) => ({ branchId: entry.branchId, price: num(entry.price) })),
+      patientBookable: row.patientBookable, price: num(row.price), taxTreatment: row.taxTreatment, taxConfig: row.taxConfig, gstRate: num(row.gstRate), prices: row.prices.map((entry) => ({ branchId: entry.branchId, price: num(entry.price) })),
       updated: this.support.stamp(row.updatedAt), version: row.version, events,
     }
   }

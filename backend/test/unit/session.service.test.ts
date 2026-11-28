@@ -22,6 +22,7 @@ function storedSession(overrides: Record<string, unknown> = {}) {
     id: 'session-1',
     userId: 'user-1',
     revokedAt: null,
+    kind: 'browser',
     expiresAt: new Date(Date.now() + 6 * 60 * MINUTE),
     lastSeenAt: new Date(Date.now() - 5 * MINUTE),
     user: { id: 'user-1', email: 'owner@clinic.test', status: 'active', emailVerifiedAt: new Date() },
@@ -93,5 +94,18 @@ describe('SessionService', () => {
     repo.findByTokenHash!.mockResolvedValue(storedSession({ user: { id: 'user-1', email: 'a@b.test', status: 'disabled', emailVerifiedAt: null } }))
     expect(await failureCode(sessions.authenticate('x'.repeat(43)))).toBe('ACCOUNT_DISABLED')
     expect(repo.revoke).toHaveBeenCalledWith('session-1')
+  })
+})
+
+describe('staff app sessions', () => {
+  it('accept only the transport they were made for, with the app limits', async () => {
+    const appSession = storedSession({ kind: 'app', lastSeenAt: new Date(Date.now() - 6 * 60 * MINUTE), expiresAt: new Date(Date.now() + 3 * 24 * 60 * MINUTE) })
+    const repo = { findByTokenHash: vi.fn(async () => appSession), touch: vi.fn(async () => ({ id: 'session-1' })), revoke: vi.fn(async () => ({ count: 1 })) }
+    const sessions = new SessionService(repo as unknown as SessionsRepository, env)
+    // Six idle hours is too long for the admin panel but fine for the app (12 hours by default).
+    await expect(sessions.authenticate('t'.repeat(43), 'app')).resolves.toMatchObject({ userId: 'user-1' })
+    expect(await failureCode(sessions.authenticate('t'.repeat(43), 'browser'))).toBe('SESSION_INVALID')
+    repo.findByTokenHash.mockResolvedValue(storedSession())
+    expect(await failureCode(sessions.authenticate('t'.repeat(43), 'app'))).toBe('SESSION_INVALID')
   })
 })
