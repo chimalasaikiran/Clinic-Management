@@ -1,0 +1,22 @@
+/** Palette taken from the Figma file. Shared by Tailwind and by code that needs raw values. */
+module.exports = {
+  ink: '#081e26',
+  heading: '#182d35',
+  steel: '#354a52',
+  slate: '#4d626a',
+  body: '#3e4947',
+  charcoal: '#464646',
+  muted: '#6e7977',
+  line: '#bec9c6',
+  mint: '#c3ebe1',
+  teal: { DEFAULT: '#006a61', 50: '#eaf5f3', 100: '#e6f3f1', 200: '#b7ded5' },
+  edge: '#dce5e8',
+  sky: {
+    50: '#f3fbff',
+    100: '#e5f6ff',
+    150: '#dbf1fc',
+    200: '#d5ecf6',
+    250: '#d0e6f1',
+    300: '#cfe6f1',
+  },
+};
