@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "ClinicOS Staff",
+    "slug": "clinic-os-staff",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.clinicos.staff"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.clinicos.staff"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-image",
+      "expo-font",
+      "expo-splash-screen",
+      "expo-secure-store"
+    ],
+    "scheme": "clinicosstaff",
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
